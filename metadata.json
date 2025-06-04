@@ -1,0 +1,6 @@
+{
+  "name": "Simple Visual Calendar",
+  "description": "A simple, visually appealing calendar application designed for ease of use and LLM understanding. Users can view months, navigate between them, and add events to specific dates. Events are stored locally.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}

@@ -1,0 +1,94 @@
+
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-100">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Visual Calendar - Month & Week View</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            colors: {
+              primary: {
+                DEFAULT: '#3B82F6', // blue-500
+                hover: '#2563EB', // blue-600
+                light: '#DBEAFE' // blue-100 (changed from EFF6FF for better contrast in some cases)
+              },
+              secondary: '#6B7280', // gray-500
+              accent: '#10B981', // emerald-500
+            },
+            gridTemplateRows: {
+             '24': 'repeat(24, minmax(0, 1fr))', // For 24 hour slots in week view
+            }
+          }
+        },
+        plugins: [
+            function({addUtilities}) {
+                const newUtilities = {
+                    '.scrollbar-thin': {
+                        'scrollbar-width': 'thin',
+                    },
+                    '.scrollbar-thumb-gray-300': {
+                        '--tw-scrollbar-thumb': '#D1D5DB', // gray-300
+                        '&::-webkit-scrollbar-thumb': {
+                            backgroundColor: 'var(--tw-scrollbar-thumb)',
+                            borderRadius: '0.25rem',
+                            border: '3px solid transparent', // Creates padding around thumb
+                            backgroundClip: 'padding-box',
+                        }
+                    },
+                     '.scrollbar-thumb-gray-300:hover': {
+                        '--tw-scrollbar-thumb': '#9CA3AF', // gray-400 on hover
+                    },
+                    '.scrollbar-track-gray-100': {
+                         '--tw-scrollbar-track': '#F3F4F6', // gray-100
+                        '&::-webkit-scrollbar-track': {
+                            backgroundColor: 'var(--tw-scrollbar-track)',
+                            borderRadius: '0.25rem',
+                        }
+                    }
+                }
+                addUtilities(newUtilities, ['responsive', 'hover'])
+            }
+        ]
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.1.0/",
+    "react/": "https://esm.sh/react@^19.1.0/",
+    "react": "https://esm.sh/react@^19.1.0",
+    "date-fns": "https://esm.sh/date-fns@^4.1.0",
+    "@google/genai": "https://esm.sh/@google/genai?bundle",
+    "date-fns/": "https://esm.sh/date-fns@^4.1.0/",
+    "date-fns/isValid": "https://esm.sh/date-fns@^4.1.0/isValid"
+  }
+}
+</script>
+<style>
+  /* Ensure the root fills the viewport and allows App.tsx to use flex-grow */
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+  #root {
+    min-height: 100vh; /* Fallback for older browsers or if html/body height isn't 100% */
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+</style>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="h-full bg-gray-100">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
