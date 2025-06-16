@@ -44,6 +44,7 @@ export type NaturalLanguageEventCreationInput = z.infer<typeof NaturalLanguageEv
 const EventIdentifierSchema = z.object({
   title: z.string().optional().describe("The current title of the event to find. Example: 'Tandläkarbesök', 'Budgetplanering'."),
   dateQuery: z.string().optional().describe("A fuzzy date/time query for the event to find, as mentioned by the user. Example: 'idag', 'imorgon', 'nästa vecka', 'den 10e'."),
+  timeQuery: z.string().optional().describe("The current start time query (e.g., 'kl 10', '11:30') for the event to find. Use this if title and dateQuery are not unique enough, referencing the event's original start time."),
 });
 
 // For details of a new event or changes to an existing one
@@ -57,7 +58,7 @@ const EventDetailsSchema = z.object({
 
 const SingleCalendarOperationSchema = z.object({
   commandType: z.enum(['CREATE', 'MODIFY', 'DELETE', 'QUERY']).describe("The type of operation: CREATE, MODIFY, DELETE, or QUERY (if the user is asking about their schedule)."),
-  eventIdentifier: EventIdentifierSchema.optional().describe("Details to identify the event for MODIFY or DELETE operations. This should be populated if commandType is MODIFY or DELETE."),
+  eventIdentifier: EventIdentifierSchema.optional().describe("Details to identify the event for MODIFY or DELETE operations. This should be populated if commandType is MODIFY or DELETE. Include original title, dateQuery, and timeQuery if needed for uniqueness."),
   eventDetails: EventDetailsSchema.optional().describe("Details for the event to be CREATED or MODIFIED. This should be populated if commandType is CREATE or MODIFY."),
 });
 
@@ -67,7 +68,8 @@ const NaturalLanguageEventCreationOutputSchema = z.object({
   requiresClarification: z.boolean().optional().default(false).describe('Set to true if the AI is unsure or needs more information from the user to proceed confidently.'),
   clarificationQuestion: z.string().optional().describe('If requiresClarification is true, this field should contain a question to ask the user. Example: "Vilket möte menar du?" or "Jag hittade flera tandläkarbesök, vilket menar du?"'),
 });
-export type NaturalLanguageEventCreationOutput = z.infer<typeof NaturalLanguageEventCreationOutputSchema>;
+// This type is used by the frontend, schema itself is not exported
+type NaturalLanguageEventCreationOutput = z.infer<typeof NaturalLanguageEventCreationOutputSchema>;
 
 
 // Define the main orchestrator prompt
@@ -115,7 +117,7 @@ Kontextuell förståelse och användarpreferenser:
 
 Din uppgift är att tolka användarens instruktion, **med hänsyn till hela konversationshistoriken och ovanstående punkter om kontextuell förståelse**, och omvandla den till en eller flera strukturerade kalenderoperationer (CREATE, MODIFY, DELETE, QUERY).
 Fyll i NaturalLanguageEventCreationOutputSchema så noggrant som möjligt.
-**Om användarens instruktion tydligt implicerar en åtgärd på FLERA händelser (t.ex. "flytta alla mina möten idag", "avboka alla mina tandläkarbesök nästa vecka"), ska du generera en SEPARAT operation (CREATE, MODIFY, eller DELETE) för VARJE enskild händelse som matchar kriterierna i \`operations\`-arrayen. Använd \`currentEvents\` för att identifiera de specifika händelserna.**
+**Om användarens instruktion tydligt implicerar en åtgärd på FLERA händelser (t.ex. "flytta alla mina möten idag", "avboka alla mina tandläkarbesök nästa vecka"), ska du generera en SEPARAT operation (CREATE, MODIFY, eller DELETE) för VARJE enskild händelse som matchar kriterierna i \`operations\`-arrayen. Använd \`currentEvents\` för att identifiera de specifika händelserna. För varje händelse som ska modifieras eller tas bort, se till att \`eventIdentifier\` är så precis som möjligt, inkludera originaltitel, datumfråga och, om nödvändigt för unikhet (t.ex. flera möten med samma namn på samma dag), den ursprungliga starttiden i \`eventIdentifier.timeQuery\`.**
 
 Användarens senaste instruktion: "{{instruction}}"
 
@@ -135,6 +137,7 @@ Analysera instruktionen och historiken för att bestämma:
 2.  Event Identifier (eventIdentifier - för MODIFY/DELETE):
     *   Vilken händelse vill användaren ändra/ta bort? Extrahera titel (t.ex. "Tandläkarbesök", "Möte med chefen"). Använd 'currentEvents' och konversationshistoriken för att försöka matcha.
     *   Om användaren ger en tidsreferens för den befintliga händelsen (t.ex. "mötet idag", "lunchen imorgon"), extrahera det som 'dateQuery' i 'eventIdentifier'.
+    *   Om det finns flera händelser med samma titel på samma dag/datumfråga, använd den *ursprungliga* starttiden för händelsen som 'timeQuery' i 'eventIdentifier' för att säkerställa unik identifiering (t.ex. \`timeQuery: "10:00"\` eller \`timeQuery: "kl 14"\`).
 3.  Event Details (eventDetails - för CREATE/MODIFY):
     *   Titel: Ny titel för händelsen.
     *   Datum (dateQuery): Den *nya* datumspecifikationen från användaren i naturligt språk (t.ex. "nästa fredag", "den 15 augusti", "imorgon"). Lämna den som text, frontenden kommer att tolka den.
@@ -144,33 +147,34 @@ Analysera instruktionen och historiken för att bestämma:
 
 Bekräftelsemeddelande (userConfirmationMessage):
 *   Formulera ett kort, vänligt bekräftelsemeddelande på svenska som sammanfattar vad du har förstått och kommer att försöka göra, eller vilken information du ger. För direkta kommandon som resulterar i operationer, bekräfta att du kommer att försöka utföra dem. För QUERY, svara på frågan och inkludera eventuella observationer/förslag om det efterfrågats. Exempel: "Jag lägger till 'Middag med Eva' imorgon kl 19." eller "Jag försöker flytta 'Projektmöte' till nästa tisdag." eller "Imorgon har du: Lunch med Kalle kl 12, Tandläkarbesök kl 15. Dina möten X och Y krockar. Jag kan flytta Y till kl. 14.00. Vill du att jag gör det?"
+*   Om du utför en bulk-operation (flera händelser), lista de påverkade händelsernas titlar i meddelandet om möjligt, t.ex. "Okej, jag försöker flytta Möte A och Möte B från idag till imorgon."
 
 Förtydligande (requiresClarification & clarificationQuestion):
-*   Om instruktionen är tvetydig (t.ex. "ändra mötet" och det finns flera möten i 'currentEvents' som matchar dåligt, även med hänsyn till historiken), sätt 'requiresClarification' till true och formulera en 'clarificationQuestion' (t.ex. "Vilket möte vill du ändra? Du har X och Y.").
-*   Om en identifierare (titel/datum) för MODIFY/DELETE inte matchar något i 'currentEvents' tillräckligt bra, be om förtydligande.
+*   Om instruktionen är tvetydig (t.ex. "ändra mötet" och det finns flera möten i 'currentEvents' som matchar dåligt, även med hänsyn till historiken och eventuell timeQuery), sätt 'requiresClarification' till true och formulera en 'clarificationQuestion' (t.ex. "Vilket möte vill du ändra? Du har X (kl 10) och Y (kl 14).").
+*   Om en identifierare (titel/datum/tid) för MODIFY/DELETE inte matchar något i 'currentEvents' tillräckligt bra, be om förtydligande.
 *   **VIKTIGT: Om användarens begäran är olämplig, skadlig, oetisk, eller inte relaterad till kalenderhantering, sätt 'requiresClarification' till true och 'clarificationQuestion' till ett artigt meddelande som "Jag är en kalenderassistent och kan tyvärr inte hjälpa till med den typen av förfrågan. Kan jag hjälpa dig med något kalenderrelaterat istället?" eller liknande. Undvik att föreslå olämpliga handlingar.**
 
-Exempel (antar att "Tandläkarbesök idag" finns i currentEvents):
+Exempel (antar att "Tandläkarbesök idag kl 15:00" finns i currentEvents):
 Instruktion: "Flytta mitt tandläkarbesök från idag till nästa fredag."
 Output (ungefärligt):
 {
   "operations": [{
     "commandType": "MODIFY",
-    "eventIdentifier": { "title": "tandläkarbesök", "dateQuery": "idag" },
+    "eventIdentifier": { "title": "tandläkarbesök", "dateQuery": "idag", "timeQuery": "15:00" },
     "eventDetails": { "dateQuery": "nästa fredag" }
   }],
-  "userConfirmationMessage": "Jag försöker flytta ditt tandläkarbesök från idag till nästa fredag.",
+  "userConfirmationMessage": "Jag försöker flytta ditt tandläkarbesök från idag kl 15:00 till nästa fredag.",
   "requiresClarification": false
 }
 
-Instruktion: "Flytta alla mina möten idag till imorgon." (Antag att currentEvents innehåller "Möte A idag" och "Möte B idag")
+Instruktion: "Flytta alla mina möten idag till imorgon." (Antag att currentEvents innehåller "Möte A idag kl 10:00" och "Möte B idag kl 14:00")
 Output (ungefärligt):
 {
   "operations": [
-    { "commandType": "MODIFY", "eventIdentifier": { "title": "Möte A", "dateQuery": "idag" }, "eventDetails": { "dateQuery": "imorgon" } },
-    { "commandType": "MODIFY", "eventIdentifier": { "title": "Möte B", "dateQuery": "idag" }, "eventDetails": { "dateQuery": "imorgon" } }
+    { "commandType": "MODIFY", "eventIdentifier": { "title": "Möte A", "dateQuery": "idag", "timeQuery": "10:00" }, "eventDetails": { "dateQuery": "imorgon" } },
+    { "commandType": "MODIFY", "eventIdentifier": { "title": "Möte B", "dateQuery": "idag", "timeQuery": "14:00" }, "eventDetails": { "dateQuery": "imorgon" } }
   ],
-  "userConfirmationMessage": "Okej, jag försöker flytta Möte A och Möte B från idag till imorgon.",
+  "userConfirmationMessage": "Okej, jag försöker flytta Möte A (idag kl 10:00) och Möte B (idag kl 14:00) till imorgon.",
   "requiresClarification": false
 }
 
@@ -186,9 +190,9 @@ Output (ungefärligt):
 
 Returnera ALLTID ett svar som följer NaturalLanguageEventCreationOutputSchema. Även om du är osäker, sätt requiresClarification till true.
 Försök att extrahera så mycket information som möjligt även om du begär förtydligande.
-Om användaren inte specificerar en tid för en ny händelse, kan du utelämna 'timeQuery'. Frontend kommer att använda en standardtid.
-Samma gäller 'dateQuery' för nya händelser; om den saknas kan frontend använda dagens datum.
-Var noga med att skilja på 'dateQuery' i 'eventIdentifier' (för att hitta en befintlig händelse) och 'dateQuery' i 'eventDetails' (för den nya tiden för händelsen).
+Om användaren inte specificerar en tid för en ny händelse, kan du utelämna 'timeQuery' i eventDetails. Frontend kommer att använda en standardtid.
+Samma gäller 'dateQuery' i eventDetails för nya händelser; om den saknas kan frontend använda dagens datum.
+Var noga med att skilja på 'dateQuery' och 'timeQuery' i 'eventIdentifier' (för att hitta en befintlig händelse) och 'dateQuery'/'timeQuery' i 'eventDetails' (för den nya tiden för händelsen).
 Om commandType är QUERY, ska 'operations' arrayen innehålla ett objekt med commandType: "QUERY" och inga andra fält (eventIdentifier, eventDetails), *såvida inte användaren direkt bekräftar ett tidigare AI-förslag*.
 **Fokusera på att vara en hjälpsam, ansvarsfull och säker kalenderassistent.**
 `,
@@ -235,10 +239,12 @@ export async function naturalLanguageEventCreation(
   instruction: string, 
   currentEventsForAI: AiEventType[],
   conversationHistory: ConversationMessageType[]
-): Promise<NaturalLanguageEventCreationOutput> {
+): Promise<NaturalLanguageEventCreationOutput> { // Ensure this return type matches the internal schema type
   const currentDateStr = format(new Date(), 'yyyy-MM-dd');
   return naturalLanguageEventCreationFlow({ instruction, currentDate: currentDateStr, currentEvents: currentEventsForAI, conversationHistory });
 }
 
+
+    
 
     

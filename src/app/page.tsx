@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -78,7 +79,8 @@ export default function HomePage() {
       setEvents(prevEvents =>
         prevEvents.map(e => (e.id === id ? { ...e, ...eventData, imageUrl: newImageUrl ?? e.imageUrl } : e))
       );
-      toast({ title: "Händelse Uppdaterad", description: `"${eventData.title}" har uppdaterats.` });
+      // Toast is handled by AiAssistant or EventForm now.
+      // toast({ title: "Händelse Uppdaterad", description: `"${eventData.title}" har uppdaterats.` });
     } else { 
       const newEvent: CalendarEvent = {
         ...eventData,
@@ -86,7 +88,7 @@ export default function HomePage() {
         imageUrl: newImageUrl,
       };
       setEvents(prevEvents => [...prevEvents, newEvent]);
-      toast({ title: "Händelse Skapad", description: `"${newEvent.title}" har lagts till.` });
+      // toast({ title: "Händelse Skapad", description: `"${newEvent.title}" har lagts till.` });
     }
   };
   
@@ -98,7 +100,7 @@ export default function HomePage() {
     const event = events.find(e => e.id === eventId);
     setEvents(prevEvents => prevEvents.filter(e => e.id !== eventId));
     setEventToDelete(null);
-    if (event) {
+    if (event && !isAiAssistantOpen) { // Avoid double toast if AI initiated
       toast({ title: "Händelse Borttagen", description: `"${event.title}" har tagits bort.` });
     }
   };
@@ -109,7 +111,7 @@ export default function HomePage() {
       
       const parsedDate = eventDetails.dateQuery ? parseFlexibleSwedishDateString(eventDetails.dateQuery, new Date()) : new Date();
       if (!parsedDate) {
-        toast({ title: "AI Fel", description: `Kunde inte tolka datum: "${eventDetails.dateQuery}".`, variant: "destructive" });
+        // Toast will be handled by AiAssistant based on AI's response (clarification needed)
         return null;
       }
       const dateStr = formatInputDate(parsedDate);
@@ -120,7 +122,9 @@ export default function HomePage() {
         if (parsedTime) {
           startTime = formatInputTime(parsedTime);
         } else {
-          toast({ title: "AI Varning", description: `Kunde inte tolka tid: "${eventDetails.timeQuery}". Använder standardtid.`, variant: "default" });
+          // AI should ideally ask for clarification if timeQuery is bad.
+          // If it proceeds, this is a fallback warning from frontend.
+          toast({ title: "AI Varning", description: `Kunde inte tolka tid: "${eventDetails.timeQuery}". Använder standardtid ${startTime}.`, variant: "default" });
         }
       }
       
@@ -128,7 +132,7 @@ export default function HomePage() {
       endTimeDate.setHours(endTimeDate.getHours() + 1); 
       const endTime = format(endTimeDate, TIME_FORMAT);
       const description = eventDetails.description || '';
-      const color = eventDetails.color || '#69B4EB'; // Default from theme's accent
+      const color = eventDetails.color || '#69B4EB'; 
       
       let imageUrl: string | undefined = undefined;
       if (title) {
@@ -136,8 +140,7 @@ export default function HomePage() {
           const imageResult = await generateEventImage({ eventTitle: title });
           imageUrl = imageResult.imageUrl;
         } catch (imgError) {
-          console.error("AI Event Image Generation Error:", imgError);
-          // Non-critical, proceed without image
+          console.error("AI Event Image Generation Error (Create):", imgError);
         }
       }
 
@@ -153,12 +156,12 @@ export default function HomePage() {
       };
       
       setEvents(prevEvents => [...prevEvents, newEvent]);
-      // Toast is handled by AiAssistant now based on AI's confirmation message
       return newEvent;
 
     } catch (e) {
       console.error("Error processing AI event creation:", e);
-      toast({ title: "AI Fel", description: "Kunde inte skapa händelse från AI instruktion.", variant: "destructive" });
+      // Generic error if something unexpected happens here, AI should provide main user feedback
+      toast({ title: "Internt Fel", description: "Kunde inte skapa händelse från AI instruktion på grund av ett internt fel.", variant: "destructive" });
       return null;
     }
   };
@@ -166,54 +169,67 @@ export default function HomePage() {
   const findEventToModifyOrDelete = (identifier: any): CalendarEvent | null => {
     if (!identifier) return null;
 
-    const { title: targetTitle, dateQuery: targetDateQuery } = identifier;
+    const { title: targetTitle, dateQuery: targetDateQuery, timeQuery: targetTimeQuery } = identifier;
 
     if (!targetTitle) {
-      return null;
+        // AI should have provided a title if it's identifying an event
+        return null;
     }
 
     let potentialEvents = events.filter(e => e.title.toLowerCase().includes(targetTitle.toLowerCase()));
 
     if (potentialEvents.length === 0) return null;
-    if (potentialEvents.length === 1 && !targetDateQuery) return potentialEvents[0]; // If only one title match and no date query, it's likely this one
 
+    let referenceDateForDateQuery: Date | null = null;
     if (targetDateQuery) {
-      const referenceDateForQuery = parseFlexibleSwedishDateString(targetDateQuery, new Date());
-      if (referenceDateForQuery) {
-        const dateFilteredEvents = potentialEvents.filter(e => 
-          isSameDay(parseInputDate(e.date), referenceDateForQuery)
-        );
-        if (dateFilteredEvents.length === 1) return dateFilteredEvents[0];
-        if (dateFilteredEvents.length > 0) potentialEvents = dateFilteredEvents; 
-        else if (potentialEvents.length > 0 && dateFilteredEvents.length === 0) {
-          // Title matched, but date query didn't. This might mean the user wants to change an event
-          // from a date that doesn't match targetDateQuery, or the date query was for the *new* date.
-          // AI prompt should clarify this. For now, if title matches but date query does not,
-          // and there's only one title match, we might assume it's that one, or require AI clarification.
-          // Let's stick to stricter matching for now. If dateQuery is provided, it must match.
-           // If no events match after date filtering, return null.
-           return null;
+        referenceDateForDateQuery = parseFlexibleSwedishDateString(targetDateQuery, new Date());
+        if (referenceDateForDateQuery) {
+            potentialEvents = potentialEvents.filter(e => 
+                isSameDay(parseInputDate(e.date), referenceDateForDateQuery!)
+            );
+        } else {
+            // dateQuery was provided but couldn't be parsed by frontend.
+            // If AI was confident, it implies it matched based on something, but frontend can't verify date.
+            // If multiple title matches exist, this is ambiguous.
+            if (potentialEvents.length > 1) return null; 
         }
-      } else {
-         // dateQuery was provided but couldn't be parsed, so we can't use it to filter.
-         // If there's only one title match, return that. Otherwise, it's ambiguous.
-         if (potentialEvents.length === 1) return potentialEvents[0];
-         return null; // Ambiguous if multiple title matches and dateQuery is unparsable
-      }
     }
+    if (potentialEvents.length === 0) return null;
+
+    if (targetTimeQuery) {
+        // Determine the base date for parsing the original timeQuery
+        // If referenceDateForDateQuery is set (meaning dateQuery was parsable and specific), use it.
+        // Otherwise, if we have potentialEvents, use the date of the first one (they should share the same date
+        // if dateQuery was broad like "idag" but successfully narrowed down the list).
+        // As a last resort, use new Date(), though this path should be rare if events were found.
+        const baseDateForOriginalTimeParse = 
+            referenceDateForDateQuery || 
+            (potentialEvents.length > 0 ? parseInputDate(potentialEvents[0].date) : new Date());
+            
+        const parsedOriginalTime = parseFlexibleSwedishTimeString(targetTimeQuery, baseDateForOriginalTimeParse);
+
+        if (parsedOriginalTime) {
+            const originalStartTimeStr = formatInputTime(parsedOriginalTime);
+            potentialEvents = potentialEvents.filter(e => e.startTime === originalStartTimeStr);
+        } else {
+            // timeQuery was provided but couldn't be parsed by frontend.
+            // If multiple events remain, this is ambiguous.
+            if (potentialEvents.length > 1) return null;
+        }
+    }
+    if (potentialEvents.length === 0) return null;
     
     if (potentialEvents.length > 1) {
-        // This toast should ideally be triggered by AI if it asks for clarification.
-        // toast({ title: "AI Info", description: `Flera händelser matchar "${targetTitle}". Specificera gärna mer.`, variant: "default" });
-        return null; // Ambiguous
+        // Still ambiguous after all filters. AI should ideally ask for clarification.
+        return null; 
     }
-    return potentialEvents[0]; // Should be one event by now or null
+    return potentialEvents[0] || null;
   };
   
   const handleAiModifyEvent = async (eventIdentifier: any, eventDetails: any): Promise<CalendarEvent | null> => {
     const eventToModify = findEventToModifyOrDelete(eventIdentifier);
     if (!eventToModify) {
-      // Toast handled by AiAssistant / AI flow if clarification needed
+      // AI should handle user feedback if it needs clarification or couldn't find the event.
       return null;
     }
 
@@ -231,22 +247,23 @@ export default function HomePage() {
       if (parsedDate) {
         updatedEventData.date = formatInputDate(parsedDate);
       } else {
-        toast({ title: "AI Varning", description: `Kunde inte tolka nytt datum: "${eventDetails.dateQuery}". Datumet ändras inte.`, variant: "default" });
+        // AI should clarify if date is unparsable by frontend
+        toast({ title: "AI Varning", description: `Kunde inte tolka nytt datum från AI: "${eventDetails.dateQuery}". Datumet ändras inte.`, variant: "default" });
       }
     }
-    // Time needs to be parsed relative to the *new* date if date also changes, or original date if not.
-    const baseDateForTimeParse = updatedEventData.date ? parseInputDate(updatedEventData.date) : parseInputDate(eventToModify.date);
+    
+    const baseDateForNewTimeParse = updatedEventData.date ? parseInputDate(updatedEventData.date) : parseInputDate(eventToModify.date);
     if (eventDetails.timeQuery) {
-      const parsedTime = parseFlexibleSwedishTimeString(eventDetails.timeQuery, baseDateForTimeParse);
-      if (parsedTime) {
-        updatedEventData.startTime = formatInputTime(parsedTime);
+      const parsedNewTime = parseFlexibleSwedishTimeString(eventDetails.timeQuery, baseDateForNewTimeParse);
+      if (parsedNewTime) {
+        updatedEventData.startTime = formatInputTime(parsedNewTime);
         
-        const currentEventDurationMs = parseInputTime(eventToModify.endTime, baseDateForTimeParse).getTime() - parseInputTime(eventToModify.startTime, baseDateForTimeParse).getTime();
-        const newEndTime = new Date(parsedTime.getTime() + currentEventDurationMs);
+        const currentEventDurationMs = parseInputTime(eventToModify.endTime, baseDateForNewTimeParse).getTime() - parseInputTime(eventToModify.startTime, baseDateForNewTimeParse).getTime();
+        const newEndTime = new Date(parsedNewTime.getTime() + currentEventDurationMs);
         updatedEventData.endTime = formatInputTime(newEndTime);
 
       } else {
-         toast({ title: "AI Varning", description: `Kunde inte tolka ny tid: "${eventDetails.timeQuery}". Tiden ändras inte.`, variant: "default" });
+         toast({ title: "AI Varning", description: `Kunde inte tolka ny tid från AI: "${eventDetails.timeQuery}". Tiden ändras inte.`, variant: "default" });
       }
     }
     if (typeof eventDetails.description === 'string') {
@@ -257,12 +274,16 @@ export default function HomePage() {
     }
     
     let finalImageUrl = eventToModify.imageUrl;
-    if (titleChanged && newTitleForImage) {
+    // Regenerate image if title has changed AND the new title is not empty.
+    // Or if there's no image and a title exists.
+    const shouldRegenerateImage = (titleChanged && newTitleForImage) || (!eventToModify.imageUrl && newTitleForImage);
+
+    if (shouldRegenerateImage) {
         try {
-            const imageResult = await generateEventImage({ eventTitle: newTitleForImage });
+            const imageResult = await generateEventImage({ eventTitle: newTitleForImage! }); // newTitleForImage is guaranteed by shouldRegenerateImage logic
             finalImageUrl = imageResult.imageUrl;
         } catch (imgError) {
-            console.error("AI Event Image Regeneration Error:", imgError);
+            console.error("AI Event Image Regeneration Error (Modify):", imgError);
         }
     } else if (titleChanged && !newTitleForImage) { 
         finalImageUrl = undefined; 
@@ -272,7 +293,7 @@ export default function HomePage() {
       title: updatedEventData.title ?? eventToModify.title,
       date: updatedEventData.date ?? eventToModify.date,
       startTime: updatedEventData.startTime ?? eventToModify.startTime,
-      endTime: updatedEventData.endTime ?? eventToModify.endTime, // Ensure endTime is also updated
+      endTime: updatedEventData.endTime ?? eventToModify.endTime, 
       description: updatedEventData.description ?? eventToModify.description,
       color: updatedEventData.color ?? eventToModify.color,
     };
@@ -285,7 +306,6 @@ export default function HomePage() {
   const handleAiDeleteEvent = async (eventIdentifier: any): Promise<string | null> => {
      const eventToDeleteByAi = findEventToModifyOrDelete(eventIdentifier);
     if (!eventToDeleteByAi) {
-      // Toast handled by AiAssistant
       return null;
     }
     handleDeleteEvent(eventToDeleteByAi.id);
@@ -379,3 +399,6 @@ export default function HomePage() {
     </div>
   );
 }
+
+
+    
