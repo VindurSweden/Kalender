@@ -79,8 +79,6 @@ export default function HomePage() {
       setEvents(prevEvents =>
         prevEvents.map(e => (e.id === id ? { ...e, ...eventData, imageUrl: newImageUrl ?? e.imageUrl } : e))
       );
-      // Toast is handled by AiAssistant or EventForm now.
-      // toast({ title: "Händelse Uppdaterad", description: `"${eventData.title}" har uppdaterats.` });
     } else { 
       const newEvent: CalendarEvent = {
         ...eventData,
@@ -88,7 +86,6 @@ export default function HomePage() {
         imageUrl: newImageUrl,
       };
       setEvents(prevEvents => [...prevEvents, newEvent]);
-      // toast({ title: "Händelse Skapad", description: `"${newEvent.title}" har lagts till.` });
     }
   };
   
@@ -100,30 +97,30 @@ export default function HomePage() {
     const event = events.find(e => e.id === eventId);
     setEvents(prevEvents => prevEvents.filter(e => e.id !== eventId));
     setEventToDelete(null);
-    if (event && !isAiAssistantOpen) { // Avoid double toast if AI initiated
+    if (event && !isAiAssistantOpen) { 
       toast({ title: "Händelse Borttagen", description: `"${event.title}" har tagits bort.` });
     }
   };
 
   const handleAiCreateEvent = async (eventDetails: any): Promise<CalendarEvent | null> => {
+    console.log("[HomePage] handleAiCreateEvent received eventDetails:", eventDetails);
     try {
       const title = eventDetails.title || 'AI Händelse';
       
       const parsedDate = eventDetails.dateQuery ? parseFlexibleSwedishDateString(eventDetails.dateQuery, new Date()) : new Date();
       if (!parsedDate) {
-        // Toast will be handled by AiAssistant based on AI's response (clarification needed)
+        console.warn("[HomePage] AI Create: Could not parse dateQuery:", eventDetails.dateQuery);
         return null;
       }
       const dateStr = formatInputDate(parsedDate);
 
-      let startTime = '09:00'; // Default start time
+      let startTime = '09:00'; 
       if (eventDetails.timeQuery) {
         const parsedTime = parseFlexibleSwedishTimeString(eventDetails.timeQuery, parsedDate);
         if (parsedTime) {
           startTime = formatInputTime(parsedTime);
         } else {
-          // AI should ideally ask for clarification if timeQuery is bad.
-          // If it proceeds, this is a fallback warning from frontend.
+          console.warn(`[HomePage] AI Create: Could not parse timeQuery: "${eventDetails.timeQuery}". Using default ${startTime}.`);
           toast({ title: "AI Varning", description: `Kunde inte tolka tid: "${eventDetails.timeQuery}". Använder standardtid ${startTime}.`, variant: "default" });
         }
       }
@@ -137,10 +134,12 @@ export default function HomePage() {
       let imageUrl: string | undefined = undefined;
       if (title) {
         try {
+          console.log(`[HomePage] AI Create: Generating image for title: "${title}"`);
           const imageResult = await generateEventImage({ eventTitle: title });
           imageUrl = imageResult.imageUrl;
+          console.log(`[HomePage] AI Create: Image generation result for "${title}": ${imageUrl ? 'Success' : 'No URL'}`);
         } catch (imgError) {
-          console.error("AI Event Image Generation Error (Create):", imgError);
+          console.error("[HomePage] AI Create: Image Generation Error:", imgError);
         }
       }
 
@@ -156,27 +155,32 @@ export default function HomePage() {
       };
       
       setEvents(prevEvents => [...prevEvents, newEvent]);
+      console.log("[HomePage] AI Create: Successfully created event:", newEvent);
       return newEvent;
 
     } catch (e) {
-      console.error("Error processing AI event creation:", e);
-      // Generic error if something unexpected happens here, AI should provide main user feedback
+      console.error("[HomePage] AI Create: Error processing AI event creation:", e);
       toast({ title: "Internt Fel", description: "Kunde inte skapa händelse från AI instruktion på grund av ett internt fel.", variant: "destructive" });
       return null;
     }
   };
 
   const findEventToModifyOrDelete = (identifier: any): CalendarEvent | null => {
-    if (!identifier) return null;
+    console.log("[HomePage] findEventToModifyOrDelete, identifier:", identifier);
+    if (!identifier) {
+      console.log("[HomePage] findEventToModifyOrDelete: No identifier provided.");
+      return null;
+    }
 
     const { title: targetTitle, dateQuery: targetDateQuery, timeQuery: targetTimeQuery } = identifier;
 
     if (!targetTitle) {
-        // AI should have provided a title if it's identifying an event
+        console.log("[HomePage] findEventToModifyOrDelete: No targetTitle in identifier.");
         return null;
     }
 
     let potentialEvents = events.filter(e => e.title.toLowerCase().includes(targetTitle.toLowerCase()));
+    console.log(`[HomePage] findEventToModifyOrDelete: Found ${potentialEvents.length} potential events after title match for "${targetTitle}".`);
 
     if (potentialEvents.length === 0) return null;
 
@@ -184,24 +188,23 @@ export default function HomePage() {
     if (targetDateQuery) {
         referenceDateForDateQuery = parseFlexibleSwedishDateString(targetDateQuery, new Date());
         if (referenceDateForDateQuery) {
+            console.log(`[HomePage] findEventToModifyOrDelete: Parsed targetDateQuery "${targetDateQuery}" to ${formatInputDate(referenceDateForDateQuery)}.`);
             potentialEvents = potentialEvents.filter(e => 
                 isSameDay(parseInputDate(e.date), referenceDateForDateQuery!)
             );
+            console.log(`[HomePage] findEventToModifyOrDelete: Found ${potentialEvents.length} potential events after dateQuery match.`);
         } else {
-            // dateQuery was provided but couldn't be parsed by frontend.
-            // If AI was confident, it implies it matched based on something, but frontend can't verify date.
-            // If multiple title matches exist, this is ambiguous.
-            if (potentialEvents.length > 1) return null; 
+            console.warn(`[HomePage] findEventToModifyOrDelete: Could not parse targetDateQuery "${targetDateQuery}".`);
+            if (potentialEvents.length > 1) {
+              console.log("[HomePage] findEventToModifyOrDelete: Ambiguous due to unparsed dateQuery and multiple title matches.");
+              return null;
+            }
         }
     }
     if (potentialEvents.length === 0) return null;
 
     if (targetTimeQuery) {
-        // Determine the base date for parsing the original timeQuery
-        // If referenceDateForDateQuery is set (meaning dateQuery was parsable and specific), use it.
-        // Otherwise, if we have potentialEvents, use the date of the first one (they should share the same date
-        // if dateQuery was broad like "idag" but successfully narrowed down the list).
-        // As a last resort, use new Date(), though this path should be rare if events were found.
+        console.log(`[HomePage] findEventToModifyOrDelete: Attempting to filter by targetTimeQuery "${targetTimeQuery}".`);
         const baseDateForOriginalTimeParse = 
             referenceDateForDateQuery || 
             (potentialEvents.length > 0 ? parseInputDate(potentialEvents[0].date) : new Date());
@@ -210,28 +213,38 @@ export default function HomePage() {
 
         if (parsedOriginalTime) {
             const originalStartTimeStr = formatInputTime(parsedOriginalTime);
+            console.log(`[HomePage] findEventToModifyOrDelete: Parsed targetTimeQuery "${targetTimeQuery}" to ${originalStartTimeStr}.`);
             potentialEvents = potentialEvents.filter(e => e.startTime === originalStartTimeStr);
+            console.log(`[HomePage] findEventToModifyOrDelete: Found ${potentialEvents.length} potential events after timeQuery match.`);
         } else {
-            // timeQuery was provided but couldn't be parsed by frontend.
-            // If multiple events remain, this is ambiguous.
-            if (potentialEvents.length > 1) return null;
+            console.warn(`[HomePage] findEventToModifyOrDelete: Could not parse targetTimeQuery "${targetTimeQuery}".`);
+            if (potentialEvents.length > 1) {
+              console.log("[HomePage] findEventToModifyOrDelete: Ambiguous due to unparsed timeQuery and multiple remaining matches.");
+              return null;
+            }
         }
     }
-    if (potentialEvents.length === 0) return null;
+    if (potentialEvents.length === 0) {
+      console.log("[HomePage] findEventToModifyOrDelete: No events found after all filters.");
+      return null;
+    }
     
     if (potentialEvents.length > 1) {
-        // Still ambiguous after all filters. AI should ideally ask for clarification.
+        console.warn("[HomePage] findEventToModifyOrDelete: Ambiguous - multiple events match criteria:", potentialEvents);
         return null; 
     }
+    console.log("[HomePage] findEventToModifyOrDelete: Found unique event:", potentialEvents[0]);
     return potentialEvents[0] || null;
   };
   
   const handleAiModifyEvent = async (eventIdentifier: any, eventDetails: any): Promise<CalendarEvent | null> => {
+    console.log("[HomePage] handleAiModifyEvent received:", { eventIdentifier, eventDetails });
     const eventToModify = findEventToModifyOrDelete(eventIdentifier);
     if (!eventToModify) {
-      // AI should handle user feedback if it needs clarification or couldn't find the event.
+      console.warn("[HomePage] AI Modify: Could not find event to modify with identifier:", eventIdentifier);
       return null;
     }
+    console.log("[HomePage] AI Modify: Found event to modify:", eventToModify);
 
     const updatedEventData: Partial<Omit<CalendarEvent, 'id' | 'imageUrl'>> = {};
     let titleChanged = false;
@@ -241,13 +254,15 @@ export default function HomePage() {
       if (eventToModify.title !== eventDetails.title) titleChanged = true;
       updatedEventData.title = eventDetails.title;
       newTitleForImage = eventDetails.title;
+      console.log(`[HomePage] AI Modify: Title changed to "${newTitleForImage}"`);
     }
     if (eventDetails.dateQuery) {
       const parsedDate = parseFlexibleSwedishDateString(eventDetails.dateQuery, parseInputDate(eventToModify.date));
       if (parsedDate) {
         updatedEventData.date = formatInputDate(parsedDate);
+        console.log(`[HomePage] AI Modify: Date changed to "${updatedEventData.date}" from query "${eventDetails.dateQuery}"`);
       } else {
-        // AI should clarify if date is unparsable by frontend
+        console.warn(`[HomePage] AI Modify: Could not parse new dateQuery "${eventDetails.dateQuery}". Date not changed.`);
         toast({ title: "AI Varning", description: `Kunde inte tolka nytt datum från AI: "${eventDetails.dateQuery}". Datumet ändras inte.`, variant: "default" });
       }
     }
@@ -257,36 +272,42 @@ export default function HomePage() {
       const parsedNewTime = parseFlexibleSwedishTimeString(eventDetails.timeQuery, baseDateForNewTimeParse);
       if (parsedNewTime) {
         updatedEventData.startTime = formatInputTime(parsedNewTime);
+        console.log(`[HomePage] AI Modify: Start time changed to "${updatedEventData.startTime}" from query "${eventDetails.timeQuery}"`);
         
         const currentEventDurationMs = parseInputTime(eventToModify.endTime, baseDateForNewTimeParse).getTime() - parseInputTime(eventToModify.startTime, baseDateForNewTimeParse).getTime();
         const newEndTime = new Date(parsedNewTime.getTime() + currentEventDurationMs);
         updatedEventData.endTime = formatInputTime(newEndTime);
+        console.log(`[HomePage] AI Modify: End time calculated to "${updatedEventData.endTime}"`);
 
       } else {
+         console.warn(`[HomePage] AI Modify: Could not parse new timeQuery "${eventDetails.timeQuery}". Time not changed.`);
          toast({ title: "AI Varning", description: `Kunde inte tolka ny tid från AI: "${eventDetails.timeQuery}". Tiden ändras inte.`, variant: "default" });
       }
     }
     if (typeof eventDetails.description === 'string') {
       updatedEventData.description = eventDetails.description;
+      console.log(`[HomePage] AI Modify: Description changed to "${updatedEventData.description}"`);
     }
     if (eventDetails.color) {
       updatedEventData.color = eventDetails.color;
+      console.log(`[HomePage] AI Modify: Color changed to "${updatedEventData.color}"`);
     }
     
     let finalImageUrl = eventToModify.imageUrl;
-    // Regenerate image if title has changed AND the new title is not empty.
-    // Or if there's no image and a title exists.
     const shouldRegenerateImage = (titleChanged && newTitleForImage) || (!eventToModify.imageUrl && newTitleForImage);
 
     if (shouldRegenerateImage) {
+        console.log(`[HomePage] AI Modify: Regenerating image for title: "${newTitleForImage!}"`);
         try {
-            const imageResult = await generateEventImage({ eventTitle: newTitleForImage! }); // newTitleForImage is guaranteed by shouldRegenerateImage logic
+            const imageResult = await generateEventImage({ eventTitle: newTitleForImage! }); 
             finalImageUrl = imageResult.imageUrl;
+            console.log(`[HomePage] AI Modify: Image generation result: ${finalImageUrl ? 'Success' : 'No URL'}`);
         } catch (imgError) {
-            console.error("AI Event Image Regeneration Error (Modify):", imgError);
+            console.error("[HomePage] AI Modify: Image Regeneration Error:", imgError);
         }
     } else if (titleChanged && !newTitleForImage) { 
         finalImageUrl = undefined; 
+        console.log("[HomePage] AI Modify: Title changed to empty, removing image URL.");
     }
     
     const eventDataForSave: Omit<CalendarEvent, 'id' | 'imageUrl'> = {
@@ -299,16 +320,21 @@ export default function HomePage() {
     };
     
     handleSaveEvent(eventDataForSave, eventToModify.id, finalImageUrl);
-    
-    return { ...eventDataForSave, id: eventToModify.id, imageUrl: finalImageUrl };
+    const savedEvent = { ...eventDataForSave, id: eventToModify.id, imageUrl: finalImageUrl };
+    console.log("[HomePage] AI Modify: Successfully modified event:", savedEvent);
+    return savedEvent;
   };
 
   const handleAiDeleteEvent = async (eventIdentifier: any): Promise<string | null> => {
-     const eventToDeleteByAi = findEventToModifyOrDelete(eventIdentifier);
+    console.log("[HomePage] handleAiDeleteEvent received identifier:", eventIdentifier);
+    const eventToDeleteByAi = findEventToModifyOrDelete(eventIdentifier);
     if (!eventToDeleteByAi) {
+      console.warn("[HomePage] AI Delete: Could not find event to delete with identifier:", eventIdentifier);
       return null;
     }
+    console.log("[HomePage] AI Delete: Found event to delete:", eventToDeleteByAi);
     handleDeleteEvent(eventToDeleteByAi.id);
+    console.log("[HomePage] AI Delete: Successfully deleted event with ID:", eventToDeleteByAi.id);
     return eventToDeleteByAi.id;
   };
 
@@ -399,6 +425,3 @@ export default function HomePage() {
     </div>
   );
 }
-
-
-    

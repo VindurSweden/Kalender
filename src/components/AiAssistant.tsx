@@ -79,9 +79,16 @@ const AiAssistant: FC<AiAssistantProps> = ({
         .filter(msg => msg.id !== thinkingMessageId) // Exclude the "Thinking..." message
         .map(msg => ({ sender: msg.sender, text: msg.text }));
 
+      console.log("[AiAssistant] Sending to AI:", {
+        instruction: currentInput,
+        currentEvents: simplifiedEventsForAI,
+        conversationHistory: conversationHistoryForAI
+      });
 
       const aiResponse: NaturalLanguageEventCreationOutput = await naturalLanguageEventCreation(currentInput, simplifiedEventsForAI, conversationHistoryForAI);
       
+      console.log("[AiAssistant] Received from AI:", aiResponse);
+
       setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
 
       let responseText = aiResponse.userConfirmationMessage || "Jag har bearbetat din förfrågan.";
@@ -96,11 +103,8 @@ const AiAssistant: FC<AiAssistantProps> = ({
         let opDetailsText = "";
         for (const operation of aiResponse.operations) {
           if (operation.commandType.toUpperCase() === 'QUERY') {
-            // The userConfirmationMessage already contains the answer for QUERY.
-            // No further action needed on the frontend for the operation itself.
             operationsPerformedOrQueryAnswered = true;
-            // responseText is already set to aiResponse.userConfirmationMessage
-            break; // Assuming only one QUERY operation, or the first one is primary.
+            break; 
           }
 
           operationsPerformedOrQueryAnswered = true;
@@ -109,8 +113,7 @@ const AiAssistant: FC<AiAssistantProps> = ({
               if (operation.eventDetails) {
                 const createdEvent = await onAiCreateEvent(operation.eventDetails);
                 if (createdEvent) {
-                  // The userConfirmationMessage from AI should be good, or we can append.
-                  // opDetailsText += `\nSkapade händelse: "${createdEvent.title}" den ${formatInputDate(parseFlexibleSwedishDateString(createdEvent.date, new Date()) || new Date())} kl ${createdEvent.startTime}.`;
+                  // UserConfirmationMessage from AI should suffice
                 } else {
                   opDetailsText += `\nMisslyckades med att skapa en händelse baserat på: ${JSON.stringify(operation.eventDetails)}.`;
                 }
@@ -120,7 +123,7 @@ const AiAssistant: FC<AiAssistantProps> = ({
               if (operation.eventIdentifier && operation.eventDetails) {
                 const modifiedEvent = await onAiModifyEvent(operation.eventIdentifier, operation.eventDetails);
                 if (modifiedEvent) {
-                  // opDetailsText += `\nÄndrade händelse: "${modifiedEvent.title}".`;
+                  // UserConfirmationMessage from AI should suffice
                 } else {
                   opDetailsText += `\nMisslyckades med att ändra en händelse. Kunde inte hitta matchande händelse eller tolka nya detaljer.`;
                 }
@@ -130,7 +133,7 @@ const AiAssistant: FC<AiAssistantProps> = ({
               if (operation.eventIdentifier) {
                 const deletedEventId = await onAiDeleteEvent(operation.eventIdentifier);
                 if (deletedEventId) {
-                  // opDetailsText += `\nEn händelse har tagits bort.`;
+                  // UserConfirmationMessage from AI should suffice
                 } else {
                   opDetailsText += `\nMisslyckades med att ta bort en händelse. Kunde inte hitta matchande händelse.`;
                 }
@@ -140,7 +143,7 @@ const AiAssistant: FC<AiAssistantProps> = ({
               opDetailsText += `\nOkänt kommando: ${operation.commandType}`;
           }
         }
-        if (opDetailsText && !responseText.includes(opDetailsText)) { // Append details if any errors occurred during execution and not already in main message
+        if (opDetailsText && !responseText.includes(opDetailsText)) { 
           responseText += opDetailsText;
         }
         
@@ -148,14 +151,12 @@ const AiAssistant: FC<AiAssistantProps> = ({
         setMessages(prev => [...prev, aiResponseMessage]);
 
       } else if (aiResponse.userConfirmationMessage) {
-        // No operations, but there's a confirmation/response message (e.g., for general chat or unhandled query)
         const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
         setMessages(prev => [...prev, aiResponseMessage]);
         operationsPerformedOrQueryAnswered = true;
       }
       
       if (!operationsPerformedOrQueryAnswered && !(aiResponse.requiresClarification && aiResponse.clarificationQuestion)) {
-         // Only show this generic message if no specific action or clarification was provided.
          responseText = "Jag är osäker på vad jag ska göra med den informationen, eller så kunde jag inte utföra någon åtgärd.";
          const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
          setMessages(prev => [...prev, aiResponseMessage]);
@@ -235,4 +236,3 @@ const AiAssistant: FC<AiAssistantProps> = ({
 };
 
 export default AiAssistant;
-

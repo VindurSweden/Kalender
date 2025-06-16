@@ -206,10 +206,13 @@ const naturalLanguageEventCreationFlow = ai.defineFlow(
     outputSchema: NaturalLanguageEventCreationOutputSchema,
   },
   async (input: NaturalLanguageEventCreationInput): Promise<NaturalLanguageEventCreationOutput> => {
+    console.log("[AI Flow] Input to orchestratorPrompt:", JSON.stringify(input, null, 2));
+    
     const promptResponse = await orchestratorPrompt(input);
+    console.log("[AI Flow] Raw response from orchestratorPrompt:", JSON.stringify(promptResponse, null, 2));
 
     if (!promptResponse || !promptResponse.output) {
-        console.warn('Orchestrator prompt did not return a valid structured output. Input:', input, 'Full response:', promptResponse);
+        console.warn('[AI Flow] Orchestrator prompt did not return a valid structured output. Input:', input, 'Full response:', promptResponse);
         return {
             operations: [],
             userConfirmationMessage: "Jag kunde tyvärr inte tolka din förfrågan just nu. Försök igen eller formulera om dig.",
@@ -219,6 +222,7 @@ const naturalLanguageEventCreationFlow = ai.defineFlow(
     }
     
     const output = promptResponse.output;
+    console.log("[AI Flow] Structured output from orchestratorPrompt:", JSON.stringify(output, null, 2));
 
     // Ensure output structure matches the schema
     return {
@@ -243,8 +247,3 @@ export async function naturalLanguageEventCreation(
   const currentDateStr = format(new Date(), 'yyyy-MM-dd');
   return naturalLanguageEventCreationFlow({ instruction, currentDate: currentDateStr, currentEvents: currentEventsForAI, conversationHistory });
 }
-
-
-    
-
-    
