@@ -1,8 +1,10 @@
+
 "use client";
 
 import type { FC } from 'react';
+import Image from 'next/image';
 import { CalendarEvent } from '@/types/event';
-import { getDaysInMonth, isSameDay, isSameMonth, format, getDayOfWeekShort, SwedishLocale } from '@/lib/date-utils';
+import { getDaysInMonth, isSameDay, isSameMonth, format, getDayOfWeekShort, SwedishLocale, parseInputDate } from '@/lib/date-utils';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { PlusCircle } from 'lucide-react';
@@ -19,10 +21,8 @@ const MonthView: FC<MonthViewProps> = ({ currentDate, events, onDayClick, onEven
   const today = new Date();
 
   const dayHeaders = Array.from({ length: 7 }, (_, i) => {
-    // Get a date that corresponds to each day of the week, starting with Sunday (default for startOfWeek)
-    // Adjust if locale makes week start on Monday (like 'sv')
     const dayIndex = SwedishLocale.options?.weekStartsOn === 1 ? (i + 1) % 7 : i;
-    const d = new Date(2023, 0, dayIndex + 1); // Using a known Sunday to get correct day names for the locale
+    const d = new Date(2023, 0, dayIndex + 1); 
     return getDayOfWeekShort(d);
   });
 
@@ -44,7 +44,7 @@ const MonthView: FC<MonthViewProps> = ({ currentDate, events, onDayClick, onEven
             <div
               key={index}
               className={cn(
-                'relative min-h-[100px] sm:min-h-[120px] p-2 border-b border-r border-border transition-colors duration-200 ease-in-out',
+                'relative min-h-[100px] sm:min-h-[120px] p-2 border-b border-r border-border transition-colors duration-200 ease-in-out flex flex-col', // Added flex flex-col
                 isCurrentMonth ? 'bg-card hover:bg-accent/10' : 'bg-muted/30 text-muted-foreground hover:bg-muted/50',
                 isToday && isCurrentMonth && 'bg-primary/10'
               )}
@@ -54,23 +54,36 @@ const MonthView: FC<MonthViewProps> = ({ currentDate, events, onDayClick, onEven
               tabIndex={0}
               onKeyDown={(e) => e.key === 'Enter' && onDayClick(day)}
             >
-              <time dateTime={format(day, 'yyyy-MM-dd')} className={cn('text-sm font-medium', isToday && 'text-primary font-bold')}>
+              <time dateTime={format(day, 'yyyy-MM-dd')} className={cn('text-sm font-medium self-start', isToday && 'text-primary font-bold')}>
                 {format(day, 'd')}
               </time>
-              <div className="mt-1 space-y-1">
+              <div className="mt-1 space-y-1 overflow-y-auto flex-grow"> {/* Added overflow-y-auto and flex-grow */}
                 {eventsForDay.slice(0, 2).map(event => (
                   <button
                     key={event.id}
                     onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
-                    className="w-full text-left text-xs p-1 rounded truncate block hover:bg-accent/20 focus:bg-accent/30"
-                    style={{ backgroundColor: event.color + '33', borderLeft: `3px solid ${event.color}`}} // Semi-transparent bg
+                    className="w-full text-left text-xs p-1 rounded block hover:bg-accent/20 focus:bg-accent/30 overflow-hidden"
+                    style={{ backgroundColor: event.color + '33', borderLeft: `3px solid ${event.color}`}}
                     title={`${event.title} (${event.startTime}-${event.endTime})`}
                   >
-                    {event.title}
+                    {event.imageUrl && (
+                      <div className="relative h-8 w-full mb-1 rounded-sm overflow-hidden">
+                        <Image 
+                          src={event.imageUrl} 
+                          alt="" 
+                          layout="fill" 
+                          objectFit="cover" 
+                          data-ai-hint="event thumbnail" 
+                          className="rounded-sm"
+                        />
+                      </div>
+                    )}
+                    <span className="block truncate font-medium">{event.title}</span>
+                    <span className="block truncate text-muted-foreground text-[10px]">{event.startTime} - {event.endTime}</span>
                   </button>
                 ))}
                 {eventsForDay.length > 2 && (
-                  <p className="text-xs text-muted-foreground mt-1">+{eventsForDay.length - 2} more</p>
+                  <p className="text-xs text-muted-foreground mt-1 text-center">+{eventsForDay.length - 2} more</p>
                 )}
               </div>
               <Button 
@@ -89,12 +102,5 @@ const MonthView: FC<MonthViewProps> = ({ currentDate, events, onDayClick, onEven
     </div>
   );
 };
-
-// Helper to parse date string from event.date
-const parseInputDate = (dateString: string): Date => {
-    const [year, month, day] = dateString.split('-').map(Number);
-    return new Date(year, month - 1, day);
-};
-
 
 export default MonthView;

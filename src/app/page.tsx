@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
@@ -24,6 +25,7 @@ import {
   addMonths, subMonths, addWeeks, subWeeks, getMonthNameYear, 
   formatInputDate, parseInputDate, parseInputTime, TIME_FORMAT, combineDateAndTime, format 
 } from '@/lib/date-utils';
+import { generateEventImage } from '@/ai/flows/generate-event-image';
 
 
 export default function HomePage() {
@@ -107,39 +109,40 @@ export default function HomePage() {
   // AI Assistant handlers
   const handleAiCreateEvent = async (eventDetails: any): Promise<CalendarEvent | null> => {
     try {
-      // Example: eventDetails = { title: "Möte", date: "2024-07-15", time: "10:00", description: "Diskutera..." }
-      // More robust parsing and validation needed here
       const title = eventDetails.title || 'AI Event';
       const dateStr = eventDetails.date ? formatInputDate(parseInputDate(eventDetails.date)) : formatInputDate(new Date());
       const startTime = eventDetails.time || '12:00';
-      // Assume 1 hour duration if not specified by AI
       const endTimeDate = combineDateAndTime(parseInputDate(dateStr), parseInputTime(startTime));
-      endTimeDate.setHours(endTimeDate.getHours() + 1);
+      endTimeDate.setHours(endTimeDate.getHours() + 1); // Assume 1 hour duration
       const endTime = format(endTimeDate, TIME_FORMAT);
-
       const description = eventDetails.description || '';
       
-      const newEventData: Omit<CalendarEvent, 'id' | 'imageUrl'> = {
+      let imageUrl: string | undefined = undefined;
+      if (description) {
+        try {
+          const imageResult = await generateEventImage({ eventDescription: description });
+          imageUrl = imageResult.imageUrl;
+        } catch (imgError) {
+          console.error("AI Event Image Generation Error:", imgError);
+          toast({ title: "AI Info", description: "Kunde inte generera bild för AI-händelse.", variant: "default" });
+        }
+      }
+
+      const newEvent: CalendarEvent = {
+        id: crypto.randomUUID(),
         title,
         date: dateStr,
         startTime,
         endTime,
         description,
         color: '#69B4EB', // Default AI event color
+        imageUrl,
       };
       
-      // Call existing save logic, which will also handle image generation
-      const tempId = crypto.randomUUID(); // Create a temporary ID to find the event later for returning
-      handleSaveEvent(newEventData, undefined, undefined); // Image will be generated within handleSaveEvent if description exists
+      setEvents(prevEvents => [...prevEvents, newEvent]);
+      toast({ title: "Händelse skapad av AI", description: `"${newEvent.title}" har lagts till.` });
       
-      // Find the event to return (it might take a moment for state to update and image to generate)
-      // This is a simplification; in a real app, handleSaveEvent might return the new event
-      return new Promise(resolve => {
-        setTimeout(() => {
-           const createdEvent = events.find(e => e.title === title && e.date === dateStr && e.startTime === startTime);
-           resolve(createdEvent || null);
-        }, 500); // Wait for state update and potential image gen
-      });
+      return newEvent;
 
     } catch (e) {
       console.error("Error processing AI event creation:", e);
@@ -149,16 +152,13 @@ export default function HomePage() {
   };
 
   const findEventToModifyOrDelete = (eventDetails: any): CalendarEvent | null => {
-    // Try to find by ID if provided by AI (ideal)
     if (eventDetails.id) {
       return events.find(e => e.id === eventDetails.id) || null;
     }
-    // Fallback: try to match by title and date (less reliable)
     if (eventDetails.title && eventDetails.date) {
       const targetDate = formatInputDate(parseInputDate(eventDetails.date));
       return events.find(e => e.title === eventDetails.title && e.date === targetDate) || null;
     }
-    // Further fallbacks: by title only, or other unique properties if available
     if (eventDetails.title) {
       return events.find(e => e.title === eventDetails.title) || null;
     }
@@ -168,28 +168,54 @@ export default function HomePage() {
   const handleAiModifyEvent = async (eventDetails: any): Promise<CalendarEvent | null> => {
     const eventToModify = findEventToModifyOrDelete(eventDetails);
     if (!eventToModify) {
-      toast({ title: "AI Error", description: "Could not find event to modify.", variant: "destructive" });
+      toast({ title: "AI Error", description: "Kunde inte hitta händelse att ändra.", variant: "destructive" });
       return null;
     }
 
-    const updatedData: Partial<CalendarEvent> = {};
-    if (eventDetails.title) updatedData.title = eventDetails.title;
-    if (eventDetails.date) updatedData.date = formatInputDate(parseInputDate(eventDetails.date));
-    if (eventDetails.time) updatedData.startTime = eventDetails.time; // AI might need to specify start/end or duration
-    // Handle endTime: if AI gives new start time, adjust end time or expect it from AI. For now, just update start.
-    if (eventDetails.description) updatedData.description = eventDetails.description;
+    const oldDescription = eventToModify.description;
+    const updatedEventDataFromAI: Partial<Omit<CalendarEvent, 'id' | 'imageUrl'>> = {};
 
-    const finalData = { ...eventToModify, ...updatedData };
+    if (eventDetails.title) updatedEventDataFromAI.title = eventDetails.title;
+    if (eventDetails.date) updatedEventDataFromAI.date = formatInputDate(parseInputDate(eventDetails.date));
+    if (eventDetails.time) updatedEventDataFromAI.startTime = eventDetails.time; // AI might need to specify start/end or duration
+    if (typeof eventDetails.description === 'string') updatedEventDataFromAI.description = eventDetails.description;
+    // Add other fields if AI can modify them, e.g. endTime, color
+
+    let finalImageUrl = eventToModify.imageUrl;
+    const descriptionChanged = typeof updatedEventDataFromAI.description === 'string' && updatedEventDataFromAI.description !== oldDescription;
+    const newDescription = updatedEventDataFromAI.description;
+
+    if (descriptionChanged && newDescription) {
+        try {
+            const imageResult = await generateEventImage({ eventDescription: newDescription });
+            finalImageUrl = imageResult.imageUrl;
+        } catch (imgError) {
+            console.error("AI Event Image Regeneration Error:", imgError);
+            toast({ title: "AI Info", description: "Kunde inte återskapa bild för AI-händelseändring.", variant: "default" });
+        }
+    } else if (descriptionChanged && !newDescription) {
+        finalImageUrl = undefined; // Description removed, so remove image
+    }
     
-    // Re-use handleSaveEvent for update logic, including image regeneration if description changes
-    handleSaveEvent(finalData, finalData.id, finalData.imageUrl); // Pass existing imageUrl to potentially preserve it or allow regeneration
+    const updatedEvent: CalendarEvent = {
+      ...eventToModify,
+      ...updatedEventDataFromAI, // Apply changes from AI
+      // imageUrl is handled by finalImageUrl
+    };
 
-    return new Promise(resolve => {
-        setTimeout(() => {
-           const modifiedEvent = events.find(e => e.id === finalData.id);
-           resolve(modifiedEvent || null);
-        }, 500);
-      });
+    // Prepare data for handleSaveEvent (Omit 'id' and 'imageUrl' from the main data part)
+    const { id: currentId, imageUrl: oldImgUrl, ...dataForSaveEvent } = updatedEvent;
+    
+    handleSaveEvent(dataForSaveEvent, eventToModify.id, finalImageUrl);
+
+    // Construct the event object that reflects the actual state after save
+    const actualModifiedEvent: CalendarEvent = {
+      ...dataForSaveEvent, // this contains all fields except id and imageUrl
+      id: eventToModify.id, // ensure original id
+      imageUrl: finalImageUrl,
+    };
+    
+    return actualModifiedEvent;
   };
 
   const handleAiDeleteEvent = async (eventDetails: any): Promise<string | null> => {
