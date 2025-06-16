@@ -128,7 +128,7 @@ export default function HomePage() {
       endTimeDate.setHours(endTimeDate.getHours() + 1); 
       const endTime = format(endTimeDate, TIME_FORMAT);
       const description = eventDetails.description || '';
-      const color = eventDetails.color || '#69B4EB';
+      const color = eventDetails.color || '#69B4EB'; // Default from theme's accent
       
       let imageUrl: string | undefined = undefined;
       if (title) {
@@ -153,7 +153,7 @@ export default function HomePage() {
       };
       
       setEvents(prevEvents => [...prevEvents, newEvent]);
-      toast({ title: "Händelse skapad av AI", description: `"${newEvent.title}" har lagts till.` });
+      // Toast is handled by AiAssistant now based on AI's confirmation message
       return newEvent;
 
     } catch (e) {
@@ -169,17 +169,14 @@ export default function HomePage() {
     const { title: targetTitle, dateQuery: targetDateQuery } = identifier;
 
     if (!targetTitle) {
-      // If no title is provided for identification, we cannot reliably find the event.
-      // AI should be prompted to ask for which event.
       return null;
     }
 
     let potentialEvents = events.filter(e => e.title.toLowerCase().includes(targetTitle.toLowerCase()));
 
     if (potentialEvents.length === 0) return null;
-    if (potentialEvents.length === 1) return potentialEvents[0];
+    if (potentialEvents.length === 1 && !targetDateQuery) return potentialEvents[0]; // If only one title match and no date query, it's likely this one
 
-    // If multiple events match the title, try to use dateQuery to disambiguate
     if (targetDateQuery) {
       const referenceDateForQuery = parseFlexibleSwedishDateString(targetDateQuery, new Date());
       if (referenceDateForQuery) {
@@ -187,23 +184,36 @@ export default function HomePage() {
           isSameDay(parseInputDate(e.date), referenceDateForQuery)
         );
         if (dateFilteredEvents.length === 1) return dateFilteredEvents[0];
-        if (dateFilteredEvents.length > 0) potentialEvents = dateFilteredEvents; // Narrow down
+        if (dateFilteredEvents.length > 0) potentialEvents = dateFilteredEvents; 
+        else if (potentialEvents.length > 0 && dateFilteredEvents.length === 0) {
+          // Title matched, but date query didn't. This might mean the user wants to change an event
+          // from a date that doesn't match targetDateQuery, or the date query was for the *new* date.
+          // AI prompt should clarify this. For now, if title matches but date query does not,
+          // and there's only one title match, we might assume it's that one, or require AI clarification.
+          // Let's stick to stricter matching for now. If dateQuery is provided, it must match.
+           // If no events match after date filtering, return null.
+           return null;
+        }
+      } else {
+         // dateQuery was provided but couldn't be parsed, so we can't use it to filter.
+         // If there's only one title match, return that. Otherwise, it's ambiguous.
+         if (potentialEvents.length === 1) return potentialEvents[0];
+         return null; // Ambiguous if multiple title matches and dateQuery is unparsable
       }
     }
     
-    // If still multiple, or couldn't use dateQuery, it's ambiguous.
-    // For now, return the first match, but ideally AI would ask for clarification.
-    // This function doesn't directly make the AI ask, but the AI flow should use this possibility.
     if (potentialEvents.length > 1) {
-        toast({ title: "AI Info", description: `Flera händelser matchar "${targetTitle}". Specificera gärna mer. Ändrar den första.`, variant: "default" });
+        // This toast should ideally be triggered by AI if it asks for clarification.
+        // toast({ title: "AI Info", description: `Flera händelser matchar "${targetTitle}". Specificera gärna mer.`, variant: "default" });
+        return null; // Ambiguous
     }
-    return potentialEvents[0];
+    return potentialEvents[0]; // Should be one event by now or null
   };
   
   const handleAiModifyEvent = async (eventIdentifier: any, eventDetails: any): Promise<CalendarEvent | null> => {
     const eventToModify = findEventToModifyOrDelete(eventIdentifier);
     if (!eventToModify) {
-      toast({ title: "AI Fel", description: "Kunde inte hitta händelse att ändra baserat på din beskrivning.", variant: "destructive" });
+      // Toast handled by AiAssistant / AI flow if clarification needed
       return null;
     }
 
@@ -224,14 +234,15 @@ export default function HomePage() {
         toast({ title: "AI Varning", description: `Kunde inte tolka nytt datum: "${eventDetails.dateQuery}". Datumet ändras inte.`, variant: "default" });
       }
     }
+    // Time needs to be parsed relative to the *new* date if date also changes, or original date if not.
+    const baseDateForTimeParse = updatedEventData.date ? parseInputDate(updatedEventData.date) : parseInputDate(eventToModify.date);
     if (eventDetails.timeQuery) {
-      const referenceDateForTimeParse = updatedEventData.date ? parseInputDate(updatedEventData.date) : parseInputDate(eventToModify.date);
-      const parsedTime = parseFlexibleSwedishTimeString(eventDetails.timeQuery, referenceDateForTimeParse);
+      const parsedTime = parseFlexibleSwedishTimeString(eventDetails.timeQuery, baseDateForTimeParse);
       if (parsedTime) {
         updatedEventData.startTime = formatInputTime(parsedTime);
-        // Optionally adjust end time if only start time is changed
-        const newEndTime = new Date(parsedTime);
-        newEndTime.setHours(newEndTime.getHours() + 1); // Assume 1 hour duration if only start time changes
+        
+        const currentEventDurationMs = parseInputTime(eventToModify.endTime, baseDateForTimeParse).getTime() - parseInputTime(eventToModify.startTime, baseDateForTimeParse).getTime();
+        const newEndTime = new Date(parsedTime.getTime() + currentEventDurationMs);
         updatedEventData.endTime = formatInputTime(newEndTime);
 
       } else {
@@ -257,12 +268,11 @@ export default function HomePage() {
         finalImageUrl = undefined; 
     }
     
-    // Create the event object with all fields for saving
     const eventDataForSave: Omit<CalendarEvent, 'id' | 'imageUrl'> = {
       title: updatedEventData.title ?? eventToModify.title,
       date: updatedEventData.date ?? eventToModify.date,
       startTime: updatedEventData.startTime ?? eventToModify.startTime,
-      endTime: updatedEventData.endTime ?? eventToModify.endTime,
+      endTime: updatedEventData.endTime ?? eventToModify.endTime, // Ensure endTime is also updated
       description: updatedEventData.description ?? eventToModify.description,
       color: updatedEventData.color ?? eventToModify.color,
     };
@@ -275,7 +285,7 @@ export default function HomePage() {
   const handleAiDeleteEvent = async (eventIdentifier: any): Promise<string | null> => {
      const eventToDeleteByAi = findEventToModifyOrDelete(eventIdentifier);
     if (!eventToDeleteByAi) {
-      toast({ title: "AI Fel", description: "Kunde inte hitta händelse att ta bort baserat på din beskrivning.", variant: "destructive" });
+      // Toast handled by AiAssistant
       return null;
     }
     handleDeleteEvent(eventToDeleteByAi.id);
@@ -342,6 +352,7 @@ export default function HomePage() {
       <AiAssistant
         isOpen={isAiAssistantOpen}
         onClose={() => setIsAiAssistantOpen(false)}
+        events={events}
         onAiCreateEvent={handleAiCreateEvent}
         onAiModifyEvent={handleAiModifyEvent}
         onAiDeleteEvent={handleAiDeleteEvent}

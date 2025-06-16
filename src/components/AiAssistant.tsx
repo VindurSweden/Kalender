@@ -10,11 +10,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFo
 import { Bot, User, Send, Loader2 } from 'lucide-react';
 import { 
   naturalLanguageEventCreation, 
-  NaturalLanguageEventCreationOutput 
+  NaturalLanguageEventCreationOutput,
+  AiEventType
 } from '@/ai/flows/natural-language-event-creation';
 import type { CalendarEvent } from '@/types/event';
 import { useToast } from '@/hooks/use-toast';
-import { formatInputDate, parseFlexibleSwedishDateString, format } from '@/lib/date-utils';
+import { formatInputDate, parseFlexibleSwedishDateString } from '@/lib/date-utils';
 
 interface Message {
   id: string;
@@ -27,6 +28,7 @@ interface Message {
 interface AiAssistantProps {
   isOpen: boolean;
   onClose: () => void;
+  events: CalendarEvent[]; // Pass current events
   onAiCreateEvent: (eventDetails: any) => Promise<CalendarEvent | null>;
   onAiModifyEvent: (eventIdentifier: any, eventDetails: any) => Promise<CalendarEvent | null>;
   onAiDeleteEvent: (eventIdentifier: any) => Promise<string | null>;
@@ -35,6 +37,7 @@ interface AiAssistantProps {
 const AiAssistant: FC<AiAssistantProps> = ({ 
   isOpen, 
   onClose, 
+  events,
   onAiCreateEvent, 
   onAiModifyEvent, 
   onAiDeleteEvent 
@@ -60,33 +63,47 @@ const AiAssistant: FC<AiAssistantProps> = ({
     setInput('');
     setIsProcessing(true);
     
-    // Add a thinking bubble for AI
     const thinkingMessageId = crypto.randomUUID();
     setMessages(prev => [...prev, { id: thinkingMessageId, sender: 'ai', text: "Tänker...", isProcessing: true }]);
 
     try {
-      const aiResponse: NaturalLanguageEventCreationOutput = await naturalLanguageEventCreation(currentInput);
+      const simplifiedEventsForAI: AiEventType[] = events.map(e => ({
+        title: e.title,
+        date: e.date, // Already YYYY-MM-DD
+        startTime: e.startTime, // Already HH:MM
+      }));
+
+      const aiResponse: NaturalLanguageEventCreationOutput = await naturalLanguageEventCreation(currentInput, simplifiedEventsForAI);
       
-      // Remove thinking bubble
       setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
 
       let responseText = aiResponse.userConfirmationMessage || "Jag har bearbetat din förfrågan.";
-      let operationsPerformed = false;
+      let operationsPerformedOrQueryAnswered = false;
 
       if (aiResponse.requiresClarification && aiResponse.clarificationQuestion) {
         responseText = aiResponse.clarificationQuestion;
         const aiClarificationMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText, requiresAction: true };
         setMessages(prev => [...prev, aiClarificationMessage]);
+        operationsPerformedOrQueryAnswered = true; // Clarification counts as a response
       } else if (aiResponse.operations && aiResponse.operations.length > 0) {
         let opDetailsText = "";
         for (const operation of aiResponse.operations) {
-          operationsPerformed = true;
+          if (operation.commandType.toUpperCase() === 'QUERY') {
+            // The userConfirmationMessage already contains the answer for QUERY.
+            // No further action needed on the frontend for the operation itself.
+            operationsPerformedOrQueryAnswered = true;
+            // responseText is already set to aiResponse.userConfirmationMessage
+            break; // Assuming only one QUERY operation, or the first one is primary.
+          }
+
+          operationsPerformedOrQueryAnswered = true;
           switch (operation.commandType.toUpperCase()) {
             case 'CREATE':
               if (operation.eventDetails) {
                 const createdEvent = await onAiCreateEvent(operation.eventDetails);
                 if (createdEvent) {
-                  opDetailsText += `\nSkapade händelse: "${createdEvent.title}" den ${formatInputDate(parseFlexibleSwedishDateString(createdEvent.date, new Date()) || new Date())} kl ${createdEvent.startTime}.`;
+                  // The userConfirmationMessage from AI should be good, or we can append.
+                  // opDetailsText += `\nSkapade händelse: "${createdEvent.title}" den ${formatInputDate(parseFlexibleSwedishDateString(createdEvent.date, new Date()) || new Date())} kl ${createdEvent.startTime}.`;
                 } else {
                   opDetailsText += `\nMisslyckades med att skapa en händelse baserat på: ${JSON.stringify(operation.eventDetails)}.`;
                 }
@@ -96,7 +113,7 @@ const AiAssistant: FC<AiAssistantProps> = ({
               if (operation.eventIdentifier && operation.eventDetails) {
                 const modifiedEvent = await onAiModifyEvent(operation.eventIdentifier, operation.eventDetails);
                 if (modifiedEvent) {
-                  opDetailsText += `\nÄndrade händelse: "${modifiedEvent.title}".`;
+                  // opDetailsText += `\nÄndrade händelse: "${modifiedEvent.title}".`;
                 } else {
                   opDetailsText += `\nMisslyckades med att ändra en händelse. Kunde inte hitta matchande händelse eller tolka nya detaljer.`;
                 }
@@ -106,7 +123,7 @@ const AiAssistant: FC<AiAssistantProps> = ({
               if (operation.eventIdentifier) {
                 const deletedEventId = await onAiDeleteEvent(operation.eventIdentifier);
                 if (deletedEventId) {
-                  opDetailsText += `\nEn händelse har tagits bort.`;
+                  // opDetailsText += `\nEn händelse har tagits bort.`;
                 } else {
                   opDetailsText += `\nMisslyckades med att ta bort en händelse. Kunde inte hitta matchande händelse.`;
                 }
@@ -116,25 +133,28 @@ const AiAssistant: FC<AiAssistantProps> = ({
               opDetailsText += `\nOkänt kommando: ${operation.commandType}`;
           }
         }
-        if (opDetailsText) {
+        if (opDetailsText) { // Append details if any errors occurred during execution
           responseText += opDetailsText;
         }
-        if (!operationsPerformed && !aiResponse.userConfirmationMessage) {
-             responseText = "Jag är osäker på vad jag ska göra med den informationen.";
-        }
-
+        
         const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
         setMessages(prev => [...prev, aiResponseMessage]);
 
-      } else {
-        // AI didn't ask for clarification but also didn't return operations.
-        // Use its confirmation message, or a generic one.
+      } else if (aiResponse.userConfirmationMessage) {
+        // No operations, but there's a confirmation/response message (e.g., for general chat or unhandled query)
         const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
         setMessages(prev => [...prev, aiResponseMessage]);
+        operationsPerformedOrQueryAnswered = true;
+      }
+      
+      if (!operationsPerformedOrQueryAnswered) {
+         responseText = "Jag är osäker på vad jag ska göra med den informationen, eller så kunde jag inte utföra någon åtgärd.";
+         const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
+         setMessages(prev => [...prev, aiResponseMessage]);
       }
 
+
     } catch (error) {
-       // Remove thinking bubble on error too
       setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
       console.error('AI Assistant Error:', error);
       const errorMessageText = "Ursäkta, jag kunde inte bearbeta din förfrågan just nu. Försök igen.";
@@ -155,7 +175,7 @@ const AiAssistant: FC<AiAssistantProps> = ({
         <SheetHeader className="p-6 pb-2">
           <SheetTitle className="font-headline flex items-center"><Bot className="mr-2 h-6 w-6 text-primary" /> VisuCal Assistent</SheetTitle>
           <SheetDescription>
-            Chatta med AI:n för att hantera dina kalenderhändelser med naturligt språk (svenska). Exempel: "Skapa ett möte imorgon kl 14 om projektplanering" eller "Flytta lunchen till nästa fredag".
+            Chatta med AI:n för att hantera dina kalenderhändelser med naturligt språk (svenska). Exempel: "Skapa ett möte imorgon kl 14 om projektplanering", "Flytta lunchen till nästa fredag", eller "Vad har jag för möten idag?".
           </SheetDescription>
         </SheetHeader>
         <ScrollArea className="flex-grow p-6" ref={scrollAreaRef}>
@@ -167,9 +187,9 @@ const AiAssistant: FC<AiAssistantProps> = ({
                   className={`max-w-[75%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap ${
                     msg.sender === 'user'
                       ? 'bg-primary text-primary-foreground'
-                      : msg.requiresAction ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' : 'bg-accent/20 text-accent-foreground'
+                      : msg.requiresAction ? 'bg-yellow-100 text-yellow-800 border border-yellow-300 dark:bg-yellow-900 dark:text-yellow-200 dark:border-yellow-700' : 'bg-accent/20 text-accent-foreground'
                   }`}
-                  style={ msg.sender === 'ai' && !msg.requiresAction ? { backgroundColor: 'var(--accent-foreground)', color: 'var(--accent)' } : {} }
+                  style={ msg.sender === 'ai' && !msg.requiresAction ? { backgroundColor: 'var(--card)', color: 'var(--card-foreground)' } : {} }
 
                 >
                   {msg.text}
