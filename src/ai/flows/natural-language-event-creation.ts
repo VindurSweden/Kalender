@@ -1,3 +1,4 @@
+
 // src/ai/flows/natural-language-event-creation.ts
 'use server';
 
@@ -137,14 +138,18 @@ const naturalLanguageEventCreationFlow = ai.defineFlow(
     outputSchema: NaturalLanguageEventCreationOutputSchema,
   },
   async input => {
-    const {output} = await orchestratorPrompt(input);
-    if (!output) {
-        // Handle cases where the LLM might not return the expected structured output
+    const promptResponse = await orchestratorPrompt(input);
+
+    if (!promptResponse || !promptResponse.output) {
+        console.warn('Orchestrator prompt did not return a valid structured output. Full response:', promptResponse);
         return {
             calendarCommands: [],
             confirmationMessage: "Jag kunde inte helt tolka din förfrågan. Försök igen eller formulera om dig."
         };
     }
+    
+    const output = promptResponse.output;
+
     // Ensure output structure matches the schema even if commands are empty due to validation failure etc.
     return {
         calendarCommands: output.calendarCommands || [],
