@@ -11,7 +11,8 @@ import { Bot, User, Send, Loader2 } from 'lucide-react';
 import { 
   naturalLanguageEventCreation, 
   NaturalLanguageEventCreationOutput,
-  AiEventType
+  AiEventType,
+  ConversationMessageType
 } from '@/ai/flows/natural-language-event-creation';
 import type { CalendarEvent } from '@/types/event';
 import { useToast } from '@/hooks/use-toast';
@@ -58,7 +59,8 @@ const AiAssistant: FC<AiAssistantProps> = ({
     if (input.trim() === '' || isProcessing) return;
 
     const userMessage: Message = { id: crypto.randomUUID(), sender: 'user', text: input };
-    setMessages(prev => [...prev, userMessage]);
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
     const currentInput = input;
     setInput('');
     setIsProcessing(true);
@@ -73,7 +75,12 @@ const AiAssistant: FC<AiAssistantProps> = ({
         startTime: e.startTime, // Already HH:MM
       }));
 
-      const aiResponse: NaturalLanguageEventCreationOutput = await naturalLanguageEventCreation(currentInput, simplifiedEventsForAI);
+      const conversationHistoryForAI: ConversationMessageType[] = updatedMessages
+        .filter(msg => msg.id !== thinkingMessageId) // Exclude the "Thinking..." message
+        .map(msg => ({ sender: msg.sender, text: msg.text }));
+
+
+      const aiResponse: NaturalLanguageEventCreationOutput = await naturalLanguageEventCreation(currentInput, simplifiedEventsForAI, conversationHistoryForAI);
       
       setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
 
@@ -133,7 +140,7 @@ const AiAssistant: FC<AiAssistantProps> = ({
               opDetailsText += `\nOkänt kommando: ${operation.commandType}`;
           }
         }
-        if (opDetailsText) { // Append details if any errors occurred during execution
+        if (opDetailsText && !responseText.includes(opDetailsText)) { // Append details if any errors occurred during execution and not already in main message
           responseText += opDetailsText;
         }
         
@@ -147,7 +154,8 @@ const AiAssistant: FC<AiAssistantProps> = ({
         operationsPerformedOrQueryAnswered = true;
       }
       
-      if (!operationsPerformedOrQueryAnswered) {
+      if (!operationsPerformedOrQueryAnswered && !(aiResponse.requiresClarification && aiResponse.clarificationQuestion)) {
+         // Only show this generic message if no specific action or clarification was provided.
          responseText = "Jag är osäker på vad jag ska göra med den informationen, eller så kunde jag inte utföra någon åtgärd.";
          const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
          setMessages(prev => [...prev, aiResponseMessage]);
@@ -227,3 +235,4 @@ const AiAssistant: FC<AiAssistantProps> = ({
 };
 
 export default AiAssistant;
+
