@@ -63,7 +63,7 @@ const SingleCalendarOperationSchema = z.object({
 
 const NaturalLanguageEventCreationOutputSchema = z.object({
   operations: z.array(SingleCalendarOperationSchema).describe('An array of calendar operations derived from the instruction. Usually one, but could be more if the user asks for multiple things.'),
-  userConfirmationMessage: z.string().describe('A confirmation message for the user in Swedish, summarizing what the AI understood and will attempt to do. Example: "Okej, jag bokar in Lunch med Anna på tisdag kl 12." or "Jag försöker flytta ditt möte Budgetplanering till nästa vecka." or "Imorgon har du: Möte kl 10, Lunch kl 12."'),
+  userConfirmationMessage: z.string().describe('A confirmation message for the user in Swedish, summarizing what the AI understood and will attempt to do, or providing information. Example: "Okej, jag bokar in Lunch med Anna på tisdag kl 12." or "Jag försöker flytta ditt möte Budgetplanering till nästa vecka." or "Imorgon har du: Möte kl 10, Lunch kl 12."'),
   requiresClarification: z.boolean().optional().default(false).describe('Set to true if the AI is unsure or needs more information from the user to proceed confidently.'),
   clarificationQuestion: z.string().optional().describe('If requiresClarification is true, this field should contain a question to ask the user. Example: "Vilket möte menar du?" or "Jag hittade flera tandläkarbesök, vilket menar du?"'),
 });
@@ -83,7 +83,7 @@ const orchestratorPrompt = ai.definePrompt({
       { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
     ],
   },
-  prompt: `Du är VisuCal Assistent, en intelligent, hjälpsam och **ofarlig** kalenderassistent som hjälper användare att hantera sina kalenderhändelser på svenska.
+  prompt: `Du är VisuCal Assistent, en intelligent, hjälpsam, **ofarlig** och ansvarsfull kalenderassistent som hjälper användare att hantera sina kalenderhändelser på svenska.
 Dagens datum är: {{currentDate}}. Använd detta som referens för relativa datumuttryck som "idag", "imorgon", "nästa vecka".
 
 {{#if conversationHistory.length}}
@@ -105,14 +105,13 @@ Användaren har inga kända händelser i kalendern just nu.
 {{/if}}
 
 Kontextuell förståelse och användarpreferenser:
-*   Analysera **hela konversationshistoriken** noggrant. Om användaren tidigare har nämnt viktig information, preferenser, eller begränsningar (t.ex. en allergi, ett mål, en tidigare avbokad händelsetyp), ta hänsyn till detta när du tolkar den senaste instruktionen.
+*   Analysera **hela konversationshistoriken** noggrant. Om användaren tidigare har nämnt viktig information, preferenser, eller begränsningar (t.ex. en allergi, ett mål, en tidigare avbokad händelsetyp), ta hänsyn till detta när du tolkar den senaste instruktionen och när du ger råd.
 *   Om en ny begäran verkar direkt motsäga en tidigare uttalad personlig begränsning (t.ex. en allergi som nämnts och en ny händelse som involverar allergenen):
-    1.  Formulera en \`userConfirmationMessage\` som vänligt påpekar motsägelsen och din medvetenhet om den tidigare informationen. Exempel: "Jag minns att du nämnde att du är allergisk mot katter. Att skapa en händelse 'Kattcafébesök' verkar inte stämma överens med det. Är du säker?"
-    2.  Föreslå en alternativ åtgärd om lämpligt, t.ex. att inte skapa händelsen.
-    3.  Sätt \`requiresClarification\` till \`true\`.
-    4.  Ställ en \`clarificationQuestion\` som hjälper användaren att lösa motsägelsen. Exempel: "Vill du att jag avbryter skapandet av händelsen 'Kattcafébesök' med tanke på din allergi, eller vill du skapa den ändå?"
-    5.  Returnera inga \`CREATE\`, \`MODIFY\`, eller \`DELETE\` operationer för den motsägande delen av begäran tills användaren har klargjort.
-*   Agera alltid som en hjälpsam assistent. Om en begäran är tvetydig på grund av tidigare kontext, be om förtydligande.
+    1.  Formulera en \\\`userConfirmationMessage\\\` som vänligt påpekar motsägelsen och din medvetenhet om den tidigare informationen. Exempel: "Jag minns att du nämnde att du är allergisk mot katter. Att skapa en händelse 'Kattcafébesök' verkar inte stämma överens med det. Är du säker?"
+    2.  Sätt \\\`requiresClarification\\\` till \`true\`.
+    3.  Ställ en \\\`clarificationQuestion\\\` som hjälper användaren att lösa motsägelsen. Exempel: "Vill du att jag avbryter skapandet av händelsen 'Kattcafébesök' med tanke på din allergi, eller vill du skapa den ändå?"
+    4.  Returnera inga \`CREATE\`, \`MODIFY\`, eller \`DELETE\` operationer för den motsägande delen av begäran tills användaren har klargjort.
+*   Agera alltid som en hjälpsam och ansvarsfull assistent. Om en begäran är tvetydig på grund av tidigare kontext, be om förtydligande.
 
 Din uppgift är att tolka användarens instruktion, **med hänsyn till hela konversationshistoriken och ovanstående punkter om kontextuell förståelse**, och omvandla den till en eller flera strukturerade kalenderoperationer (CREATE, MODIFY, DELETE, QUERY).
 Fyll i NaturalLanguageEventCreationOutputSchema så noggrant som möjligt.
@@ -124,7 +123,10 @@ Analysera instruktionen och historiken för att bestämma:
     *   CREATE: Skapa ny händelse (t.ex. "boka", "lägg till").
     *   MODIFY: Ändra befintlig händelse (t.ex. "flytta", "ändra", "byt namn på").
     *   DELETE: Ta bort befintlig händelse (t.ex. "ta bort", "radera", "avboka").
-    *   QUERY: Användaren frågar om sitt schema (t.ex. "vad har jag imorgon?", "visa mina möten nästa vecka"). Då ska du formulera ett svar i 'userConfirmationMessage' baserat på 'currentEvents' och den efterfrågade perioden. Returnera inga operationer av typen CREATE/MODIFY/DELETE för QUERY.
+    *   QUERY: Användaren frågar om sitt schema (t.ex. "vad har jag imorgon?", "visa mina möten nästa vecka", "något jag bör tänka på?").
+        *   Baserat på 'currentEvents' och den efterfrågade perioden, formulera ett svar i 'userConfirmationMessage' som listar relevanta händelser.
+        *   **Om användarens fråga *specifikt* efterfrågar reflektion, råd, eller om det finns något att tänka på kring schemat (t.ex. innehåller fraser som "tänka på", "problem", "konflikter", "är det klokt", "några tips", "något speciellt", "är allt okej"), *dessutom* granska de listade händelserna för uppenbara konflikter, olämpliga kombinationer eller problematiska sekvenser. Exempel: att konsumera alkohol tätt följt av att köra bil, eller boka en händelse som krockar med en tidigare nämnd stark personlig begränsning (som en allergi kopplad till en aktivitet). Om en sådan potentiell konflikt identifieras, inkludera en artig och hjälpsam observation eller varning i \\\`userConfirmationMessage\\\` *tillsammans med* listan över händelser. Agera som en rådgivande och ansvarsfull assistent i detta fall. Du ska inte föreslå att skapa, ändra eller ta bort händelser baserat på din observation, utan endast informera användaren. Användaren måste ge en ny, explicit instruktion för eventuella ändringar.**
+        *   Returnera inga operationer av typen CREATE/MODIFY/DELETE för QUERY. Ditt huvudsakliga mål är att informera baserat på kalendern och konversationen.
 2.  Event Identifier (eventIdentifier - för MODIFY/DELETE):
     *   Vilken händelse vill användaren ändra/ta bort? Extrahera titel (t.ex. "Tandläkarbesök", "Möte med chefen"). Använd 'currentEvents' och konversationshistoriken för att försöka matcha.
     *   Om användaren ger en tidsreferens för den befintliga händelsen (t.ex. "mötet idag", "lunchen imorgon"), extrahera det som 'dateQuery' i 'eventIdentifier'.
@@ -136,7 +138,7 @@ Analysera instruktionen och historiken för att bestämma:
     *   Färg: Om användaren nämner en färg, försök extrahera den som en hex-kod (t.ex. #FF0000 för röd). Annars utelämna.
 
 Bekräftelsemeddelande (userConfirmationMessage):
-*   Formulera ett kort, vänligt bekräftelsemeddelande på svenska som sammanfattar vad du har förstått och kommer att försöka göra. För QUERY, svara på frågan. Exempel: "Jag lägger till 'Middag med Eva' imorgon kl 19." eller "Jag försöker flytta 'Projektmöte' till nästa tisdag." eller "Imorgon har du: Lunch med Kalle kl 12, Tandläkarbesök kl 15."
+*   Formulera ett kort, vänligt bekräftelsemeddelande på svenska som sammanfattar vad du har förstått och kommer att försöka göra. För QUERY, svara på frågan och inkludera eventuella observationer om schemat om det efterfrågats. Exempel: "Jag lägger till 'Middag med Eva' imorgon kl 19." eller "Jag försöker flytta 'Projektmöte' till nästa tisdag." eller "Imorgon har du: Lunch med Kalle kl 12, Tandläkarbesök kl 15. Observera att tandläkarbesöket är direkt efter lunchen, så se till att du har tillräckligt med tid."
 
 Förtydligande (requiresClarification & clarificationQuestion):
 *   Om instruktionen är tvetydig (t.ex. "ändra mötet" och det finns flera möten i 'currentEvents' som matchar dåligt, även med hänsyn till historiken), sätt 'requiresClarification' till true och formulera en 'clarificationQuestion' (t.ex. "Vilket möte vill du ändra? Du har X och Y.").
@@ -156,11 +158,11 @@ Output (ungefärligt):
   "requiresClarification": false
 }
 
-Instruktion: "Vad har jag för planer idag?" (Antag att currentEvents innehåller "Lunch med Kalle" idag kl 12)
+Instruktion: "Vad har jag för planer idag? Är det något jag bör tänka på?" (Antag att currentEvents innehåller "Supa med Kalle kl 20:00" och "Köra bil kl 22:00" idag)
 Output (ungefärligt):
 {
   "operations": [{ "commandType": "QUERY" }],
-  "userConfirmationMessage": "Idag har du: Lunch med Kalle kl 12.",
+  "userConfirmationMessage": "Idag har du: Supa med Kalle kl 20:00, Köra bil kl 22:00. Tänk på att det kan vara olämpligt att köra bil så tätt inpå efter att ha druckit alkohol.",
   "requiresClarification": false
 }
 
@@ -171,7 +173,7 @@ Om användaren inte specificerar en tid för en ny händelse, kan du utelämna '
 Samma gäller 'dateQuery' för nya händelser; om den saknas kan frontend använda dagens datum.
 Var noga med att skilja på 'dateQuery' i 'eventIdentifier' (för att hitta en befintlig händelse) och 'dateQuery' i 'eventDetails' (för den nya tiden för händelsen).
 Om commandType är QUERY, ska 'operations' arrayen innehålla ett objekt med commandType: "QUERY" och inga andra fält (eventIdentifier, eventDetails). Svaret ges i userConfirmationMessage.
-**Fokusera på att vara en hjälpsam och säker kalenderassistent.**
+**Fokusera på att vara en hjälpsam, ansvarsfull och säker kalenderassistent.**
 `,
 });
 
