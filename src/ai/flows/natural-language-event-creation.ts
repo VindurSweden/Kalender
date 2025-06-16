@@ -43,14 +43,46 @@ const generateCalendarCommands = ai.defineTool(
   async input => {
     // Placeholder implementation - replace with actual command generation logic
     console.log('Generating calendar commands for instruction:', input.instruction);
+    // Example: For "Skapa ett möte imorgon kl 14 om projektplanering"
+    // This should ideally parse date/time more robustly
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dateStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+
+    if (input.instruction.toLowerCase().includes("möte med chefen")) {
+       return [
+        {
+          command: 'CREATE',
+          eventDetails: {
+            title: 'Möte med chefen',
+            date: '2024-07-15',
+            time: '10:00',
+            description: 'Diskussion om projektets framsteg.',
+          },
+        },
+      ];
+    } else if (input.instruction.toLowerCase().includes("projektplanering")) {
+       return [
+        {
+          command: 'CREATE',
+          eventDetails: {
+            title: 'Projektplanering',
+            date: dateStr, 
+            time: '14:00',
+            description: 'Planeringsmöte för projektet.',
+          },
+        },
+      ];
+    }
+    // Default or fallback if no specific parsing matches
     return [
       {
         command: 'CREATE',
         eventDetails: {
-          title: 'Möte med chefen',
-          date: '2024-07-15',
-          time: '10:00',
-          description: 'Diskussion om projektets framsteg.',
+          title: 'Obestämd Händelse',
+          date: dateStr,
+          time: '12:00',
+          description: 'Automatisk skapad händelse.',
         },
       },
     ];
@@ -69,6 +101,12 @@ const validateCalendarCommands = ai.defineTool(
   async input => {
     // Placeholder implementation - replace with actual validation logic
     console.log('Validating calendar commands:', input.calendarCommands);
+    if (!input.calendarCommands || input.calendarCommands.length === 0) return false;
+    for (const command of input.calendarCommands) {
+        if (!command.command || !['CREATE', 'MODIFY', 'DELETE'].includes(command.command.toUpperCase())) return false;
+        if (!command.eventDetails || typeof command.eventDetails.title !== 'string' || !command.eventDetails.title) return false;
+        // Add more specific validation as needed, e.g., date format, time format
+    }
     return true; // Assume commands are valid for now
   }
 );
@@ -85,7 +123,9 @@ Användaren kommer att ge dig en instruktion på svenska. Använd verktyget gene
 
 Instruktion: {{{instruction}}}
 
-Baserat på detta, skapa ett svar på svenska som bekräftar åtgärden för användaren.
+Om valideringen lyckas, svara med kalenderkommandona och ett bekräftelsemeddelande på svenska. 
+Om valideringen misslyckas, svara med ett tomt array för calendarCommands och ett meddelande som förklarar att kommandot inte kunde valideras eller var ogiltigt.
+Se till att ditt svar alltid följer NaturalLanguageEventCreationOutputSchema.
 `,
 });
 
@@ -98,7 +138,18 @@ const naturalLanguageEventCreationFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await orchestratorPrompt(input);
-    return output!;
+    if (!output) {
+        // Handle cases where the LLM might not return the expected structured output
+        return {
+            calendarCommands: [],
+            confirmationMessage: "Jag kunde inte helt tolka din förfrågan. Försök igen eller formulera om dig."
+        };
+    }
+    // Ensure output structure matches the schema even if commands are empty due to validation failure etc.
+    return {
+        calendarCommands: output.calendarCommands || [],
+        confirmationMessage: output.confirmationMessage || "Bearbetning klar, men ingen specifik bekräftelse genererades."
+    };
   }
 );
 
@@ -110,10 +161,3 @@ const naturalLanguageEventCreationFlow = ai.defineFlow(
 export async function naturalLanguageEventCreation(input: NaturalLanguageEventCreationInput): Promise<NaturalLanguageEventCreationOutput> {
   return naturalLanguageEventCreationFlow(input);
 }
-
-export {
-  naturalLanguageEventCreationFlow,
-  NaturalLanguageEventCreationInputSchema,
-  NaturalLanguageEventCreationOutputSchema,
-};
-

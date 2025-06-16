@@ -2,7 +2,7 @@
 
 import type { FC } from 'react';
 import { Button } from '@/components/ui/button';
-import { CalendarDays, ChevronLeft, ChevronRight, ListWeek, Bot } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, CalendarRange, Bot } from 'lucide-react';
 
 interface HeaderProps {
   currentDate: Date;
@@ -52,7 +52,7 @@ const Header: FC<HeaderProps> = ({
             aria-pressed={view === 'week'}
             className="hidden sm:inline-flex"
           >
-            <ListWeek className="mr-2 h-4 w-4" /> Week
+            <CalendarRange className="mr-2 h-4 w-4" /> Week
           </Button>
            <Button
             variant="ghost"
@@ -72,7 +72,7 @@ const Header: FC<HeaderProps> = ({
             className="sm:hidden"
             aria-label="Week view"
           >
-            <ListWeek className="h-5 w-5" />
+            <CalendarRange className="h-5 w-5" />
           </Button>
           <Button variant="outline" onClick={onOpenAiAssistant} aria-label="Open AI Assistant">
             <Bot className="h-5 w-5 mr-0 sm:mr-2" />
