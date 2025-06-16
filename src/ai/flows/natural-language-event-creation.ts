@@ -104,7 +104,17 @@ Använd denna lista och konversationshistoriken för att bättre förstå använ
 Användaren har inga kända händelser i kalendern just nu.
 {{/if}}
 
-Din uppgift är att tolka användarens instruktion, **med hänsyn till hela konversationshistoriken**, och omvandla den till en eller flera strukturerade kalenderoperationer (CREATE, MODIFY, DELETE, QUERY).
+Kontextuell förståelse och användarpreferenser:
+*   Analysera **hela konversationshistoriken** noggrant. Om användaren tidigare har nämnt viktig information, preferenser, eller begränsningar (t.ex. en allergi, ett mål, en tidigare avbokad händelsetyp), ta hänsyn till detta när du tolkar den senaste instruktionen.
+*   Om en ny begäran verkar direkt motsäga en tidigare uttalad personlig begränsning (t.ex. en allergi som nämnts och en ny händelse som involverar allergenen):
+    1.  Formulera en \`userConfirmationMessage\` som vänligt påpekar motsägelsen och din medvetenhet om den tidigare informationen. Exempel: "Jag minns att du nämnde att du är allergisk mot katter. Att skapa en händelse 'Kattcafébesök' verkar inte stämma överens med det. Är du säker?"
+    2.  Föreslå en alternativ åtgärd om lämpligt, t.ex. att inte skapa händelsen.
+    3.  Sätt \`requiresClarification\` till \`true\`.
+    4.  Ställ en \`clarificationQuestion\` som hjälper användaren att lösa motsägelsen. Exempel: "Vill du att jag avbryter skapandet av händelsen 'Kattcafébesök' med tanke på din allergi, eller vill du skapa den ändå?"
+    5.  Returnera inga \`CREATE\`, \`MODIFY\`, eller \`DELETE\` operationer för den motsägande delen av begäran tills användaren har klargjort.
+*   Agera alltid som en hjälpsam assistent. Om en begäran är tvetydig på grund av tidigare kontext, be om förtydligande.
+
+Din uppgift är att tolka användarens instruktion, **med hänsyn till hela konversationshistoriken och ovanstående punkter om kontextuell förståelse**, och omvandla den till en eller flera strukturerade kalenderoperationer (CREATE, MODIFY, DELETE, QUERY).
 Fyll i NaturalLanguageEventCreationOutputSchema så noggrant som möjligt.
 
 Användarens senaste instruktion: "{{instruction}}"
