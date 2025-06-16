@@ -2,7 +2,7 @@
 'use server';
 
 /**
- * @fileOverview Automatically generates an image for a calendar event using AI.
+ * @fileOverview Automatically generates an image for a calendar event using AI, based on the event title.
  *
  * - generateEventImage - A function that generates an image for a calendar event.
  * - GenerateEventImageInput - The input type for the generateEventImage function.
@@ -13,9 +13,9 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 
 const GenerateEventImageInputSchema = z.object({
-  eventDescription: z
+  eventTitle: z
     .string()
-    .describe('The description of the calendar event.'),
+    .describe('The title of the calendar event.'),
 });
 export type GenerateEventImageInput = z.infer<typeof GenerateEventImageInputSchema>;
 
@@ -32,18 +32,15 @@ export async function generateEventImage(input: GenerateEventImageInput): Promis
   return generateEventImageFlow(input);
 }
 
-// This prompt definition is not directly used by the ai.generate call in the flow below for image generation,
-// as ai.generate with responseModalities: ['IMAGE'] is a more direct way to get images.
-// It's kept here for potential future reference or alternative implementations.
 const generateEventImagePrompt = ai.definePrompt({
   name: 'generateEventImagePrompt',
   input: {schema: GenerateEventImageInputSchema},
   output: {schema: GenerateEventImageOutputSchema},
   prompt: `You are an AI that generates images for calendar events.
 
-  Based on the event description, generate a relevant image.
+  Based on the event title, generate a relevant image.
 
-  Event Description: {{{eventDescription}}}
+  Event Title: {{{eventTitle}}}
 
   The image should be a visual representation of the event.
   The image url should be returned in the output as a data URI.
@@ -58,27 +55,24 @@ const generateEventImageFlow = ai.defineFlow(
     outputSchema: GenerateEventImageOutputSchema,
   },
   async input => {
-    // Ensure eventDescription is not empty, as it might cause issues with image generation.
-    if (!input.eventDescription || input.eventDescription.trim() === '') {
-      console.warn('Image generation skipped: Event description is empty.');
+    if (!input.eventTitle || input.eventTitle.trim() === '') {
+      console.warn('Image generation skipped: Event title is empty.');
       return {imageUrl: ''};
     }
 
     const {media} = await ai.generate({
-      // IMPORTANT: ONLY the googleai/gemini-2.0-flash-exp model is able to generate images. You MUST use exactly this model to generate images.
       model: 'googleai/gemini-2.0-flash-exp',
-      prompt: input.eventDescription,
+      prompt: `Generate an image for a calendar event titled: "${input.eventTitle}"`,
       config: {
-        responseModalities: ['TEXT', 'IMAGE'], // MUST provide both TEXT and IMAGE, IMAGE only won't work
+        responseModalities: ['TEXT', 'IMAGE'], 
       },
     });
 
     if (media && media.url) {
       return {imageUrl: media.url};
     } else {
-      console.warn('Image generation did not return a media URL for description:', input.eventDescription);
-      return {imageUrl: ''}; // Return empty string to satisfy schema and prevent crash
+      console.warn('Image generation did not return a media URL for title:', input.eventTitle);
+      return {imageUrl: ''}; 
     }
   }
 );
-

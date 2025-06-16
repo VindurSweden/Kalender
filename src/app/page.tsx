@@ -41,7 +41,6 @@ export default function HomePage() {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Load events from localStorage
     try {
       const storedEvents = localStorage.getItem('visuCalEvents');
       if (storedEvents) {
@@ -54,12 +53,10 @@ export default function HomePage() {
   }, [toast]);
 
   useEffect(() => {
-    // Save events to localStorage
     try {
       localStorage.setItem('visuCalEvents', JSON.stringify(events));
     } catch (error) {
       console.error("Failed to save events to localStorage:", error);
-      // Potentially notify user if storage is full or failing
     }
   }, [events]);
 
@@ -76,12 +73,12 @@ export default function HomePage() {
   };
 
   const handleSaveEvent = (eventData: Omit<CalendarEvent, 'id' | 'imageUrl'>, id?: string, newImageUrl?: string) => {
-    if (id) { // Editing existing event
+    if (id) { 
       setEvents(prevEvents =>
         prevEvents.map(e => (e.id === id ? { ...e, ...eventData, imageUrl: newImageUrl ?? e.imageUrl } : e))
       );
       toast({ title: "Event Updated", description: `"${eventData.title}" has been updated.` });
-    } else { // Creating new event
+    } else { 
       const newEvent: CalendarEvent = {
         ...eventData,
         id: crypto.randomUUID(),
@@ -106,21 +103,20 @@ export default function HomePage() {
   };
 
 
-  // AI Assistant handlers
   const handleAiCreateEvent = async (eventDetails: any): Promise<CalendarEvent | null> => {
     try {
       const title = eventDetails.title || 'AI Event';
       const dateStr = eventDetails.date ? formatInputDate(parseInputDate(eventDetails.date)) : formatInputDate(new Date());
       const startTime = eventDetails.time || '12:00';
       const endTimeDate = combineDateAndTime(parseInputDate(dateStr), parseInputTime(startTime));
-      endTimeDate.setHours(endTimeDate.getHours() + 1); // Assume 1 hour duration
+      endTimeDate.setHours(endTimeDate.getHours() + 1); 
       const endTime = format(endTimeDate, TIME_FORMAT);
       const description = eventDetails.description || '';
       
       let imageUrl: string | undefined = undefined;
-      if (description) {
+      if (title) { // Generate image based on title
         try {
-          const imageResult = await generateEventImage({ eventDescription: description });
+          const imageResult = await generateEventImage({ eventTitle: title });
           imageUrl = imageResult.imageUrl;
         } catch (imgError) {
           console.error("AI Event Image Generation Error:", imgError);
@@ -135,7 +131,7 @@ export default function HomePage() {
         startTime,
         endTime,
         description,
-        color: '#69B4EB', // Default AI event color
+        color: '#69B4EB', 
         imageUrl,
       };
       
@@ -159,7 +155,7 @@ export default function HomePage() {
       const targetDate = formatInputDate(parseInputDate(eventDetails.date));
       return events.find(e => e.title === eventDetails.title && e.date === targetDate) || null;
     }
-    if (eventDetails.title) {
+    if (eventDetails.title) { // Fallback to title only if date not provided for modification/deletion query
       return events.find(e => e.title === eventDetails.title) || null;
     }
     return null;
@@ -172,46 +168,42 @@ export default function HomePage() {
       return null;
     }
 
-    const oldDescription = eventToModify.description;
+    const oldTitle = eventToModify.title;
     const updatedEventDataFromAI: Partial<Omit<CalendarEvent, 'id' | 'imageUrl'>> = {};
 
     if (eventDetails.title) updatedEventDataFromAI.title = eventDetails.title;
     if (eventDetails.date) updatedEventDataFromAI.date = formatInputDate(parseInputDate(eventDetails.date));
-    if (eventDetails.time) updatedEventDataFromAI.startTime = eventDetails.time; // AI might need to specify start/end or duration
+    if (eventDetails.time) updatedEventDataFromAI.startTime = eventDetails.time; 
     if (typeof eventDetails.description === 'string') updatedEventDataFromAI.description = eventDetails.description;
-    // Add other fields if AI can modify them, e.g. endTime, color
-
+    
     let finalImageUrl = eventToModify.imageUrl;
-    const descriptionChanged = typeof updatedEventDataFromAI.description === 'string' && updatedEventDataFromAI.description !== oldDescription;
-    const newDescription = updatedEventDataFromAI.description;
+    const titleChanged = typeof updatedEventDataFromAI.title === 'string' && updatedEventDataFromAI.title !== oldTitle;
+    const newTitle = updatedEventDataFromAI.title || oldTitle; // Use new title if available, else old for image gen
 
-    if (descriptionChanged && newDescription) {
+    if (titleChanged && newTitle) {
         try {
-            const imageResult = await generateEventImage({ eventDescription: newDescription });
+            const imageResult = await generateEventImage({ eventTitle: newTitle });
             finalImageUrl = imageResult.imageUrl;
         } catch (imgError) {
             console.error("AI Event Image Regeneration Error:", imgError);
             toast({ title: "AI Info", description: "Kunde inte återskapa bild för AI-händelseändring.", variant: "default" });
         }
-    } else if (descriptionChanged && !newDescription) {
-        finalImageUrl = undefined; // Description removed, so remove image
+    } else if (titleChanged && !newTitle) { // Title was removed
+        finalImageUrl = undefined; 
     }
     
     const updatedEvent: CalendarEvent = {
       ...eventToModify,
-      ...updatedEventDataFromAI, // Apply changes from AI
-      // imageUrl is handled by finalImageUrl
+      ...updatedEventDataFromAI, 
     };
-
-    // Prepare data for handleSaveEvent (Omit 'id' and 'imageUrl' from the main data part)
+    
     const { id: currentId, imageUrl: oldImgUrl, ...dataForSaveEvent } = updatedEvent;
     
     handleSaveEvent(dataForSaveEvent, eventToModify.id, finalImageUrl);
-
-    // Construct the event object that reflects the actual state after save
+    
     const actualModifiedEvent: CalendarEvent = {
-      ...dataForSaveEvent, // this contains all fields except id and imageUrl
-      id: eventToModify.id, // ensure original id
+      ...dataForSaveEvent, 
+      id: eventToModify.id, 
       imageUrl: finalImageUrl,
     };
     

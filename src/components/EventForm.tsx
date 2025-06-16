@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { FC } from 'react';
@@ -63,13 +64,13 @@ const EventForm: FC<EventFormProps> = ({ isOpen, onClose, onSave, eventToEdit, d
     },
   });
 
-  const eventDescriptionForImage = watch('description');
+  const eventTitleForImage = watch('title');
 
   useEffect(() => {
     if (eventToEdit) {
       reset({
         title: eventToEdit.title,
-        date: eventToEdit.date, // Already YYYY-MM-DD
+        date: eventToEdit.date, 
         startTime: eventToEdit.startTime,
         endTime: eventToEdit.endTime,
         description: eventToEdit.description,
@@ -102,12 +103,15 @@ const EventForm: FC<EventFormProps> = ({ isOpen, onClose, onSave, eventToEdit, d
   const onSubmit = async (data: EventFormValues) => {
     try {
       let newImageUrl = currentImageUrl;
-      if (data.description && data.description !== eventToEdit?.description) { // Generate image if description exists and changed or is new
+      // Generate image if title exists and (it's a new event OR title changed OR no image currently)
+      const shouldGenerateImage = data.title && (!eventToEdit || data.title !== eventToEdit.title || !currentImageUrl);
+
+      if (shouldGenerateImage) {
         setIsGeneratingImage(true);
         try {
-          const imageResult = await generateEventImage({ eventDescription: data.description });
+          const imageResult = await generateEventImage({ eventTitle: data.title });
           newImageUrl = imageResult.imageUrl;
-          setCurrentImageUrl(newImageUrl); // Update preview
+          setCurrentImageUrl(newImageUrl); 
         } catch (error) {
           console.error('Failed to generate event image:', error);
           toast({
@@ -115,7 +119,6 @@ const EventForm: FC<EventFormProps> = ({ isOpen, onClose, onSave, eventToEdit, d
             description: 'Could not generate image. Please try again or save without an image.',
             variant: 'destructive',
           });
-          // Allow saving without image if generation fails
         } finally {
           setIsGeneratingImage(false);
         }
@@ -134,13 +137,13 @@ const EventForm: FC<EventFormProps> = ({ isOpen, onClose, onSave, eventToEdit, d
   };
 
   const handleGenerateImageManually = async () => {
-    if (!eventDescriptionForImage) {
-      toast({ title: "Cannot generate image", description: "Please provide an event description first.", variant: "destructive"});
+    if (!eventTitleForImage) {
+      toast({ title: "Cannot generate image", description: "Please provide an event title first.", variant: "destructive"});
       return;
     }
     setIsGeneratingImage(true);
     try {
-      const imageResult = await generateEventImage({ eventDescription: eventDescriptionForImage });
+      const imageResult = await generateEventImage({ eventTitle: eventTitleForImage });
       setCurrentImageUrl(imageResult.imageUrl);
     } catch (error) {
       console.error('Failed to generate event image:', error);
@@ -249,16 +252,16 @@ const EventForm: FC<EventFormProps> = ({ isOpen, onClose, onSave, eventToEdit, d
             <div className="space-y-2">
               <Label>Event Image</Label>
               <div className="relative w-full h-40 rounded-md overflow-hidden border">
-                <Image src={currentImageUrl} alt="Event visual support" layout="fill" objectFit="cover" data-ai-hint="event banner" />
+                <Image src={currentImageUrl} alt="Event visual support" layout="fill" objectFit="cover" data-ai-hint="event image" />
               </div>
             </div>
           )}
           
-          <Button type="button" variant="outline" onClick={handleGenerateImageManually} disabled={isGeneratingImage || !eventDescriptionForImage} className="w-full">
+          <Button type="button" variant="outline" onClick={handleGenerateImageManually} disabled={isGeneratingImage || !eventTitleForImage} className="w-full">
             {isGeneratingImage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}
-            {currentImageUrl ? 'Regenerate Image' : 'Generate Image'}
+            {currentImageUrl ? 'Regenerate Image' : 'Generate Image'} (from Title)
           </Button>
-          {!eventDescriptionForImage && <p className="text-xs text-muted-foreground text-center">Add a description to generate an image.</p>}
+          {!eventTitleForImage && <p className="text-xs text-muted-foreground text-center">Add a title to generate an image.</p>}
 
 
           <DialogFooter className="pt-4">
