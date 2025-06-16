@@ -23,7 +23,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { 
   addMonths, subMonths, addWeeks, subWeeks, getMonthNameYear, 
-  formatInputDate, parseInputDate, parseInputTime, TIME_FORMAT, combineDateAndTime, format 
+  formatInputDate, formatInputTime, parseInputDate, parseInputTime, TIME_FORMAT, combineDateAndTime, format,
+  parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, isSameDay
 } from '@/lib/date-utils';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
 
@@ -44,11 +45,11 @@ export default function HomePage() {
     try {
       const storedEvents = localStorage.getItem('visuCalEvents');
       if (storedEvents) {
-        setEvents(JSON.parse(storedEvents));
+        setEvents(JSON.parse(storedEvents).map((e: any) => ({...e, date: e.date ? formatInputDate(parseInputDate(e.date)) : formatInputDate(new Date())})));
       }
     } catch (error) {
       console.error("Failed to load events from localStorage:", error);
-      toast({ title: "Error", description: "Could not load saved events.", variant: "destructive" });
+      toast({ title: "Fel", description: "Kunde inte ladda sparade händelser.", variant: "destructive" });
     }
   }, [toast]);
 
@@ -77,7 +78,7 @@ export default function HomePage() {
       setEvents(prevEvents =>
         prevEvents.map(e => (e.id === id ? { ...e, ...eventData, imageUrl: newImageUrl ?? e.imageUrl } : e))
       );
-      toast({ title: "Event Updated", description: `"${eventData.title}" has been updated.` });
+      toast({ title: "Händelse Uppdaterad", description: `"${eventData.title}" har uppdaterats.` });
     } else { 
       const newEvent: CalendarEvent = {
         ...eventData,
@@ -85,7 +86,7 @@ export default function HomePage() {
         imageUrl: newImageUrl,
       };
       setEvents(prevEvents => [...prevEvents, newEvent]);
-      toast({ title: "Event Created", description: `"${newEvent.title}" has been added.` });
+      toast({ title: "Händelse Skapad", description: `"${newEvent.title}" har lagts till.` });
     }
   };
   
@@ -98,29 +99,45 @@ export default function HomePage() {
     setEvents(prevEvents => prevEvents.filter(e => e.id !== eventId));
     setEventToDelete(null);
     if (event) {
-      toast({ title: "Event Deleted", description: `"${event.title}" has been deleted.` });
+      toast({ title: "Händelse Borttagen", description: `"${event.title}" har tagits bort.` });
     }
   };
 
-
   const handleAiCreateEvent = async (eventDetails: any): Promise<CalendarEvent | null> => {
     try {
-      const title = eventDetails.title || 'AI Event';
-      const dateStr = eventDetails.date ? formatInputDate(parseInputDate(eventDetails.date)) : formatInputDate(new Date());
-      const startTime = eventDetails.time || '12:00';
+      const title = eventDetails.title || 'AI Händelse';
+      
+      const parsedDate = eventDetails.dateQuery ? parseFlexibleSwedishDateString(eventDetails.dateQuery, new Date()) : new Date();
+      if (!parsedDate) {
+        toast({ title: "AI Fel", description: `Kunde inte tolka datum: "${eventDetails.dateQuery}".`, variant: "destructive" });
+        return null;
+      }
+      const dateStr = formatInputDate(parsedDate);
+
+      let startTime = '09:00'; // Default start time
+      if (eventDetails.timeQuery) {
+        const parsedTime = parseFlexibleSwedishTimeString(eventDetails.timeQuery, parsedDate);
+        if (parsedTime) {
+          startTime = formatInputTime(parsedTime);
+        } else {
+          toast({ title: "AI Varning", description: `Kunde inte tolka tid: "${eventDetails.timeQuery}". Använder standardtid.`, variant: "default" });
+        }
+      }
+      
       const endTimeDate = combineDateAndTime(parseInputDate(dateStr), parseInputTime(startTime));
       endTimeDate.setHours(endTimeDate.getHours() + 1); 
       const endTime = format(endTimeDate, TIME_FORMAT);
       const description = eventDetails.description || '';
+      const color = eventDetails.color || '#69B4EB';
       
       let imageUrl: string | undefined = undefined;
-      if (title) { // Generate image based on title
+      if (title) {
         try {
           const imageResult = await generateEventImage({ eventTitle: title });
           imageUrl = imageResult.imageUrl;
         } catch (imgError) {
           console.error("AI Event Image Generation Error:", imgError);
-          toast({ title: "AI Info", description: "Kunde inte generera bild för AI-händelse.", variant: "default" });
+          // Non-critical, proceed without image
         }
       }
 
@@ -131,89 +148,134 @@ export default function HomePage() {
         startTime,
         endTime,
         description,
-        color: '#69B4EB', 
+        color, 
         imageUrl,
       };
       
       setEvents(prevEvents => [...prevEvents, newEvent]);
       toast({ title: "Händelse skapad av AI", description: `"${newEvent.title}" har lagts till.` });
-      
       return newEvent;
 
     } catch (e) {
       console.error("Error processing AI event creation:", e);
-      toast({ title: "AI Error", description: "Could not create event from AI instruction.", variant: "destructive" });
+      toast({ title: "AI Fel", description: "Kunde inte skapa händelse från AI instruktion.", variant: "destructive" });
       return null;
     }
   };
 
-  const findEventToModifyOrDelete = (eventDetails: any): CalendarEvent | null => {
-    if (eventDetails.id) {
-      return events.find(e => e.id === eventDetails.id) || null;
+  const findEventToModifyOrDelete = (identifier: any): CalendarEvent | null => {
+    if (!identifier) return null;
+
+    const { title: targetTitle, dateQuery: targetDateQuery } = identifier;
+
+    if (!targetTitle) {
+      // If no title is provided for identification, we cannot reliably find the event.
+      // AI should be prompted to ask for which event.
+      return null;
     }
-    if (eventDetails.title && eventDetails.date) {
-      const targetDate = formatInputDate(parseInputDate(eventDetails.date));
-      return events.find(e => e.title === eventDetails.title && e.date === targetDate) || null;
+
+    let potentialEvents = events.filter(e => e.title.toLowerCase().includes(targetTitle.toLowerCase()));
+
+    if (potentialEvents.length === 0) return null;
+    if (potentialEvents.length === 1) return potentialEvents[0];
+
+    // If multiple events match the title, try to use dateQuery to disambiguate
+    if (targetDateQuery) {
+      const referenceDateForQuery = parseFlexibleSwedishDateString(targetDateQuery, new Date());
+      if (referenceDateForQuery) {
+        const dateFilteredEvents = potentialEvents.filter(e => 
+          isSameDay(parseInputDate(e.date), referenceDateForQuery)
+        );
+        if (dateFilteredEvents.length === 1) return dateFilteredEvents[0];
+        if (dateFilteredEvents.length > 0) potentialEvents = dateFilteredEvents; // Narrow down
+      }
     }
-    if (eventDetails.title) { // Fallback to title only if date not provided for modification/deletion query
-      return events.find(e => e.title === eventDetails.title) || null;
+    
+    // If still multiple, or couldn't use dateQuery, it's ambiguous.
+    // For now, return the first match, but ideally AI would ask for clarification.
+    // This function doesn't directly make the AI ask, but the AI flow should use this possibility.
+    if (potentialEvents.length > 1) {
+        toast({ title: "AI Info", description: `Flera händelser matchar "${targetTitle}". Specificera gärna mer. Ändrar den första.`, variant: "default" });
     }
-    return null;
+    return potentialEvents[0];
   };
   
-  const handleAiModifyEvent = async (eventDetails: any): Promise<CalendarEvent | null> => {
-    const eventToModify = findEventToModifyOrDelete(eventDetails);
+  const handleAiModifyEvent = async (eventIdentifier: any, eventDetails: any): Promise<CalendarEvent | null> => {
+    const eventToModify = findEventToModifyOrDelete(eventIdentifier);
     if (!eventToModify) {
-      toast({ title: "AI Error", description: "Kunde inte hitta händelse att ändra.", variant: "destructive" });
+      toast({ title: "AI Fel", description: "Kunde inte hitta händelse att ändra baserat på din beskrivning.", variant: "destructive" });
       return null;
     }
 
-    const oldTitle = eventToModify.title;
-    const updatedEventDataFromAI: Partial<Omit<CalendarEvent, 'id' | 'imageUrl'>> = {};
+    const updatedEventData: Partial<Omit<CalendarEvent, 'id' | 'imageUrl'>> = {};
+    let titleChanged = false;
+    let newTitleForImage = eventToModify.title;
 
-    if (eventDetails.title) updatedEventDataFromAI.title = eventDetails.title;
-    if (eventDetails.date) updatedEventDataFromAI.date = formatInputDate(parseInputDate(eventDetails.date));
-    if (eventDetails.time) updatedEventDataFromAI.startTime = eventDetails.time; 
-    if (typeof eventDetails.description === 'string') updatedEventDataFromAI.description = eventDetails.description;
+    if (eventDetails.title) {
+      if (eventToModify.title !== eventDetails.title) titleChanged = true;
+      updatedEventData.title = eventDetails.title;
+      newTitleForImage = eventDetails.title;
+    }
+    if (eventDetails.dateQuery) {
+      const parsedDate = parseFlexibleSwedishDateString(eventDetails.dateQuery, parseInputDate(eventToModify.date));
+      if (parsedDate) {
+        updatedEventData.date = formatInputDate(parsedDate);
+      } else {
+        toast({ title: "AI Varning", description: `Kunde inte tolka nytt datum: "${eventDetails.dateQuery}". Datumet ändras inte.`, variant: "default" });
+      }
+    }
+    if (eventDetails.timeQuery) {
+      const referenceDateForTimeParse = updatedEventData.date ? parseInputDate(updatedEventData.date) : parseInputDate(eventToModify.date);
+      const parsedTime = parseFlexibleSwedishTimeString(eventDetails.timeQuery, referenceDateForTimeParse);
+      if (parsedTime) {
+        updatedEventData.startTime = formatInputTime(parsedTime);
+        // Optionally adjust end time if only start time is changed
+        const newEndTime = new Date(parsedTime);
+        newEndTime.setHours(newEndTime.getHours() + 1); // Assume 1 hour duration if only start time changes
+        updatedEventData.endTime = formatInputTime(newEndTime);
+
+      } else {
+         toast({ title: "AI Varning", description: `Kunde inte tolka ny tid: "${eventDetails.timeQuery}". Tiden ändras inte.`, variant: "default" });
+      }
+    }
+    if (typeof eventDetails.description === 'string') {
+      updatedEventData.description = eventDetails.description;
+    }
+    if (eventDetails.color) {
+      updatedEventData.color = eventDetails.color;
+    }
     
     let finalImageUrl = eventToModify.imageUrl;
-    const titleChanged = typeof updatedEventDataFromAI.title === 'string' && updatedEventDataFromAI.title !== oldTitle;
-    const newTitle = updatedEventDataFromAI.title || oldTitle; // Use new title if available, else old for image gen
-
-    if (titleChanged && newTitle) {
+    if (titleChanged && newTitleForImage) {
         try {
-            const imageResult = await generateEventImage({ eventTitle: newTitle });
+            const imageResult = await generateEventImage({ eventTitle: newTitleForImage });
             finalImageUrl = imageResult.imageUrl;
         } catch (imgError) {
             console.error("AI Event Image Regeneration Error:", imgError);
-            toast({ title: "AI Info", description: "Kunde inte återskapa bild för AI-händelseändring.", variant: "default" });
         }
-    } else if (titleChanged && !newTitle) { // Title was removed
+    } else if (titleChanged && !newTitleForImage) { 
         finalImageUrl = undefined; 
     }
     
-    const updatedEvent: CalendarEvent = {
-      ...eventToModify,
-      ...updatedEventDataFromAI, 
+    // Create the event object with all fields for saving
+    const eventDataForSave: Omit<CalendarEvent, 'id' | 'imageUrl'> = {
+      title: updatedEventData.title ?? eventToModify.title,
+      date: updatedEventData.date ?? eventToModify.date,
+      startTime: updatedEventData.startTime ?? eventToModify.startTime,
+      endTime: updatedEventData.endTime ?? eventToModify.endTime,
+      description: updatedEventData.description ?? eventToModify.description,
+      color: updatedEventData.color ?? eventToModify.color,
     };
     
-    const { id: currentId, imageUrl: oldImgUrl, ...dataForSaveEvent } = updatedEvent;
+    handleSaveEvent(eventDataForSave, eventToModify.id, finalImageUrl);
     
-    handleSaveEvent(dataForSaveEvent, eventToModify.id, finalImageUrl);
-    
-    const actualModifiedEvent: CalendarEvent = {
-      ...dataForSaveEvent, 
-      id: eventToModify.id, 
-      imageUrl: finalImageUrl,
-    };
-    
-    return actualModifiedEvent;
+    return { ...eventDataForSave, id: eventToModify.id, imageUrl: finalImageUrl };
   };
 
-  const handleAiDeleteEvent = async (eventDetails: any): Promise<string | null> => {
-     const eventToDeleteByAi = findEventToModifyOrDelete(eventDetails);
+  const handleAiDeleteEvent = async (eventIdentifier: any): Promise<string | null> => {
+     const eventToDeleteByAi = findEventToModifyOrDelete(eventIdentifier);
     if (!eventToDeleteByAi) {
-      toast({ title: "AI Error", description: "Could not find event to delete.", variant: "destructive" });
+      toast({ title: "AI Fel", description: "Kunde inte hitta händelse att ta bort baserat på din beskrivning.", variant: "destructive" });
       return null;
     }
     handleDeleteEvent(eventToDeleteByAi.id);
@@ -263,7 +325,7 @@ export default function HomePage() {
         <Button
           onClick={() => handleOpenEventForm(null, new Date())}
           className="fixed bottom-6 right-6 rounded-full w-14 h-14 shadow-xl"
-          aria-label="Add new event"
+          aria-label="Lägg till ny händelse"
         >
           <PlusCircle className="w-7 h-7" />
         </Button>
@@ -289,15 +351,15 @@ export default function HomePage() {
         <AlertDialog open={!!eventToDelete} onOpenChange={() => setEventToDelete(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Are you sure you want to delete this event?</AlertDialogTitle>
+              <AlertDialogTitle>Är du säker på att du vill ta bort den här händelsen?</AlertDialogTitle>
               <AlertDialogDescription>
-                This action cannot be undone. This will permanently delete the event "{eventToDelete.title}".
+                Denna åtgärd kan inte ångras. Detta kommer permanent att radera händelsen "{eventToDelete.title}".
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setEventToDelete(null)}>Cancel</AlertDialogCancel>
+              <AlertDialogCancel onClick={() => setEventToDelete(null)}>Avbryt</AlertDialogCancel>
               <AlertDialogAction onClick={() => handleDeleteEvent(eventToDelete.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                <Trash2 className="mr-2 h-4 w-4" /> Delete
+                <Trash2 className="mr-2 h-4 w-4" /> Ta bort
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

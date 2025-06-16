@@ -4,7 +4,7 @@
 
 /**
  * @fileOverview This file defines a Genkit flow for creating, modifying, or deleting calendar events using natural language in Swedish.
- * It leverages an orchestrator to interpret user intent and an executor to generate calendar commands.
+ * It interprets user intent and extracts parameters to be processed by the frontend.
  *
  * - naturalLanguageEventCreation - A function that handles the natural language event creation process.
  * - NaturalLanguageEventCreationInput - The input type for the naturalLanguageEventCreation function.
@@ -13,120 +13,126 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { format } from 'date-fns'; // To send current date to AI
 
 // Define schemas for input and output
 const NaturalLanguageEventCreationInputSchema = z.object({
   instruction: z.string().describe('The instruction in natural language (Swedish) to create, modify, or delete a calendar event.'),
+  currentDate: z.string().describe('The current date in YYYY-MM-DD format, for context when interpreting relative dates like "idag" or "imorgon".'),
 });
 export type NaturalLanguageEventCreationInput = z.infer<typeof NaturalLanguageEventCreationInputSchema>;
 
-const CalendarCommandSchema = z.object({
-  command: z.string().describe('The command to execute on the calendar (e.g., CREATE, MODIFY, DELETE).'),
-  eventDetails: z.record(z.any()).describe('The details of the event to create, modify, or delete (e.g., title, date, time, description).'),
+// For identifying the event to modify/delete
+const EventIdentifierSchema = z.object({
+  title: z.string().optional().describe("The current title of the event to find. Example: 'Tandläkarbesök', 'Budgetplanering'."),
+  dateQuery: z.string().optional().describe("A fuzzy date/time query for the event to find, as mentioned by the user. Example: 'idag', 'imorgon', 'nästa vecka', 'den 10e'."),
+});
+
+// For details of a new event or changes to an existing one
+const EventDetailsSchema = z.object({
+  title: z.string().optional().describe("The new title for the event. Example: 'Lunch med Kalle'."),
+  dateQuery: z.string().optional().describe("The new date query in natural language. Example: 'nästa fredag', '15 augusti', 'om en vecka'."),
+  timeQuery: z.string().optional().describe("The new time query in natural language. Example: 'kl 14', 'på eftermiddagen', '10:30'."),
+  description: z.string().optional().describe("The new description for the event."),
+  color: z.string().optional().describe("A hex color code for the event, if specified or inferred.")
+});
+
+const SingleCalendarOperationSchema = z.object({
+  commandType: z.enum(['CREATE', 'MODIFY', 'DELETE']).describe("The type of operation: CREATE, MODIFY, or DELETE."),
+  eventIdentifier: EventIdentifierSchema.optional().describe("Details to identify the event for MODIFY or DELETE operations. This should be populated if commandType is MODIFY or DELETE."),
+  eventDetails: EventDetailsSchema.optional().describe("Details for the event to be CREATED or MODIFIED. This should be populated if commandType is CREATE or MODIFY."),
 });
 
 const NaturalLanguageEventCreationOutputSchema = z.object({
-  calendarCommands: z.array(CalendarCommandSchema).describe('An array of calendar commands to execute.'),
-  confirmationMessage: z.string().describe('A confirmation message to display to the user in Swedish.'),
+  operations: z.array(SingleCalendarOperationSchema).describe('An array of calendar operations derived from the instruction. Usually one, but could be more if the user asks for multiple things.'),
+  userConfirmationMessage: z.string().describe('A confirmation message for the user in Swedish, summarizing what the AI understood and will attempt to do. Example: "Okej, jag bokar in Lunch med Anna på tisdag kl 12." or "Jag försöker flytta ditt möte Budgetplanering till nästa vecka."'),
+  requiresClarification: z.boolean().optional().default(false).describe('Set to true if the AI is unsure or needs more information from the user to proceed confidently.'),
+  clarificationQuestion: z.string().optional().describe('If requiresClarification is true, this field should contain a question to ask the user. Example: "Vilket möte menar du?" or "Jag hittade flera tandläkarbesök, vilket menar du?"'),
 });
 export type NaturalLanguageEventCreationOutput = z.infer<typeof NaturalLanguageEventCreationOutputSchema>;
 
-// Define tool schemas
-const generateCalendarCommands = ai.defineTool(
-  {
-    name: 'generateCalendarCommands',
-    description: 'Generates calendar commands based on user instructions.',
-    inputSchema: z.object({
-      instruction: z.string().describe('The instruction to create, modify, or delete a calendar event.'),
-    }),
-    outputSchema: z.array(CalendarCommandSchema),
-  },
-  async input => {
-    // Placeholder implementation - replace with actual command generation logic
-    console.log('Generating calendar commands for instruction:', input.instruction);
-    // Example: For "Skapa ett möte imorgon kl 14 om projektplanering"
-    // This should ideally parse date/time more robustly
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const dateStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
 
-    if (input.instruction.toLowerCase().includes("möte med chefen")) {
-       return [
-        {
-          command: 'CREATE',
-          eventDetails: {
-            title: 'Möte med chefen',
-            date: '2024-07-15',
-            time: '10:00',
-            description: 'Diskussion om projektets framsteg.',
-          },
-        },
-      ];
-    } else if (input.instruction.toLowerCase().includes("projektplanering")) {
-       return [
-        {
-          command: 'CREATE',
-          eventDetails: {
-            title: 'Projektplanering',
-            date: dateStr, 
-            time: '14:00',
-            description: 'Planeringsmöte för projektet.',
-          },
-        },
-      ];
-    }
-    // Default or fallback if no specific parsing matches
-    return [
-      {
-        command: 'CREATE',
-        eventDetails: {
-          title: 'Obestämd Händelse',
-          date: dateStr,
-          time: '12:00',
-          description: 'Automatisk skapad händelse.',
-        },
-      },
-    ];
-  }
-);
-
-const validateCalendarCommands = ai.defineTool(
-  {
-    name: 'validateCalendarCommands',
-    description: 'Validates calendar commands to ensure they are accurate and safe to execute.',
-    inputSchema: z.object({
-      calendarCommands: z.array(CalendarCommandSchema).describe('The calendar commands to validate.'),
-    }),
-    outputSchema: z.boolean(),
-  },
-  async input => {
-    // Placeholder implementation - replace with actual validation logic
-    console.log('Validating calendar commands:', input.calendarCommands);
-    if (!input.calendarCommands || input.calendarCommands.length === 0) return false;
-    for (const command of input.calendarCommands) {
-        if (!command.command || !['CREATE', 'MODIFY', 'DELETE'].includes(command.command.toUpperCase())) return false;
-        if (!command.eventDetails || typeof command.eventDetails.title !== 'string' || !command.eventDetails.title) return false;
-        // Add more specific validation as needed, e.g., date format, time format
-    }
-    return true; // Assume commands are valid for now
-  }
-);
-
-// Define the orchestrator prompt
+// Define the main orchestrator prompt
 const orchestratorPrompt = ai.definePrompt({
-  name: 'orchestratorPrompt',
-  tools: [generateCalendarCommands, validateCalendarCommands],
+  name: 'visuCalOrchestratorPrompt',
   input: {schema: NaturalLanguageEventCreationInputSchema},
   output: {schema: NaturalLanguageEventCreationOutputSchema},
-  prompt: `Du är en kalenderassistent som förstår svenska. Din uppgift är att tolka användarens instruktioner för att skapa, ändra eller ta bort kalenderhändelser. 
+  prompt: `Du är VisuCal Assistent, en intelligent kalenderassistent som hjälper användare att hantera sina kalenderhändelser på svenska.
+Dagens datum är: {{currentDate}}. Använd detta som referens för relativa datumuttryck som "idag", "imorgon", "nästa vecka".
 
-Användaren kommer att ge dig en instruktion på svenska. Använd verktyget generateCalendarCommands för att generera kalenderkommandon baserat på instruktionen. Validera sedan kalenderkommandona med verktyget validateCalendarCommands.
+Din uppgift är att tolka användarens instruktion och omvandla den till en eller flera strukturerade kalenderoperationer (CREATE, MODIFY, DELETE).
+Fyll i NaturalLanguageEventCreationOutputSchema så noggrant som möjligt.
 
-Instruktion: {{{instruction}}}
+Användarens instruktion: "{{instruction}}"
 
-Om valideringen lyckas, svara med kalenderkommandona och ett bekräftelsemeddelande på svenska. 
-Om valideringen misslyckas, svara med ett tomt array för calendarCommands och ett meddelande som förklarar att kommandot inte kunde valideras eller var ogiltigt.
-Se till att ditt svar alltid följer NaturalLanguageEventCreationOutputSchema.
+Analysera instruktionen för att bestämma:
+1.  Avsikt (commandType): Är det CREATE (skapa ny), MODIFY (ändra befintlig), eller DELETE (ta bort befintlig)?
+2.  Event Identifier (eventIdentifier - för MODIFY/DELETE):
+    *   Vilken händelse vill användaren ändra/ta bort? Extrahera titel (t.ex. "Tandläkarbesök", "Möte med chefen").
+    *   Om användaren ger en tidsreferens för den befintliga händelsen (t.ex. "mötet idag", "lunchen imorgon"), extrahera det som 'dateQuery' i 'eventIdentifier'.
+3.  Event Details (eventDetails - för CREATE/MODIFY):
+    *   Titel: Ny titel för händelsen.
+    *   Datum (dateQuery): Den *nya* datumspecifikationen från användaren i naturligt språk (t.ex. "nästa fredag", "den 15 augusti", "imorgon"). Lämna den som text, frontenden kommer att tolka den.
+    *   Tid (timeQuery): Den *nya* tidsspecifikationen från användaren i naturligt språk (t.ex. "kl 14", "på eftermiddagen", "10:30"). Lämna som text.
+    *   Beskrivning: Eventuell beskrivning.
+    *   Färg: Om användaren nämner en färg, försök extrahera den som en hex-kod (t.ex. #FF0000 för röd). Annars utelämna.
+
+Bekräftelsemeddelande (userConfirmationMessage):
+*   Formulera ett kort, vänligt bekräftelsemeddelande på svenska som sammanfattar vad du har förstått och kommer att försöka göra. Exempel: "Jag lägger till 'Middag med Eva' imorgon kl 19." eller "Jag försöker flytta 'Projektmöte' till nästa tisdag."
+
+Förtydligande (requiresClarification & clarificationQuestion):
+*   Om instruktionen är tvetydig (t.ex. "ändra mötet"), sätt 'requiresClarification' till true och formulera en 'clarificationQuestion' (t.ex. "Vilket möte vill du ändra?").
+*   Om flera händelser matchar en sökning (vilket du inte kan veta här, men om det är uppenbart från texten att det kan vara så), be om förtydligande.
+
+Exempel:
+Instruktion: "Boka ett möte med Projektgruppen nästa tisdag kl 10 för att diskutera budgeten."
+Output (ungefärligt):
+{
+  "operations": [{
+    "commandType": "CREATE",
+    "eventDetails": { "title": "Möte med Projektgruppen", "dateQuery": "nästa tisdag", "timeQuery": "kl 10", "description": "Diskutera budgeten" }
+  }],
+  "userConfirmationMessage": "Okej, jag bokar in 'Möte med Projektgruppen' nästa tisdag kl 10 för att diskutera budgeten.",
+  "requiresClarification": false
+}
+
+Instruktion: "Flytta mitt tandläkarbesök från idag till nästa fredag."
+Output (ungefärligt):
+{
+  "operations": [{
+    "commandType": "MODIFY",
+    "eventIdentifier": { "title": "tandläkarbesök", "dateQuery": "idag" },
+    "eventDetails": { "dateQuery": "nästa fredag" }
+  }],
+  "userConfirmationMessage": "Jag försöker flytta ditt tandläkarbesök från idag till nästa fredag.",
+  "requiresClarification": false
+}
+
+Instruktion: "Ta bort mötet Budgetplanering."
+Output (ungefärligt):
+{
+  "operations": [{
+    "commandType": "DELETE",
+    "eventIdentifier": { "title": "Budgetplanering" }
+  }],
+  "userConfirmationMessage": "Jag tar bort mötet 'Budgetplanering'.",
+  "requiresClarification": false
+}
+
+Instruktion: "Ändra mötet."
+Output (ungefärligt):
+{
+  "operations": [],
+  "userConfirmationMessage": "Jag är osäker på vilket möte du menar.",
+  "requiresClarification": true,
+  "clarificationQuestion": "Vilket möte vill du ändra?"
+}
+
+Returnera ALLTID ett svar som följer NaturalLanguageEventCreationOutputSchema. Även om du är osäker, sätt requiresClarification till true.
+Försök att extrahera så mycket information som möjligt även om du begär förtydligande.
+Om användaren inte specificerar en tid för en ny händelse, kan du utelämna 'timeQuery'. Frontend kommer att använda en standardtid.
+Samma gäller 'dateQuery' för nya händelser; om den saknas kan frontend använda dagens datum.
+Var noga med att skilja på 'dateQuery' i 'eventIdentifier' (för att hitta en befintlig händelse) och 'dateQuery' i 'eventDetails' (för den nya tiden för händelsen).
 `,
 });
 
@@ -137,23 +143,27 @@ const naturalLanguageEventCreationFlow = ai.defineFlow(
     inputSchema: NaturalLanguageEventCreationInputSchema,
     outputSchema: NaturalLanguageEventCreationOutputSchema,
   },
-  async input => {
+  async (input: NaturalLanguageEventCreationInput): Promise<NaturalLanguageEventCreationOutput> => {
     const promptResponse = await orchestratorPrompt(input);
 
     if (!promptResponse || !promptResponse.output) {
-        console.warn('Orchestrator prompt did not return a valid structured output. Full response:', promptResponse);
+        console.warn('Orchestrator prompt did not return a valid structured output. Input:', input, 'Full response:', promptResponse);
         return {
-            calendarCommands: [],
-            confirmationMessage: "Jag kunde inte helt tolka din förfrågan. Försök igen eller formulera om dig."
+            operations: [],
+            userConfirmationMessage: "Jag kunde tyvärr inte tolka din förfrågan just nu. Försök igen eller formulera om dig.",
+            requiresClarification: true,
+            clarificationQuestion: "Kan du formulera om din förfrågan? Jag förstod inte riktigt."
         };
     }
     
     const output = promptResponse.output;
 
-    // Ensure output structure matches the schema even if commands are empty due to validation failure etc.
+    // Ensure output structure matches the schema
     return {
-        calendarCommands: output.calendarCommands || [],
-        confirmationMessage: output.confirmationMessage || "Bearbetning klar, men ingen specifik bekräftelse genererades."
+        operations: output.operations || [],
+        userConfirmationMessage: output.userConfirmationMessage || "Bearbetning klar, men ingen specifik bekräftelse genererades.",
+        requiresClarification: output.requiresClarification || false,
+        clarificationQuestion: output.clarificationQuestion
     };
   }
 );
@@ -163,6 +173,8 @@ const naturalLanguageEventCreationFlow = ai.defineFlow(
  * @param input The input for the naturalLanguageEventCreation function.
  * @returns The output of the naturalLanguageEventCreation function.
  */
-export async function naturalLanguageEventCreation(input: NaturalLanguageEventCreationInput): Promise<NaturalLanguageEventCreationOutput> {
-  return naturalLanguageEventCreationFlow(input);
+export async function naturalLanguageEventCreation(instruction: string): Promise<NaturalLanguageEventCreationOutput> {
+  const currentDateStr = format(new Date(), 'yyyy-MM-dd');
+  return naturalLanguageEventCreationFlow({ instruction, currentDate: currentDateStr });
 }
+

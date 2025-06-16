@@ -1,5 +1,5 @@
-import { format, parse, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, setHours, setMinutes, getHours, getMinutes, addDays, isSameDay, isSameMonth } from 'date-fns';
-import { sv } from 'date-fns/locale'; // For Swedish day/month names if needed
+import { format, parse, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addWeeks, subWeeks, setHours, setMinutes, getHours, getMinutes, addDays, isSameDay, isSameMonth, set, nextDay, Day, add } from 'date-fns';
+import { sv } from 'date-fns/locale'; // For Swedish day/month names
 
 export const DATE_FORMAT = 'yyyy-MM-dd';
 export const TIME_FORMAT = 'HH:mm';
@@ -13,6 +13,10 @@ export const formatInputTime = (date: Date): string => format(date, TIME_FORMAT)
 export const parseInputDate = (dateString: string): Date => parse(dateString, DATE_FORMAT, new Date());
 export const parseInputTime = (timeString: string, referenceDate: Date = new Date()): Date => {
   const [hours, minutes] = timeString.split(':').map(Number);
+  if (isNaN(hours) || isNaN(minutes)) {
+    // Fallback for invalid time string, maybe default to noon or handle error
+    return setMinutes(setHours(referenceDate, 12), 0);
+  }
   return setMinutes(setHours(referenceDate, hours), minutes);
 };
 
@@ -21,17 +25,17 @@ export const combineDateAndTime = (date: Date, time: Date): Date => {
 };
 
 export const getMonthNameYear = (date: Date): string => format(date, DISPLAY_MONTH_YEAR_FORMAT, { locale: sv });
-export const getDayOfWeekShort = (date: Date): string => format(date, 'EEE', { locale: sv }); // Mon, Tue, etc. in Swedish
+export const getDayOfWeekShort = (date: Date): string => format(date, 'EEE', { locale: sv });
 
 export const getDaysInMonth = (date: Date): Date[] => {
-  const start = startOfWeek(startOfMonth(date), { locale: sv });
-  const end = endOfWeek(endOfMonth(date), { locale: sv });
+  const start = startOfWeek(startOfMonth(date), { locale: sv, weekStartsOn: 1 });
+  const end = endOfWeek(endOfMonth(date), { locale: sv, weekStartsOn: 1 });
   return eachDayOfInterval({ start, end });
 };
 
 export const getWeekDays = (date: Date): Date[] => {
-  const start = startOfWeek(date, { locale: sv });
-  const end = endOfWeek(date, { locale: sv });
+  const start = startOfWeek(date, { locale: sv, weekStartsOn: 1 });
+  const end = endOfWeek(date, { locale: sv, weekStartsOn: 1 });
   return eachDayOfInterval({ start, end });
 };
 
@@ -41,6 +45,115 @@ export const getHoursInDay = (): Date[] => {
     hours.push(setMinutes(setHours(new Date(), i), 0));
   }
   return hours;
+};
+
+const swedishWeekdays: { [key: string]: Day } = {
+  'söndag': 0, 'måndag': 1, 'tisdag': 2, 'onsdag': 3, 'torsdag': 4, 'fredag': 5, 'lördag': 6,
+  'sön': 0, 'mån': 1, 'tis': 2, 'ons': 3, 'tor': 4, 'fre': 5, 'lör': 6
+};
+
+const swedishMonths: { [key: string]: number } = {
+  'januari': 0, 'februari': 1, 'mars': 2, 'april': 3, 'maj': 4, 'juni': 5,
+  'juli': 6, 'augusti': 7, 'september': 8, 'oktober': 9, 'november': 10, 'december': 11,
+  'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'maj': 4, 'jun': 5,
+  'jul': 6, 'aug': 7, 'sep': 8, 'okt': 9, 'nov': 10, 'dec': 11
+};
+
+export const parseFlexibleSwedishDateString = (dateString: string, referenceDate: Date = new Date()): Date | null => {
+  const lowerDateString = dateString.toLowerCase().trim();
+  const now = referenceDate;
+
+  if (lowerDateString === 'idag') return now;
+  if (lowerDateString === 'imorgon' || lowerDateString === 'i morgon') return addDays(now, 1);
+  if (lowerDateString === 'i övermorgon' || lowerDateString === 'övermorgon') return addDays(now, 2);
+
+  // Try YYYY-MM-DD
+  try {
+    const parsedDate = parse(lowerDateString, 'yyyy-MM-dd', now);
+    if (!isNaN(parsedDate.getTime())) return parsedDate;
+  } catch (e) {/* ignore */}
+
+  // Try "nästa [veckodag]"
+  let match = lowerDateString.match(/^nästa\s+(.+)$/);
+  if (match && swedishWeekdays.hasOwnProperty(match[1])) {
+    return nextDay(now, swedishWeekdays[match[1]]);
+  }
+
+  // Try "[dag] [månad]" (e.g., "15 augusti") - assumes current year
+  match = lowerDateString.match(/^(\d{1,2})\s+(.+)$/);
+  if (match) {
+    const day = parseInt(match[1]);
+    const monthName = match[2];
+    if (swedishMonths.hasOwnProperty(monthName)) {
+      const month = swedishMonths[monthName];
+      try {
+        return set(now, { month, date: day });
+      } catch (e) { /* ignore invalid date like 31 feb */ }
+    }
+  }
+  
+  // Try "om X dagar/veckor/månader"
+  match = lowerDateString.match(/^om\s+(\d+)\s+(dag|dagar|vecka|veckor|månad|månader)$/);
+  if (match) {
+    const amount = parseInt(match[1]);
+    const unit = match[2];
+    if (unit.startsWith('dag')) return addDays(now, amount);
+    if (unit.startsWith('veck')) return addWeeks(now, amount);
+    if (unit.startsWith('månad')) return addMonths(now, amount);
+  }
+
+  // Fallback: try parsing with date-fns, might catch some "dd.MM.yyyy" or "dd/MM/yyyy" if locale supports it
+  try {
+    const parsedDate = parse(dateString, 'P', new Date(), { locale: sv }); // 'P' is flexible date format
+     if (!isNaN(parsedDate.getTime()) && parsedDate.getFullYear() > 1970) return parsedDate; // basic sanity check
+  } catch (e) { /* ignore */ }
+  
+  console.warn(`Could not parse flexible date string: "${dateString}"`);
+  return null; // Could not parse
+};
+
+
+export const parseFlexibleSwedishTimeString = (timeString: string, referenceDate: Date = new Date()): Date | null => {
+  const lowerTimeString = timeString.toLowerCase().trim();
+
+  // Try HH:MM
+  let match = lowerTimeString.match(/^(\d{1,2}):(\d{2})$/);
+  if (match) {
+    const hours = parseInt(match[1]);
+    const minutes = parseInt(match[2]);
+    if (hours >= 0 && hours < 24 && minutes >= 0 && minutes < 60) {
+      return setMinutes(setHours(referenceDate, hours), minutes);
+    }
+  }
+
+  // Try "kl HH" or "klockan HH"
+  match = lowerTimeString.match(/^(?:kl|klockan)\s*(\d{1,2})$/);
+  if (match) {
+    const hours = parseInt(match[1]);
+    if (hours >= 0 && hours < 24) {
+      return setMinutes(setHours(referenceDate, hours), 0);
+    }
+  }
+  
+  // Try "HH" (just a number, assume hour)
+  match = lowerTimeString.match(/^(\d{1,2})$/);
+   if (match) {
+    const hours = parseInt(match[1]);
+    if (hours >= 0 && hours < 24) {
+      // If only hour is given, check if it's already past and if so, assume next day's hour? Or just set it.
+      // For now, just set it on the referenceDate.
+      return setMinutes(setHours(referenceDate, hours), 0);
+    }
+  }
+
+  // Simple keywords
+  if (lowerTimeString.includes('morgon') || lowerTimeString.includes('förmiddag')) return setMinutes(setHours(referenceDate, 9), 0); // Default 9 AM
+  if (lowerTimeString.includes('lunch')) return setMinutes(setHours(referenceDate, 12), 0); // Default 12 PM
+  if (lowerTimeString.includes('eftermiddag')) return setMinutes(setHours(referenceDate, 15), 0); // Default 3 PM
+  if (lowerTimeString.includes('kväll')) return setMinutes(setHours(referenceDate, 19), 0); // Default 7 PM
+
+  console.warn(`Could not parse flexible time string: "${timeString}"`);
+  return null;
 };
 
 
@@ -59,5 +172,8 @@ export {
   addDays,
   isSameDay,
   isSameMonth,
+  set,
+  nextDay,
+  add,
   sv as SwedishLocale
 };

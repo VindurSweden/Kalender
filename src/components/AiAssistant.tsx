@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { FC } from 'react';
@@ -5,29 +6,39 @@ import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter, SheetClose } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/components/ui/sheet';
 import { Bot, User, Send, Loader2 } from 'lucide-react';
-import { naturalLanguageEventCreation, NaturalLanguageEventCreationInput, NaturalLanguageEventCreationOutput } from '@/ai/flows/natural-language-event-creation';
+import { 
+  naturalLanguageEventCreation, 
+  NaturalLanguageEventCreationOutput 
+} from '@/ai/flows/natural-language-event-creation';
 import type { CalendarEvent } from '@/types/event';
 import { useToast } from '@/hooks/use-toast';
-import { formatInputDate, parse } from '@/lib/date-utils'; // For parsing dates from AI
+import { formatInputDate, parseFlexibleSwedishDateString, format } from '@/lib/date-utils';
 
 interface Message {
   id: string;
   sender: 'user' | 'ai';
   text: string;
   isProcessing?: boolean;
+  requiresAction?: boolean; // For AI messages that need user input/clarification
 }
 
 interface AiAssistantProps {
   isOpen: boolean;
   onClose: () => void;
-  onAiCreateEvent: (eventDetails: any) => Promise<CalendarEvent | null>; // Returns created event or null
-  onAiModifyEvent: (eventDetails: any) => Promise<CalendarEvent | null>;
-  onAiDeleteEvent: (eventDetails: any) => Promise<string | null>; // Returns deleted event ID or null
+  onAiCreateEvent: (eventDetails: any) => Promise<CalendarEvent | null>;
+  onAiModifyEvent: (eventIdentifier: any, eventDetails: any) => Promise<CalendarEvent | null>;
+  onAiDeleteEvent: (eventIdentifier: any) => Promise<string | null>;
 }
 
-const AiAssistant: FC<AiAssistantProps> = ({ isOpen, onClose, onAiCreateEvent, onAiModifyEvent, onAiDeleteEvent }) => {
+const AiAssistant: FC<AiAssistantProps> = ({ 
+  isOpen, 
+  onClose, 
+  onAiCreateEvent, 
+  onAiModifyEvent, 
+  onAiDeleteEvent 
+}) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -43,60 +54,94 @@ const AiAssistant: FC<AiAssistantProps> = ({ isOpen, onClose, onAiCreateEvent, o
   const handleSendMessage = async () => {
     if (input.trim() === '' || isProcessing) return;
 
-    const userMessage: Message = { id: Date.now().toString(), sender: 'user', text: input };
+    const userMessage: Message = { id: crypto.randomUUID(), sender: 'user', text: input };
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = input;
     setInput('');
     setIsProcessing(true);
+    
+    // Add a thinking bubble for AI
+    const thinkingMessageId = crypto.randomUUID();
+    setMessages(prev => [...prev, { id: thinkingMessageId, sender: 'ai', text: "Tänker...", isProcessing: true }]);
 
     try {
-      const aiInput: NaturalLanguageEventCreationInput = { instruction: userMessage.text };
-      const aiResponse: NaturalLanguageEventCreationOutput = await naturalLanguageEventCreation(aiInput);
+      const aiResponse: NaturalLanguageEventCreationOutput = await naturalLanguageEventCreation(currentInput);
       
-      let responseText = aiResponse.confirmationMessage || "I've processed your request.";
+      // Remove thinking bubble
+      setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
 
-      if (aiResponse.calendarCommands && aiResponse.calendarCommands.length > 0) {
-        for (const command of aiResponse.calendarCommands) {
-          switch (command.command.toUpperCase()) {
+      let responseText = aiResponse.userConfirmationMessage || "Jag har bearbetat din förfrågan.";
+      let operationsPerformed = false;
+
+      if (aiResponse.requiresClarification && aiResponse.clarificationQuestion) {
+        responseText = aiResponse.clarificationQuestion;
+        const aiClarificationMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText, requiresAction: true };
+        setMessages(prev => [...prev, aiClarificationMessage]);
+      } else if (aiResponse.operations && aiResponse.operations.length > 0) {
+        let opDetailsText = "";
+        for (const operation of aiResponse.operations) {
+          operationsPerformed = true;
+          switch (operation.commandType.toUpperCase()) {
             case 'CREATE':
-              const createdEvent = await onAiCreateEvent(command.eventDetails);
-              if (createdEvent) {
-                responseText += `\nCreated event: "${createdEvent.title}" on ${formatInputDate(parse(createdEvent.date, 'yyyy-MM-dd', new Date()))} at ${createdEvent.startTime}.`;
-              } else {
-                 responseText += `\nFailed to create an event based on details: ${JSON.stringify(command.eventDetails)}.`;
+              if (operation.eventDetails) {
+                const createdEvent = await onAiCreateEvent(operation.eventDetails);
+                if (createdEvent) {
+                  opDetailsText += `\nSkapade händelse: "${createdEvent.title}" den ${formatInputDate(parseFlexibleSwedishDateString(createdEvent.date, new Date()) || new Date())} kl ${createdEvent.startTime}.`;
+                } else {
+                  opDetailsText += `\nMisslyckades med att skapa en händelse baserat på: ${JSON.stringify(operation.eventDetails)}.`;
+                }
               }
               break;
             case 'MODIFY':
-              const modifiedEvent = await onAiModifyEvent(command.eventDetails);
-               if (modifiedEvent) {
-                responseText += `\nModified event: "${modifiedEvent.title}".`;
-              } else {
-                 responseText += `\nFailed to modify an event based on details: ${JSON.stringify(command.eventDetails)}. Could not find matching event.`;
+              if (operation.eventIdentifier && operation.eventDetails) {
+                const modifiedEvent = await onAiModifyEvent(operation.eventIdentifier, operation.eventDetails);
+                if (modifiedEvent) {
+                  opDetailsText += `\nÄndrade händelse: "${modifiedEvent.title}".`;
+                } else {
+                  opDetailsText += `\nMisslyckades med att ändra en händelse. Kunde inte hitta matchande händelse eller tolka nya detaljer.`;
+                }
               }
               break;
             case 'DELETE':
-              const deletedEventId = await onAiDeleteEvent(command.eventDetails);
-              if (deletedEventId) {
-                responseText += `\nDeleted an event.`; // Details might be sensitive or hard to phrase from just ID.
-              } else {
-                 responseText += `\nFailed to delete an event based on details: ${JSON.stringify(command.eventDetails)}. Could not find matching event.`;
+              if (operation.eventIdentifier) {
+                const deletedEventId = await onAiDeleteEvent(operation.eventIdentifier);
+                if (deletedEventId) {
+                  opDetailsText += `\nEn händelse har tagits bort.`;
+                } else {
+                  opDetailsText += `\nMisslyckades med att ta bort en händelse. Kunde inte hitta matchande händelse.`;
+                }
               }
               break;
             default:
-              responseText += `\nUnknown command: ${command.command}`;
+              opDetailsText += `\nOkänt kommando: ${operation.commandType}`;
           }
         }
+        if (opDetailsText) {
+          responseText += opDetailsText;
+        }
+        if (!operationsPerformed && !aiResponse.userConfirmationMessage) {
+             responseText = "Jag är osäker på vad jag ska göra med den informationen.";
+        }
+
+        const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
+        setMessages(prev => [...prev, aiResponseMessage]);
+
+      } else {
+        // AI didn't ask for clarification but also didn't return operations.
+        // Use its confirmation message, or a generic one.
+        const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
+        setMessages(prev => [...prev, aiResponseMessage]);
       }
-      
-      const aiMessage: Message = { id: (Date.now() + 1).toString(), sender: 'ai', text: responseText };
-      setMessages(prev => [...prev, aiMessage]);
 
     } catch (error) {
+       // Remove thinking bubble on error too
+      setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
       console.error('AI Assistant Error:', error);
-      const errorMessage = "Sorry, I couldn't process that request. Please try again.";
-      setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), sender: 'ai', text: errorMessage }]);
+      const errorMessageText = "Ursäkta, jag kunde inte bearbeta din förfrågan just nu. Försök igen.";
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), sender: 'ai', text: errorMessageText }]);
       toast({
-        title: 'AI Assistant Error',
-        description: (error as Error).message || 'An unknown error occurred.',
+        title: 'AI Assistentfel',
+        description: (error as Error).message || 'Ett okänt fel inträffade.',
         variant: 'destructive',
       });
     } finally {
@@ -104,14 +149,13 @@ const AiAssistant: FC<AiAssistantProps> = ({ isOpen, onClose, onAiCreateEvent, o
     }
   };
 
-
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <SheetContent className="w-full sm:max-w-md flex flex-col p-0">
         <SheetHeader className="p-6 pb-2">
-          <SheetTitle className="font-headline flex items-center"><Bot className="mr-2 h-6 w-6 text-primary" /> VisuCal Assistant</SheetTitle>
+          <SheetTitle className="font-headline flex items-center"><Bot className="mr-2 h-6 w-6 text-primary" /> VisuCal Assistent</SheetTitle>
           <SheetDescription>
-            Chat with the AI to manage your calendar events using natural language (Swedish). For example: "Skapa ett möte imorgon kl 14 om projektplanering".
+            Chatta med AI:n för att hantera dina kalenderhändelser med naturligt språk (svenska). Exempel: "Skapa ett möte imorgon kl 14 om projektplanering" eller "Flytta lunchen till nästa fredag".
           </SheetDescription>
         </SheetHeader>
         <ScrollArea className="flex-grow p-6" ref={scrollAreaRef}>
@@ -120,12 +164,12 @@ const AiAssistant: FC<AiAssistantProps> = ({ isOpen, onClose, onAiCreateEvent, o
               <div key={msg.id} className={`flex items-end gap-2 ${msg.sender === 'user' ? 'justify-end' : ''}`}>
                 {msg.sender === 'ai' && <Bot className="h-6 w-6 text-primary flex-shrink-0" />}
                 <div
-                  className={`max-w-[75%] rounded-lg px-4 py-2 text-sm ${
+                  className={`max-w-[75%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap ${
                     msg.sender === 'user'
                       ? 'bg-primary text-primary-foreground'
-                      : 'bg-accent/20 text-accent-foreground'
+                      : msg.requiresAction ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' : 'bg-accent/20 text-accent-foreground'
                   }`}
-                  style={ msg.sender === 'ai' ? { backgroundColor: 'var(--accent-foreground)', color: 'var(--accent)' } : {} } /* Minor style adjustment for AI bubble to ensure contrast */
+                  style={ msg.sender === 'ai' && !msg.requiresAction ? { backgroundColor: 'var(--accent-foreground)', color: 'var(--accent)' } : {} }
 
                 >
                   {msg.text}
@@ -134,14 +178,6 @@ const AiAssistant: FC<AiAssistantProps> = ({ isOpen, onClose, onAiCreateEvent, o
                 {msg.sender === 'user' && <User className="h-6 w-6 text-muted-foreground flex-shrink-0" />}
               </div>
             ))}
-            {isProcessing && messages[messages.length-1]?.sender === 'user' && (
-                 <div className="flex items-end gap-2">
-                    <Bot className="h-6 w-6 text-primary flex-shrink-0" />
-                    <div className="max-w-[75%] rounded-lg px-4 py-2 text-sm bg-accent/20 text-accent-foreground" style={{ backgroundColor: 'var(--accent-foreground)', color: 'var(--accent)' }}>
-                        <Loader2 className="inline-block h-4 w-4 animate-spin" /> Processing...
-                    </div>
-                 </div>
-            )}
           </div>
         </ScrollArea>
         <SheetFooter className="p-6 pt-2 border-t">
@@ -154,13 +190,13 @@ const AiAssistant: FC<AiAssistantProps> = ({ isOpen, onClose, onAiCreateEvent, o
           >
             <Input
               type="text"
-              placeholder="Ask something in Swedish..."
+              placeholder="Fråga något på svenska..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={isProcessing}
               className="flex-1"
             />
-            <Button type="submit" size="icon" disabled={isProcessing || input.trim() === ''} aria-label="Send message">
+            <Button type="submit" size="icon" disabled={isProcessing || input.trim() === ''} aria-label="Skicka meddelande">
               {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </Button>
           </form>
