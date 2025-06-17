@@ -69,7 +69,7 @@ const generateEventImageFlow = ai.defineFlow(
     });
 
     // Check if media.url is a valid and complete data URI
-    if (media && media.url && media.url.startsWith('data:') && media.url.includes(',')) {
+    if (media && media.url && media.url.startsWith('data:') && media.url.includes(';base64,') && media.url.split(',')[1]?.length > 0) {
       return {imageUrl: media.url};
     } else {
       console.warn('Image generation did not return a valid/complete media URL for title:', input.eventTitle, 'Received URL:', media?.url);
@@ -77,3 +77,4 @@ const generateEventImageFlow = ai.defineFlow(
     }
   }
 );
+
