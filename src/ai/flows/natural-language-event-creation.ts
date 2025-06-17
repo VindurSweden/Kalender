@@ -42,7 +42,7 @@ export type NaturalLanguageEventCreationInput = z.infer<typeof NaturalLanguageEv
 
 // For identifying the event to modify/delete
 const EventIdentifierSchema = z.object({
-  title: z.string().optional().describe("The current title of the event to find. Example: 'Tandläkarbesök', 'Budgetplanering'."),
+  title: z.string().optional().describe("The current title of the event to find. Example: 'Tandläkarbesök', 'Budgetplanering'. This should be the title of ONE specific event."),
   dateQuery: z.string().optional().describe("A fuzzy date/time query for the event to find, as mentioned by the user. Example: 'idag', 'imorgon', 'nästa vecka', 'den 10e'."),
   timeQuery: z.string().optional().describe("The current start time query (e.g., 'kl 10', '11:30') for the event to find. Use this if title and dateQuery are not unique enough, referencing the event's original start time."),
 });
@@ -117,7 +117,15 @@ Kontextuell förståelse och användarpreferenser:
 
 Din uppgift är att tolka användarens instruktion, **med hänsyn till hela konversationshistoriken och ovanstående punkter om kontextuell förståelse**, och omvandla den till en eller flera strukturerade kalenderoperationer (CREATE, MODIFY, DELETE, QUERY).
 Fyll i NaturalLanguageEventCreationOutputSchema så noggrant som möjligt.
-**Om användarens instruktion tydligt implicerar en åtgärd på FLERA händelser (t.ex. "flytta alla mina möten idag", "avboka alla mina tandläkarbesök nästa vecka"), ska du generera en SEPARAT operation (CREATE, MODIFY, eller DELETE) för VARJE enskild händelse som matchar kriterierna i \`operations\`-arrayen. Använd \`currentEvents\` för att identifiera de specifika händelserna. För varje händelse som ska modifieras eller tas bort, se till att \`eventIdentifier\` är så precis som möjligt, inkludera originaltitel, datumfråga och, om nödvändigt för unikhet (t.ex. flera möten med samma namn på samma dag), den ursprungliga starttiden i \`eventIdentifier.timeQuery\`.**
+
+**Om användarens instruktion tydligt implicerar en åtgärd på FLERA händelser (t.ex. "flytta alla mina möten idag", "avboka alla mina tandläkarbesök nästa vecka"):
+1.  Identifiera VARJE enskild händelse från \`currentEvents\` som matchar användarens kriterier.
+2.  För VARJE sådan identifierad händelse, generera en SEPARAT operation (CREATE, MODIFY, eller DELETE) i \`operations\`-arrayen.
+3.  För \`eventIdentifier\` i VARJE operation:
+    *   \`title\`: Ska vara den exakta, ursprungliga titeln för den *enskilda* händelsen från \`currentEvents\` som denna operation avser. Kombinera INTE flera titlar här.
+    *   \`dateQuery\`: Ska vara en fråga som hjälper till att identifiera den *enskilda* händelsens ursprungliga datum (t.ex. "idag", "imorgon", "2025-06-17").
+    *   \`timeQuery\`: Ska vara den *enskilda* händelsens ursprungliga starttid (t.ex. "10:00", "kl 14") om det behövs för unik identifiering.
+Se till att varje operation i \`operations\`-arrayen fokuserar på ENBART EN händelse.**
 
 Användarens senaste instruktion: "{{instruction}}"
 
@@ -135,7 +143,7 @@ Analysera instruktionen och historiken för att bestämma:
             3. Agera som en rådgivande och ansvarsfull assistent.
         *   Returnera inga CREATE/MODIFY/DELETE operationer för den initiala QUERY-förfrågan (om det inte är en direkt bekräftelse på ett tidigare AI-förslag). Ditt huvudsakliga mål är att informera.
 2.  Event Identifier (eventIdentifier - för MODIFY/DELETE):
-    *   Vilken händelse vill användaren ändra/ta bort? Extrahera titel (t.ex. "Tandläkarbesök", "Möte med chefen"). Använd 'currentEvents' och konversationshistoriken för att försöka matcha.
+    *   Vilken händelse vill användaren ändra/ta bort? Extrahera titeln (t.ex. "Tandläkarbesök", "Möte med chefen"). Använd 'currentEvents' och konversationshistoriken för att försöka matcha.
     *   Om användaren ger en tidsreferens för den befintliga händelsen (t.ex. "mötet idag", "lunchen imorgon"), extrahera det som 'dateQuery' i 'eventIdentifier'.
     *   Om det finns flera händelser med samma titel på samma dag/datumfråga, använd den *ursprungliga* starttiden för händelsen som 'timeQuery' i 'eventIdentifier' för att säkerställa unik identifiering (t.ex. \`timeQuery: "10:00"\` eller \`timeQuery: "kl 14"\`).
 3.  Event Details (eventDetails - för CREATE/MODIFY):
@@ -247,3 +255,4 @@ export async function naturalLanguageEventCreation(
   const currentDateStr = format(new Date(), 'yyyy-MM-dd');
   return naturalLanguageEventCreationFlow({ instruction, currentDate: currentDateStr, currentEvents: currentEventsForAI, conversationHistory });
 }
+
