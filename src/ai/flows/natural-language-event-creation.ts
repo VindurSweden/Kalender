@@ -62,6 +62,9 @@ const SingleCalendarOperationSchema = z.object({
   eventDetails: EventDetailsSchema.optional().describe("Details for the event to be CREATED or MODIFIED. This should be populated if commandType is CREATE or MODIFY."),
 });
 
+// Making operations and userConfirmationMessage optional at the schema level
+// to prevent Genkit schema validation errors if the LLM omits them.
+// Defaults will be handled in the flow logic.
 const NaturalLanguageEventCreationOutputSchema = z.object({
   operations: z.array(SingleCalendarOperationSchema).optional().describe('An array of calendar operations derived from the instruction. Usually one, but could be more if the user asks for multiple things.'),
   userConfirmationMessage: z.string().optional().describe('A confirmation message for the user in Swedish, summarizing what the AI understood and will attempt to do, or providing information. Example: "Okej, jag bokar in Lunch med Anna på tisdag kl 12." or "Jag försöker flytta ditt möte Budgetplanering till nästa vecka." or "Imorgon har du: Möte kl 10, Lunch kl 12."'),
