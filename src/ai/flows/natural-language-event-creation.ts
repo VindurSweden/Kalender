@@ -63,8 +63,8 @@ const SingleCalendarOperationSchema = z.object({
 });
 
 const NaturalLanguageEventCreationOutputSchema = z.object({
-  operations: z.array(SingleCalendarOperationSchema).describe('An array of calendar operations derived from the instruction. Usually one, but could be more if the user asks for multiple things.'),
-  userConfirmationMessage: z.string().describe('A confirmation message for the user in Swedish, summarizing what the AI understood and will attempt to do, or providing information. Example: "Okej, jag bokar in Lunch med Anna på tisdag kl 12." or "Jag försöker flytta ditt möte Budgetplanering till nästa vecka." or "Imorgon har du: Möte kl 10, Lunch kl 12."'),
+  operations: z.array(SingleCalendarOperationSchema).optional().describe('An array of calendar operations derived from the instruction. Usually one, but could be more if the user asks for multiple things.'),
+  userConfirmationMessage: z.string().optional().describe('A confirmation message for the user in Swedish, summarizing what the AI understood and will attempt to do, or providing information. Example: "Okej, jag bokar in Lunch med Anna på tisdag kl 12." or "Jag försöker flytta ditt möte Budgetplanering till nästa vecka." or "Imorgon har du: Möte kl 10, Lunch kl 12."'),
   requiresClarification: z.boolean().optional().default(false).describe('Set to true if the AI is unsure or needs more information from the user to proceed confidently.'),
   clarificationQuestion: z.string().optional().describe('If requiresClarification is true, this field should contain a question to ask the user. Example: "Vilket möte menar du?" or "Jag hittade flera tandläkarbesök, vilket menar du?"'),
 });
@@ -122,10 +122,10 @@ Fyll i NaturalLanguageEventCreationOutputSchema så noggrant som möjligt.
 1.  Identifiera VARJE enskild händelse från \`currentEvents\` som matchar användarens kriterier.
 2.  För VARJE sådan identifierad händelse, generera en SEPARAT operation (CREATE, MODIFY, eller DELETE) i \`operations\`-arrayen.
 3.  För \`eventIdentifier\` i VARJE operation:
-    *   \`title\`: Ska vara den exakta, ursprungliga titeln för den *enskilda* händelsen från \`currentEvents\` som denna operation avser. Kombinera INTE flera titlar här.
+    *   \`title\`: Ska vara den exakta, ursprungliga titeln för den *enskilda* händelsen från \`currentEvents\` som denna operation avser. Kombinera INTE flera titlar här. Använd inte datum eller tid i detta fält.
     *   \`dateQuery\`: Ska vara en fråga som hjälper till att identifiera den *enskilda* händelsens ursprungliga datum (t.ex. "idag", "imorgon", "2025-06-17").
-    *   \`timeQuery\`: Ska vara den *enskilda* händelsens ursprungliga starttid (t.ex. "10:00", "kl 14") om det behövs för unik identifiering.
-Se till att varje operation i \`operations\`-arrayen fokuserar på ENBART EN händelse.**
+    *   \`timeQuery\`: Ska vara den *enskilda* händelsens ursprungliga starttid (t.ex. "10:00", "kl 14") om det behövs för unik identifiering av händelsen från \`currentEvents\`.
+Se till att varje operation i \`operations\`-arrayen fokuserar på ENBART EN händelse och att dess \`eventIdentifier.title\` är exakt titeln för den ursprungliga händelsen.**
 
 Användarens senaste instruktion: "{{instruction}}"
 
@@ -168,7 +168,7 @@ Output (ungefärligt):
 {
   "operations": [{
     "commandType": "MODIFY",
-    "eventIdentifier": { "title": "tandläkarbesök", "dateQuery": "idag", "timeQuery": "15:00" },
+    "eventIdentifier": { "title": "Tandläkarbesök", "dateQuery": "idag", "timeQuery": "15:00" },
     "eventDetails": { "dateQuery": "nästa fredag" }
   }],
   "userConfirmationMessage": "Jag försöker flytta ditt tandläkarbesök från idag kl 15:00 till nästa fredag.",
@@ -219,25 +219,26 @@ const naturalLanguageEventCreationFlow = ai.defineFlow(
     const promptResponse = await orchestratorPrompt(input);
     console.log("[AI Flow] Raw response from orchestratorPrompt:", JSON.stringify(promptResponse, null, 2));
 
-    if (!promptResponse || !promptResponse.output) {
-        console.warn('[AI Flow] Orchestrator prompt did not return a valid structured output. Input:', input, 'Full response:', promptResponse);
+    const output = promptResponse.output; 
+
+    if (!output) { 
+        console.warn('[AI Flow] Orchestrator prompt did not return a valid structured output object. Input:', input, 'Full response:', promptResponse);
         return {
             operations: [],
-            userConfirmationMessage: "Jag kunde tyvärr inte tolka din förfrågan just nu. Försök igen eller formulera om dig.",
+            userConfirmationMessage: "Jag kunde tyvärr inte tolka din förfrågan just nu (internt fel). Försök igen eller formulera om dig.",
             requiresClarification: true,
             clarificationQuestion: "Kan du formulera om din förfrågan? Jag förstod inte riktigt."
         };
     }
     
-    const output = promptResponse.output;
     console.log("[AI Flow] Structured output from orchestratorPrompt:", JSON.stringify(output, null, 2));
 
-    // Ensure output structure matches the schema
+    // Provide defaults for fields that are now optional in the schema but logically required by the application.
     return {
-        operations: output.operations || [],
-        userConfirmationMessage: output.userConfirmationMessage || "Bearbetning klar, men ingen specifik bekräftelse genererades.",
-        requiresClarification: output.requiresClarification || false,
-        clarificationQuestion: output.clarificationQuestion
+        operations: output.operations || [], 
+        userConfirmationMessage: output.userConfirmationMessage || "Din förfrågan har bearbetats.", 
+        requiresClarification: output.requiresClarification ?? false, 
+        clarificationQuestion: output.clarificationQuestion 
     };
   }
 );
