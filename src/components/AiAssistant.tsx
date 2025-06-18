@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFo
 import { Bot, User, Send, Loader2, AlertTriangle, Zap } from 'lucide-react';
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
-import type { AiEventType, ConversationMessageType, TolkAIOutput, FormatPlanOutput } from '@/ai/schemas';
+import type { AiEventType, ConversationMessageType, TolkAIOutput, FormatPlanOutput, TolkAIInput } from '@/ai/schemas';
 import type { CalendarEvent } from '@/types/event';
 import { useToast } from '@/hooks/use-toast';
 import { format as formatDateFns } from 'date-fns';
@@ -78,15 +78,24 @@ const AiAssistant: FC<AiAssistantProps> = ({
         .filter(msg => msg.id !== thinkingMessageId && (msg.sender === 'user' || msg.sender === 'ai'))
         .map(msg => ({ sender: msg.sender as 'user' | 'ai', text: msg.text }))
         .slice(-10); 
+      
+      const currentDateForAI = formatDateFns(new Date(), 'yyyy-MM-dd HH:mm');
 
-      console.log("[AiAssistant UI] Sending to Tolk-AI. User Instruction:", userMessageText);
+      const tolkInput: TolkAIInput = {
+        instruction: userMessageText,
+        currentDate: currentDateForAI,
+        allCalendarEvents: simplifiedEventsForAIContext,
+        conversationHistory: conversationHistoryForAI,
+      };
+
+      console.log("[AiAssistant UI] Sending to Tolk-AI. Instruction:", userMessageText);
       if (conversationHistoryForAI.length > 0) {
           console.log("[AiAssistant UI] Conversation History for Tolk-AI (last 10):", JSON.stringify(conversationHistoryForAI.map(m => ({sender: m.sender, text: m.text.substring(0,70) + (m.text.length > 70 ? "..." : "")})), null, 2));
       }
       console.log("[AiAssistant UI] All current events for Tolk-AI's tool context (sample):", JSON.stringify(simplifiedEventsForAIContext.slice(0,2), null, 2) + (simplifiedEventsForAIContext.length > 2 ? `... and ${simplifiedEventsForAIContext.length-2} more` : ""));
 
 
-      const tolkResponse: TolkAIOutput = await interpretUserInstruction(userMessageText, simplifiedEventsForAIContext, conversationHistoryForAI);
+      const tolkResponse: TolkAIOutput = await interpretUserInstruction(tolkInput);
       
       setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
       console.log("[AiAssistant UI] Received from Tolk-AI:", JSON.stringify(tolkResponse, null, 2));
@@ -171,6 +180,9 @@ const AiAssistant: FC<AiAssistantProps> = ({
                 }
                 break;
               case 'QUERY':
+                // If Tolk-AI directly answers a query, its userFeedbackMessage is shown.
+                // If it formulated a plan for a query (which is less likely now), it would be handled here.
+                // For now, assume direct answers are in Tolk-AI's userFeedbackMessage.
                 break; 
               default:
                 outcomeMessage = `❓ Okänt kommando från Planformaterar-AI: ${operation.commandType}`;
@@ -182,10 +194,11 @@ const AiAssistant: FC<AiAssistantProps> = ({
         } else if (tolkResponse.planDescription && (!formatterResponse.operations || formatterResponse.operations.length === 0)) {
             addMessage('systemInfo', "⚠️ Planformaterar-AI:n kunde inte skapa några konkreta åtgärder från Tolk-AI:ns plan.", {isError: true});
         }
-      } else if (!tolkResponse.requiresClarification && !tolkResponse.planDescription && tolkResponse.userFeedbackMessage.startsWith("Tolk-AI:")) {
-        // Handled above by adding Tolk-AI's userFeedbackMessage.
+      } else if (!tolkResponse.requiresClarification && !tolkResponse.planDescription && tolkResponse.userFeedbackMessage && tolkResponse.userFeedbackMessage.startsWith("Tolk-AI:")) {
+        // This handles the case where Tolk-AI directly answers a query, its message is already added.
       }
       else {
+         // General fallback if Tolk-AI's response is not actionable and not a clarification.
          addMessage('ai', "Jag kunde inte helt tolka din förfrågan just nu. Försök igen med en annan formulering.", { isError: true });
       }
 

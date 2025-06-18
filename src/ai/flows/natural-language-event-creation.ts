@@ -63,7 +63,7 @@ const tolkPrompt = ai.definePrompt({
   name: 'visuCalTolkPrompt',
   input: {schema: TolkAIInputSchema},
   output: {schema: TolkAIOutputSchema},
-  model: 'googleai/gemini-1.5-pro-latest', // Switched to Pro for better reasoning as discussed.
+  model: 'googleai/gemini-1.5-pro-latest', 
   tools: [getCalendarEventsTool],
   config: {
     temperature: 0.5, 
@@ -154,12 +154,12 @@ const tolkAIFlow = ai.defineFlow(
             console.warn(`[Tolk-AI Flow] Safeguard: AI's clarificationQuestion was invalid or too long. Original: "${output.clarificationQuestion}". Overriding.`);
             output.clarificationQuestion = "Jag är osäker, kan du förtydliga din senaste begäran?";
         }
-        if (!output.userFeedbackMessage || output.userFeedbackMessage.trim() === '' || output.userFeedbackMessage.length > 50) { // Increased slightly for context
+        if (!output.userFeedbackMessage || output.userFeedbackMessage.trim() === '' || output.userFeedbackMessage.length > 50) { 
              console.warn(`[Tolk-AI Flow] Safeguard: AI's userFeedbackMessage with clarification was invalid or too long. Original: "${output.userFeedbackMessage}". Overriding.`);
             output.userFeedbackMessage = "Förtydliga:";
         }
     } else {
-        if (output.userFeedbackMessage && output.userFeedbackMessage.length > 200) { // Increased slightly for context
+        if (output.userFeedbackMessage && output.userFeedbackMessage.length > 200) { 
             console.warn(`[Tolk-AI Flow] Safeguard: AI's userFeedbackMessage was too long (no clarification). Original: "${output.userFeedbackMessage}". Shortening.`);
             output.userFeedbackMessage = output.userFeedbackMessage.substring(0, 197) + "...";
         }

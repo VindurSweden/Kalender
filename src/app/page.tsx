@@ -105,7 +105,7 @@ export default function HomePage() {
     console.log("[HomePage] handleAiCreateEvent received:", {eventDetails, imageHint});
     try {
       const title = eventDetails.title || 'AI Händelse';
-      const referenceDate = new Date(); // Use current date for parsing relative date/time queries
+      const referenceDate = new Date(); 
       
       let parsedDate = referenceDate;
       if (eventDetails.dateQuery) {
@@ -130,7 +130,7 @@ export default function HomePage() {
         }
       }
       
-      const endTimeDate = combineDateAndTime(parseInputDate(dateStr), parseInputTime(startTime)); // Base new date for time
+      const endTimeDate = combineDateAndTime(parseInputDate(dateStr), parseInputTime(startTime)); 
       endTimeDate.setHours(endTimeDate.getHours() + 1); 
       const endTime = format(endTimeDate, TIME_FORMAT);
       const description = eventDetails.description || '';
@@ -191,7 +191,7 @@ export default function HomePage() {
 
     let referenceDateForDateQuery: Date | null = null;
     if (targetDateQuery) {
-        referenceDateForDateQuery = parseFlexibleSwedishDateString(targetDateQuery, new Date()); // Parse relative to 'today'
+        referenceDateForDateQuery = parseFlexibleSwedishDateString(targetDateQuery, new Date()); 
         if (referenceDateForDateQuery) {
             console.log(`[HomePage] findEventToModifyOrDelete: Parsed targetDateQuery "${targetDateQuery}" to ${formatInputDate(referenceDateForDateQuery)}.`);
             potentialEvents = potentialEvents.filter(e => 
@@ -257,7 +257,7 @@ export default function HomePage() {
     const updatedEventData: Partial<Omit<CalendarEvent, 'id' | 'imageUrl'>> = {};
     let titleChanged = false;
     let newTitleForImage = eventToModify.title;
-    const referenceDate = new Date(); // Use current date for parsing relative date/time queries
+    const referenceDate = new Date(); 
 
     if (eventDetails.title) {
       if (eventToModify.title !== eventDetails.title) titleChanged = true;
@@ -303,12 +303,12 @@ export default function HomePage() {
     }
     
     let finalImageUrl = eventToModify.imageUrl;
-    const shouldRegenerateImage = (titleChanged && newTitleForImage) || (!eventToModify.imageUrl && newTitleForImage);
+    const shouldRegenerateImage = (titleChanged && newTitleForImage) || (!eventToModify.imageUrl && newTitleForImage) || (imageHint && newTitleForImage);
 
-    if (shouldRegenerateImage) {
-        console.log(`[HomePage] AI Modify: Regenerating image for title: "${newTitleForImage!}", hint: "${imageHint}"`);
+    if (shouldRegenerateImage && newTitleForImage) {
+        console.log(`[HomePage] AI Modify: Regenerating image for title: "${newTitleForImage}", hint: "${imageHint}"`);
         try {
-            const imageResult = await generateEventImage({ eventTitle: newTitleForImage!, imageHint }); 
+            const imageResult = await generateEventImage({ eventTitle: newTitleForImage, imageHint }); 
             finalImageUrl = imageResult.imageUrl;
         } catch (imgError) {
             console.error("[HomePage] AI Modify: Image Regeneration Error:", imgError);

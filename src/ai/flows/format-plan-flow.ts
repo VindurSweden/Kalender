@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview VisuCal Planformaterar-AI.
@@ -14,7 +15,7 @@ import {
   FormatPlanOutputSchema, 
   type FormatPlanInput, 
   type FormatPlanOutput,
-  SingleCalendarOperationSchema
+  SingleCalendarOperationSchema // Keep this import if used elsewhere, or if FormatPlanOutputSchema depends on it.
 } from '@/ai/schemas';
 
 const formatPlanPrompt = ai.definePrompt({
@@ -33,18 +34,14 @@ const formatPlanPrompt = ai.definePrompt({
     ],
   },
   prompt: `Du är VisuCal Planformaterare, en AI som **ENBART** omvandlar en textbeskrivning av en kalenderplan till en strikt JSON-struktur.
-Din uppgift är att följa JSON-schemat exakt. Svara **ENDAST** med JSON-objektet. Inkludera inga förklaringar, inga extra ord, bara JSON.
+Din uppgift är att följa JSON-schemat som specificerats för outputen exakt. Svara **ENDAST** med JSON-objektet. Inkludera inga förklaringar, inga extra ord, bara JSON.
 
 Dagens datum är: {{currentDate}}. Använd detta som referens om planen innehåller relativa datum som "idag" eller "imorgon" för fälten 'dateQuery' och 'timeQuery' i JSON-outputen.
 
 PLANBESKRIVNING ATT OMVANDLA:
 "{{planDescription}}"
 
-JSON-SCHEMA FÖR OUTPUT (SingleCalendarOperationSchema, upprepad i en array för 'operations'):
-\`\`\`json
-${JSON.stringify(SingleCalendarOperationSchema.jsonSchema(), null, 2)}
-\`\`\`
-Se till att din output är en array under nyckeln "operations", som i: { "operations": [ ... ] }
+Du ska returnera ett JSON-objekt med en nyckel "operations" som innehåller en array av operationsobjekt. Varje operationsobjekt måste följa det specificerade schemat för kalenderoperationer.
 
 VIKTIGT:
 - Omvandla textuella datum och tider (t.ex. "imorgon kl 14", "nästa fredag") till strängar i fälten \`dateQuery\` och \`timeQuery\`. Frontend-koden kommer att hantera den slutgiltiga parsningen till faktiska datum/tider.
