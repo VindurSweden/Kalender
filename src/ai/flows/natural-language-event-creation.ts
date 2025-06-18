@@ -4,7 +4,7 @@
 
 /**
  * @fileOverview This file defines a Genkit flow for creating, modifying, or deleting calendar events using natural language in Swedish.
- * It interprets user intent and extracts parameters to be processed by the frontend.
+ * It acts as an ORCHESTRATOR: interpreting user intent and extracting parameters to be processed by the frontend (Executor).
  *
  * - naturalLanguageEventCreation - A function that handles the natural language event creation process.
  * - NaturalLanguageEventCreationInput - The input type for the naturalLanguageEventCreation function.
@@ -63,10 +63,10 @@ const SingleCalendarOperationSchema = z.object({
 });
 
 const NaturalLanguageEventCreationOutputSchema = z.object({
-  operations: z.array(SingleCalendarOperationSchema).optional().describe('An array of calendar operations derived from the instruction. Usually one, but could be more if the user asks for multiple things.'),
-  userConfirmationMessage: z.string().optional().describe('A **VERY SHORT** confirmation message or introductory phrase for the user in Swedish. Example: "Okej, jag bokar in...", "Jag försöker flytta...", "Förtydliga:", "En fråga:". Om requiresClarification är true, håll detta extremt kort; huvudfrågan ska vara i clarificationQuestion.'),
-  requiresClarification: z.boolean().optional().default(false).describe('Set to true if the AI is unsure or needs more information from the user to proceed confidently.'),
-  clarificationQuestion: z.string().optional().describe('If requiresClarification is true, this field MUST contain **ONE SINGLE, SHORT, and DIRECT question** to ask the user. Example: "Vilket möte menar du?" or "Ska jag fortfarande flytta händelsen trots din allergi?" or "Menar du idag eller imorgon?". Håll denna fråga under 150 tecken.'),
+  operations: z.array(SingleCalendarOperationSchema).optional().describe('An array of calendar operations (the PLAN) derived from the instruction. Usually one, but could be more if the user asks for multiple things.'),
+  userConfirmationMessage: z.string().optional().describe('A **VERY SHORT** message for the user in Swedish. If clarification is needed, this is an intro like "Förtydliga:". If returning operations, this confirms understanding of intent, e.g., "Okej, jag planerar att...". If a QUERY, this contains the answer. MAX 150 CHARACTERS.'),
+  requiresClarification: z.boolean().optional().default(false).describe('Set to true if the AI is unsure or needs more information from the user to proceed confidently. If true, "clarificationQuestion" MUST be populated and "operations" should be empty or not acted upon for the ambiguous part.'),
+  clarificationQuestion: z.string().optional().describe('If requiresClarification is true, this field MUST contain **ONE SINGLE, VERY SHORT, and DIRECT question** to ask the user. Example: "Vilket möte menar du?" or "Ska jag fortfarande lägga till \'Äta banan\' trots din allergi?". MAX 150 CHARACTERS.'),
 });
 type NaturalLanguageEventCreationOutput = z.infer<typeof NaturalLanguageEventCreationOutputSchema>;
 
@@ -84,10 +84,10 @@ const orchestratorPrompt = ai.definePrompt({
       { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
     ],
   },
-  prompt: `Du är VisuCal Assistent, en intelligent, hjälpsam, **EXTREMT KONCIS** och ansvarsfull kalenderassistent som hjälper användare att hantera sina kalenderhändelser på svenska.
-Ditt absoluta primära mål är att vara **kortfattad och effektiv**. Undvik ALLA långa svar, upprepningar eller onödiga disclaimers. Var direkt och till punkten.
+  prompt: `Du är VisuCal Orkestrerare, en AI som **ENBART TOLKAR, PLANERAR och FRÅGAR VID OKLARHET**. Du är **EXTREMT KONCIS**. Du hjälper användare att hantera sina kalenderhändelser på svenska genom att omvandla deras önskemål till en strukturerad plan.
+Ditt jobb är **INTE** att utföra åtgärder eller bekräfta att något är gjort. Du skapar en plan (operations) eller ställer en förtydligande fråga.
 
-Dagens datum är: {{currentDate}}. Använd detta som referens för relativa datumuttryck.
+Dagens datum är: {{currentDate}}.
 
 {{#if conversationHistory.length}}
 Konversationshistorik (senaste först):
@@ -109,48 +109,30 @@ Användaren har inga kända händelser.
 
 ANVÄNDARINSTRUKTION: "{{instruction}}"
 
-DIN UPPGIFT: Tolka instruktionen och omvandla den till en eller flera strukturerade kalenderoperationer (CREATE, MODIFY, DELETE, QUERY) enligt NaturalLanguageEventCreationOutputSchema.
+DIN UPPGIFT:
+1.  TOLKA instruktionen.
+2.  OMVANDLA den till en eller flera kalenderoperationer (CREATE, MODIFY, DELETE, QUERY) enligt NaturalLanguageEventCreationOutputSchema. Detta är din **PLAN**.
+3.  OM instruktionen är oklar eller om det finns en konflikt (t.ex. allergi mot 'Äta banan'):
+    a.  Sätt \`requiresClarification\` till \`true\`.
+    b.  Sätt \`userConfirmationMessage\` till en **extremt kort** introduktion, t.ex. "Förtydliga:" eller "En fråga:".
+    c.  Formulera en **ENDA, MYCKET KORT, DIREKT fråga** i \`clarificationQuestion\`. Exempel: "Vilket möte menar du?", "Ska 'Äta banan' läggas till trots allergin?". **MAX 150 TECKEN.**
+    d.  Generera **INGA operationer** för den tvetydiga delen.
+4.  OM instruktionen är en fråga om schemat (QUERY):
+    a.  Svara **kortfattat** i \`userConfirmationMessage\`. Exempel: "Idag har du: Möte X kl 10, Lunch kl 12."
+    b.  Sätt \`commandType\` till \`QUERY\` i en operation (utan eventDetails/eventIdentifier).
+5.  OM instruktionen är tydlig och inga konflikter:
+    a.  Sätt \`requiresClarification\` till \`false\`.
+    b.  Populate \`operations\` med din plan.
+    c.  Sätt \`userConfirmationMessage\` till en **mycket kort** bekräftelse på att du förstått avsikten. Exempel: "Okej, jag planerar att skapa ett möte.", "Förstått, här är planen för att flytta händelsen.". **NÄMN INTE ATT DU HAR UTFÖRT NÅGOT.**
+6.  OLÄMPLIGA BEGÄRANDEN:
+    a.  Sätt \`requiresClarification\` till \`true\`.
+    b.  Sätt \`userConfirmationMessage\` till "Kan ej hjälpa:".
+    c.  Sätt \`clarificationQuestion\` till "Jag kan endast hjälpa med kalenderfrågor. Har du en sådan?".
 
-VIKTIGA REGLER FÖR DITT SVAR:
-1.  **VAR YTTERST KONCIS I ALL TEXT DU GENERERAR.**
-2.  Avsikt (commandType): CREATE, MODIFY, DELETE, QUERY.
-3.  Event Identifier (eventIdentifier - för MODIFY/DELETE): Titel, urspr. datum ('dateQuery'), urspr. tid ('timeQuery').
-4.  Event Details (eventDetails - för CREATE/MODIFY): Titel, ny datumfråga ('dateQuery'), ny tidsfråga ('timeQuery'), beskrivning, färg.
-5.  Fler-händelse-operationer: Om instruktionen gäller FLERA händelser (t.ex. "flytta alla möten idag"), generera en SEPARAT operation för VARJE identifierad händelse i 'operations'. Varje 'eventIdentifier.title' ska vara den EXAKTA titeln för den ENKLA ursprungliga händelsen.
-
-HANTERING AV KONFLIKTER/TVETYDIGHETER (t.ex. allergi mot "Äta banan"):
-*   Om en begäran krockar med känd information (t.ex. allergi) eller är tvetydig:
-    1.  Sätt \`requiresClarification\` till \`true\`.
-    2.  Formulera en **ENDA, KORT, DIREKT fråga** i \`clarificationQuestion\`. Exempel: "Ska jag flytta 'Äta banan' trots din allergi?" eller "Vilket möte menar du?". **MAX 150 TECKEN.**
-    3.  Sätt \`userConfirmationMessage\` till något **extremt kort**, t.ex. "En fråga:" eller "Förtydliga:".
-    4.  Generera **INGA operationer** för den motstridiga/tvetydiga delen förrän användaren svarat.
-    5.  **INGA LÅNGA FÖRKLARINGAR, VARNINGAR ELLER FRISKRIVNINGAR.** Bara den korta frågan.
-
-QUERY (användaren frågar om sitt schema):
-*   Svara i \`userConfirmationMessage\` med en **kort** lista över relevanta händelser.
-*   Om frågan antyder reflektion och du ser en UPPENBAR konflikt (t.ex. alkohol före bilkörning):
-    1.  Efter listan, nämn konflikten **extremt kort** i \`userConfirmationMessage\`. Exempel: "...och jag ser 'Vinprovning' precis före 'Köra hem'."
-    2.  Ställ en **ENDA, KORT, ÖPPEN fråga** i \`clarificationQuestion\`. Exempel: "Vill du justera något av detta?"
-    3.  Sätt \`requiresClarification\` till \`true\`.
-    4.  **INGA LÅNGA UTREDNINGAR ELLER VARNINGAR.**
-*   Returnera inga CREATE/MODIFY/DELETE operationer för en QUERY.
-
-OLÄMPLIGA BEGÄRANDEN:
-*   Om begäran är olämplig, skadlig, oetisk eller inte kalenderrelaterad:
-    1.  Sätt \`requiresClarification\` till \`true\`.
-    2.  Sätt \`clarificationQuestion\` till: "Jag kan endast hjälpa till med kalenderfrågor. Har du en sådan?".
-    3.  Sätt \`userConfirmationMessage\` till "Förfrågan avvisad:".
-    4.  **INGA ANDRA KOMMENTARER ELLER DISKUSSIONER.**
-
-Exempel på output vid tvetydighet:
-{
-  "requiresClarification": true,
-  "clarificationQuestion": "Menar du mötet idag kl 10 eller det imorgon kl 14?",
-  "userConfirmationMessage": "Förtydliga:"
-}
-
-**Returnera ALLTID ett svar som följer NaturalLanguageEventCreationOutputSchema. Följ reglerna ovan strikt.**
-**HÅLL ALLA TEXTFÄLT SÅ KORTA SOM MÖJLIGT. FOKUSERA PÅ ATT VARA EN EFFEKTIV KALENDERASSISTENT.**
+VIKTIGA REGLER FÖR ALL TEXT DU GENERERAR:
+*   **VAR YTTERST KONCIS. ALLTID. MAX 150 TECKEN FÖR \`userConfirmationMessage\` OCH \`clarificationQuestion\`.**
+*   Inga långa förklaringar, varningar, disclaimers eller upprepningar.
+*   Returnera ALLTID ett svar som följer NaturalLanguageEventCreationOutputSchema.
 `,
 });
 
@@ -162,52 +144,64 @@ const naturalLanguageEventCreationFlow = ai.defineFlow(
     outputSchema: NaturalLanguageEventCreationOutputSchema,
   },
   async (input: NaturalLanguageEventCreationInput): Promise<NaturalLanguageEventCreationOutput> => {
-    console.log("[AI Flow] Input to orchestratorPrompt:", JSON.stringify(input, null, 2));
+    console.log("[AI Orchestrator Flow] Input to orchestratorPrompt:", JSON.stringify(input, null, 2));
     
     const promptResponse = await orchestratorPrompt(input);
     let output = promptResponse.output; 
     
-    console.log("[AI Flow] Raw structured output from orchestratorPrompt:", JSON.stringify(output, null, 2));
+    console.log("[AI Orchestrator Flow] Raw structured output from orchestratorPrompt:", JSON.stringify(output, null, 2));
 
     if (!output) { 
-        console.warn('[AI Flow] Orchestrator prompt did not return a valid structured output object. Input:', input, 'Full response:', promptResponse);
+        console.warn('[AI Orchestrator Flow] Orchestrator prompt did not return a valid structured output object. Input:', input, 'Full response:', promptResponse);
         return {
             operations: [],
-            userConfirmationMessage: "Jag kunde tyvärr inte tolka din förfrågan just nu (internt fel).",
+            userConfirmationMessage: "Tolkningsfel.", // Keep extremely short
             requiresClarification: true,
-            clarificationQuestion: "Kan du formulera om din förfrågan? Jag förstod inte."
+            clarificationQuestion: "Kunde inte tolka din förfrågan. Försök igen." // Keep short
         };
     }
     
-    // Nödbroms / Safeguard for clarification questions
+    // Safeguard for clarification questions
     if (output.requiresClarification) {
         if (!output.clarificationQuestion || output.clarificationQuestion.trim() === '' || output.clarificationQuestion.length > 150) {
-            console.warn(`[AI Flow] Safeguard triggered: AI's clarificationQuestion was invalid or too long. Original: "${output.clarificationQuestion}". Overriding.`);
-            output.clarificationQuestion = "Jag är osäker, kan du förtydliga din senaste begäran?";
-            // Ensure userConfirmationMessage is also short if we override clarification
-            if (!output.userConfirmationMessage || output.userConfirmationMessage.length > 30) {
-                 output.userConfirmationMessage = "Förtydliga:";
-            }
+            console.warn(`[AI Orchestrator Flow] Safeguard: AI's clarificationQuestion was invalid or too long. Original: "${output.clarificationQuestion}". Overriding.`);
+            output.clarificationQuestion = "Jag är osäker, kan du förtydliga?"; // Standard short question
         }
-        // Ensure confirmation message is very short if clarification is required
-        if (output.userConfirmationMessage && output.userConfirmationMessage.length > 30) {
-            console.warn(`[AI Flow] Safeguard triggered: AI's userConfirmationMessage was too long with clarification. Original: "${output.userConfirmationMessage}". Shortening.`);
+        // Ensure userConfirmationMessage is also very short if we override or if it's too long
+        if (!output.userConfirmationMessage || output.userConfirmationMessage.trim() === '' || output.userConfirmationMessage.length > 30) {
+            console.warn(`[AI Orchestrator Flow] Safeguard: AI's userConfirmationMessage with clarification was invalid or too long. Original: "${output.userConfirmationMessage}". Overriding/Shortening.`);
             output.userConfirmationMessage = "Förtydliga:";
+        }
+    } else { // Not requiring clarification
+        if (output.userConfirmationMessage && output.userConfirmationMessage.length > 150) {
+            console.warn(`[AI Orchestrator Flow] Safeguard: AI's userConfirmationMessage was too long (no clarification). Original: "${output.userConfirmationMessage}". Shortening.`);
+            // If operations exist, it's a plan confirmation. If not, it might be a query answer that's too long.
+            if (output.operations && output.operations.length > 0) {
+                output.userConfirmationMessage = "Förfrågan tolkad.";
+            } else {
+                // For QUERY results, truncation might be bad. But if it's ridiculously long, we must cap it.
+                // This case should ideally be handled by the AI being concise based on the prompt.
+                // If it's still too long here, it's a model failure to adhere to prompt length constraints.
+                 output.userConfirmationMessage = output.userConfirmationMessage.substring(0, 147) + "...";
+            }
         }
     }
     
-    // Ensure userConfirmationMessage is short even if not clarification, if it's abnormally long
-    if (output.userConfirmationMessage && output.userConfirmationMessage.length > 250) { // 250 as a general sanity limit
-        console.warn(`[AI Flow] Safeguard triggered: AI's userConfirmationMessage was excessively long. Original: "${output.userConfirmationMessage}". Shortening.`);
-        output.userConfirmationMessage = "Din begäran har bearbetats."; // Generic short message
+    // Ensure userConfirmationMessage is provided if no clarification is needed and no operations are returned (e.g. a simple acknowledgement or a very short query answer)
+    if (!output.requiresClarification && (!output.operations || output.operations.length === 0) && (!output.userConfirmationMessage || output.userConfirmationMessage.trim() === '')) {
+      // This case should be rare if the prompt is followed.
+      // If it's a QUERY, the answer should be in userConfirmationMessage.
+      // If it's not a QUERY and no ops, it might be a failed interpretation that didn't trigger clarification.
+      console.warn("[AI Orchestrator Flow] Safeguard: No clarification, no operations, and no confirmation message. Setting a default.");
+      output.userConfirmationMessage = "Förfrågan mottagen.";
     }
 
 
-    console.log("[AI Flow] Final processed output:", JSON.stringify(output, null, 2));
+    console.log("[AI Orchestrator Flow] Final processed output to be sent to UI:", JSON.stringify(output, null, 2));
 
     return {
         operations: output.operations || [], 
-        userConfirmationMessage: output.userConfirmationMessage || "Din förfrågan har bearbetats.", 
+        userConfirmationMessage: output.userConfirmationMessage || undefined, // Explicitly allow undefined if AI omits and not caught by safeguards
         requiresClarification: output.requiresClarification ?? false, 
         clarificationQuestion: output.clarificationQuestion 
     };
@@ -215,9 +209,12 @@ const naturalLanguageEventCreationFlow = ai.defineFlow(
 );
 
 /**
- * Handles the natural language event creation process.
- * @param input The input for the naturalLanguageEventCreation function.
- * @returns The output of the naturalLanguageEventCreation function.
+ * Orchestrates natural language event creation.
+ * Interprets user instruction and returns a plan or a clarification question.
+ * @param instruction The user's instruction in Swedish.
+ * @param currentEventsForAI Current calendar events for context.
+ * @param conversationHistory Previous messages for context.
+ * @returns A promise that resolves to the orchestrator's output.
  */
 export async function naturalLanguageEventCreation(
   instruction: string, 

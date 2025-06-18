@@ -7,29 +7,28 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/components/ui/sheet';
-import { Bot, User, Send, Loader2 } from 'lucide-react';
+import { Bot, User, Send, Loader2, AlertTriangle } from 'lucide-react';
 import { 
   naturalLanguageEventCreation, 
-  // NaturalLanguageEventCreationOutput, // Type is inferred from the function return
   AiEventType,
   ConversationMessageType
 } from '@/ai/flows/natural-language-event-creation';
 import type { CalendarEvent } from '@/types/event';
 import { useToast } from '@/hooks/use-toast';
-// import { formatInputDate, parseFlexibleSwedishDateString } from '@/lib/date-utils'; // Not directly used here now
 
 interface Message {
   id: string;
-  sender: 'user' | 'ai';
+  sender: 'user' | 'ai' | 'systemInfo';
   text: string;
   isProcessing?: boolean;
-  requiresAction?: boolean; // For AI messages that need user input/clarification
+  requiresAction?: boolean; 
+  isError?: boolean;
 }
 
 interface AiAssistantProps {
   isOpen: boolean;
   onClose: () => void;
-  events: CalendarEvent[]; // Pass current events
+  events: CalendarEvent[]; 
   onAiCreateEvent: (eventDetails: any) => Promise<CalendarEvent | null>;
   onAiModifyEvent: (eventIdentifier: any, eventDetails: any) => Promise<CalendarEvent | null>;
   onAiDeleteEvent: (eventIdentifier: any) => Promise<string | null>;
@@ -58,126 +57,152 @@ const AiAssistant: FC<AiAssistantProps> = ({
     }
   }, [messages]);
 
+  const addMessage = (sender: Message['sender'], text: string, options?: Partial<Omit<Message, 'id'|'sender'|'text'>>) => {
+    setMessages(prev => [...prev, { id: crypto.randomUUID(), sender, text, ...options }]);
+  };
+
   const handleSendMessage = async () => {
     if (input.trim() === '' || isProcessing) return;
 
-    const userMessage: Message = { id: crypto.randomUUID(), sender: 'user', text: input };
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
-    const currentInput = input;
+    const userMessageText = input;
+    addMessage('user', userMessageText);
     setInput('');
     setIsProcessing(true);
     
     const thinkingMessageId = crypto.randomUUID();
-    setMessages(prev => [...prev, { id: thinkingMessageId, sender: 'ai', text: "Tänker...", isProcessing: true }]);
+    setMessages(prev => [...prev, { id: thinkingMessageId, sender: 'ai', text: "Orkestreraren tänker...", isProcessing: true }]);
 
     try {
       const simplifiedEventsForAI: AiEventType[] = events.map(e => ({
         title: e.title,
-        date: e.date, // Already YYYY-MM-DD
-        startTime: e.startTime, // Already HH:MM
+        date: e.date, 
+        startTime: e.startTime, 
       }));
 
-      const conversationHistoryForAI: ConversationMessageType[] = updatedMessages
-        .filter(msg => msg.id !== thinkingMessageId) 
-        .map(msg => ({ sender: msg.sender, text: msg.text }));
-
-      console.log("[AiAssistant] Sending to AI. Instruction:", currentInput);
-      console.log("[AiAssistant] Current Events for AI:", JSON.stringify(simplifiedEventsForAI, null, 2));
-      console.log("[AiAssistant] Conversation History for AI (last 5):", JSON.stringify(conversationHistoryForAI.slice(-5), null, 2));
+      // Filter out systemInfo messages before sending to AI
+      const conversationHistoryForAI: ConversationMessageType[] = messages
+        .filter(msg => msg.id !== thinkingMessageId && msg.sender !== 'systemInfo')
+        .map(msg => ({ sender: msg.sender as 'user' | 'ai', text: msg.text }));
 
 
-      const aiResponse: NaturalLanguageEventCreationOutputType = await naturalLanguageEventCreation(currentInput, simplifiedEventsForAI, conversationHistoryForAI);
+      console.log("[AiAssistant UI] Sending to AI Orchestrator. User Instruction:", userMessageText);
+      console.log("[AiAssistant UI] Current Events for AI context:", JSON.stringify(simplifiedEventsForAI, null, 2));
+      console.log("[AiAssistant UI] Conversation History for AI (last 5 relevant):", JSON.stringify(conversationHistoryForAI.slice(-5), null, 2));
+
+      // Call the Orchestrator AI flow
+      const orchestratorResponse: NaturalLanguageEventCreationOutputType = await naturalLanguageEventCreation(userMessageText, simplifiedEventsForAI, conversationHistoryForAI);
       
-      console.log("[AiAssistant] Received from AI:", JSON.stringify(aiResponse, null, 2));
+      setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId)); // Remove "thinking" message
+      console.log("[AiAssistant UI] Received from AI Orchestrator:", JSON.stringify(orchestratorResponse, null, 2));
 
-      setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
-
-      let responseText = aiResponse.userConfirmationMessage || "Jag har bearbetat din förfrågan.";
-      let operationsPerformedOrQueryAnswered = false;
-
-      if (aiResponse.requiresClarification && aiResponse.clarificationQuestion) {
-        // If userConfirmationMessage is very short (like "Förtydliga:"), append the question for a more natural flow.
-        // Otherwise, the clarificationQuestion might be the primary message.
-        if (aiResponse.userConfirmationMessage && aiResponse.userConfirmationMessage.length < 20) {
-            responseText = `${aiResponse.userConfirmationMessage} ${aiResponse.clarificationQuestion}`;
-        } else {
-            responseText = aiResponse.clarificationQuestion;
+      // Handle Orchestrator's response
+      if (orchestratorResponse.requiresClarification && orchestratorResponse.clarificationQuestion) {
+        let clarificationMsg = orchestratorResponse.clarificationQuestion;
+        if (orchestratorResponse.userConfirmationMessage && orchestratorResponse.userConfirmationMessage.length < 30) {
+            clarificationMsg = `${orchestratorResponse.userConfirmationMessage} ${orchestratorResponse.clarificationQuestion}`;
         }
-        const aiClarificationMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText, requiresAction: true };
-        setMessages(prev => [...prev, aiClarificationMessage]);
-        operationsPerformedOrQueryAnswered = true; 
-      } else if (aiResponse.operations && aiResponse.operations.length > 0) {
-        let opDetailsText = "";
-        for (const operation of aiResponse.operations) {
-          if (operation.commandType.toUpperCase() === 'QUERY') {
-             // The userConfirmationMessage should already contain the query answer
-            operationsPerformedOrQueryAnswered = true;
-            break; 
-          }
+        addMessage('ai', clarificationMsg, { requiresAction: true });
+      } else if (orchestratorResponse.operations && orchestratorResponse.operations.length > 0) {
+        if (orchestratorResponse.userConfirmationMessage) {
+          // Display the Orchestrator's plan/intent confirmation
+          addMessage('ai', orchestratorResponse.userConfirmationMessage);
+        } else {
+          addMessage('ai', "Jag har tolkat din förfrågan och kommer nu att försöka utföra följande åtgärder:");
+        }
 
-          operationsPerformedOrQueryAnswered = true;
+        // Execute operations one by one and report outcomes
+        for (const operation of orchestratorResponse.operations) {
+          let outcomeMessage = "";
+          let success = false;
+
           switch (operation.commandType.toUpperCase()) {
             case 'CREATE':
               if (operation.eventDetails) {
-                const createdEvent = await onAiCreateEvent(operation.eventDetails);
-                if (!createdEvent) {
-                  opDetailsText += `\nMisslyckades med att skapa händelse: ${JSON.stringify(operation.eventDetails)}.`;
+                try {
+                  const createdEvent = await onAiCreateEvent(operation.eventDetails);
+                  if (createdEvent) {
+                    outcomeMessage = `Händelse "${createdEvent.title}" skapad.`;
+                    success = true;
+                  } else {
+                    outcomeMessage = `Misslyckades med att skapa händelse baserat på detaljer: ${operation.eventDetails.title || 'Okänd titel'}.`;
+                  }
+                } catch (e) {
+                  console.error("Error in onAiCreateEvent:", e);
+                  outcomeMessage = `Ett fel uppstod vid skapande av händelse: ${operation.eventDetails.title || 'Okänd titel'}.`;
                 }
+              } else {
+                outcomeMessage = "Fel: Skapa-kommando saknade händelsedetaljer.";
               }
               break;
             case 'MODIFY':
               if (operation.eventIdentifier && operation.eventDetails) {
-                const modifiedEvent = await onAiModifyEvent(operation.eventIdentifier, operation.eventDetails);
-                if (!modifiedEvent) {
-                  opDetailsText += `\nMisslyckades med att ändra händelse.`;
+                 try {
+                    const modifiedEvent = await onAiModifyEvent(operation.eventIdentifier, operation.eventDetails);
+                    if (modifiedEvent) {
+                        outcomeMessage = `Händelse "${modifiedEvent.title}" (tidigare: "${operation.eventIdentifier.title || 'Okänd'}") ändrad.`;
+                        success = true;
+                    } else {
+                        outcomeMessage = `Kunde inte hitta eller ändra händelsen specificerad som: ${operation.eventIdentifier.title || 'Okänd titel'}.`;
+                    }
+                } catch (e) {
+                    console.error("Error in onAiModifyEvent:", e);
+                    outcomeMessage = `Ett fel uppstod vid ändring av händelse: ${operation.eventIdentifier.title || 'Okänd titel'}.`;
                 }
+              } else {
+                outcomeMessage = "Fel: Ändra-kommando saknade nödvändig information.";
               }
               break;
             case 'DELETE':
               if (operation.eventIdentifier) {
-                const deletedEventId = await onAiDeleteEvent(operation.eventIdentifier);
-                if (!deletedEventId) {
-                  opDetailsText += `\nMisslyckades med att ta bort händelse.`;
+                try {
+                    const deletedEventId = await onAiDeleteEvent(operation.eventIdentifier);
+                    if (deletedEventId) {
+                        outcomeMessage = `Händelse "${operation.eventIdentifier.title || 'Okänd'}" borttagen.`;
+                        success = true;
+                    } else {
+                        outcomeMessage = `Kunde inte hitta eller ta bort händelsen specificerad som: ${operation.eventIdentifier.title || 'Okänd titel'}.`;
+                    }
+                } catch (e) {
+                    console.error("Error in onAiDeleteEvent:", e);
+                    outcomeMessage = `Ett fel uppstod vid borttagning av händelse: ${operation.eventIdentifier.title || 'Okänd titel'}.`;
                 }
+              } else {
+                outcomeMessage = "Fel: Ta bort-kommando saknade händelseidentifierare.";
+              }
+              break;
+            case 'QUERY':
+              // Query results are expected in orchestratorResponse.userConfirmationMessage.
+              // If userConfirmationMessage was already shown, this specific operation type might not need separate message.
+              // However, the prompt for orchestrator now says QUERY should be in userConfirmationMessage and an op type.
+              // Let's assume if operations array contains only a QUERY, the userConfirmationMessage is the answer.
+              if (orchestratorResponse.operations.length === 1 && orchestratorResponse.userConfirmationMessage && !orchestratorResponse.requiresClarification) {
+                // The main confirmation message already displayed the query result.
+                outcomeMessage = ""; // No separate message needed here
+                success = true;
+              } else {
+                outcomeMessage = `Frågeåtgärd registrerad: ${JSON.stringify(operation)}`;
+                success = true; // Query itself is a "success" in terms of planning
               }
               break;
             default:
-              opDetailsText += `\nOkänt kommando: ${operation.commandType}`;
+              outcomeMessage = `Okänt kommando från orkestreraren: ${operation.commandType}`;
+          }
+          if (outcomeMessage) { // Add a message only if there's something to say
+            addMessage(success ? 'systemInfo' : 'systemInfo', outcomeMessage, { isError: !success });
           }
         }
-        // If there are specific failure messages and they aren't already in the main confirmation
-        if (opDetailsText && responseText && !responseText.includes(opDetailsText.trim())) { 
-          // Only append if responseText is not just a generic success and doesn't already contain the details
-          if (responseText.length < 100) { // Heuristic for "generic"
-             responseText += opDetailsText;
-          }
-        } else if (opDetailsText && !responseText) {
-            responseText = opDetailsText.trim();
-        }
-        
-        const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
-        setMessages(prev => [...prev, aiResponseMessage]);
-
-      } else if (aiResponse.userConfirmationMessage) { // This handles QUERY responses or general confirmations
-        const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
-        setMessages(prev => [...prev, aiResponseMessage]);
-        operationsPerformedOrQueryAnswered = true;
+      } else if (orchestratorResponse.userConfirmationMessage) { 
+        // This handles QUERY responses or general acknowledgements if no ops/clarification
+        addMessage('ai', orchestratorResponse.userConfirmationMessage);
+      } else {
+         addMessage('ai', "Jag kunde inte tolka din förfrågan just nu. Försök igen med en annan formulering.", { isError: true });
       }
-      
-      if (!operationsPerformedOrQueryAnswered && !(aiResponse.requiresClarification && aiResponse.clarificationQuestion)) {
-         // Fallback if no operations were done, no query answered, and no clarification asked.
-         responseText = "Jag är osäker på hur jag ska tolka det, eller så kunde jag inte utföra någon åtgärd. Försök gärna igen med en tydligare instruktion.";
-         const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
-         setMessages(prev => [...prev, aiResponseMessage]);
-      }
-
 
     } catch (error) {
       setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
-      console.error('AI Assistant Error:', error);
-      const errorMessageText = "Ursäkta, jag stötte på ett internt fel och kunde inte bearbeta din förfrågan just nu. Försök igen om en liten stund.";
-      setMessages(prev => [...prev, { id: crypto.randomUUID(), sender: 'ai', text: errorMessageText }]);
+      console.error('AI Assistant UI Error:', error);
+      const errorMessageText = "Ursäkta, jag stötte på ett internt fel i AI-assistenten. Försök igen om en liten stund.";
+      addMessage('ai', errorMessageText, { isError: true });
       toast({
         title: 'AI Assistentfel',
         description: (error as Error).message || 'Ett okänt fel inträffade med AI-assistenten.',
@@ -194,27 +219,31 @@ const AiAssistant: FC<AiAssistantProps> = ({
         <SheetHeader className="p-6 pb-2">
           <SheetTitle className="font-headline flex items-center"><Bot className="mr-2 h-6 w-6 text-primary" /> VisuCal Assistent</SheetTitle>
           <SheetDescription>
-            Chatta med AI:n för att hantera dina kalenderhändelser med naturligt språk (svenska). Exempel: "Skapa ett möte imorgon kl 14 om projektplanering", "Flytta lunchen till nästa fredag", eller "Vad har jag för möten idag?".
+            Chatta med AI:n för att hantera dina kalenderhändelser med naturligt språk (svenska). Orkestreraren tolkar din avsikt och föreslår åtgärder.
           </SheetDescription>
         </SheetHeader>
         <ScrollArea className="flex-grow p-6" ref={scrollAreaRef}>
           <div className="space-y-4">
             {messages.map((msg) => (
-              <div key={msg.id} className={`flex items-end gap-2 ${msg.sender === 'user' ? 'justify-end' : ''}`}>
-                {msg.sender === 'ai' && <Bot className="h-6 w-6 text-primary flex-shrink-0" />}
+              <div key={msg.id} className={`flex items-start gap-2 ${msg.sender === 'user' ? 'justify-end' : ''}`}>
+                {msg.sender === 'ai' && <Bot className="h-6 w-6 text-primary flex-shrink-0 mt-1" />}
+                {msg.sender === 'systemInfo' && <AlertTriangle className={`h-6 w-6 ${msg.isError ? 'text-destructive' : 'text-muted-foreground'} flex-shrink-0 mt-1`} />}
+                
                 <div
-                  className={`max-w-[75%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap ${
+                  className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
                     msg.sender === 'user'
                       ? 'bg-primary text-primary-foreground'
-                      : msg.requiresAction ? 'bg-yellow-100 text-yellow-800 border border-yellow-300 dark:bg-yellow-900 dark:text-yellow-200 dark:border-yellow-700' : 'bg-accent/20 text-accent-foreground'
+                      : msg.sender === 'ai' 
+                        ? msg.requiresAction ? 'bg-yellow-100 text-yellow-800 border border-yellow-300 dark:bg-yellow-900 dark:text-yellow-200 dark:border-yellow-700' : 'bg-card text-card-foreground border'
+                        : msg.sender === 'systemInfo'
+                          ? msg.isError ? 'bg-destructive/10 text-destructive border border-destructive/30' : 'bg-muted/50 text-muted-foreground border border-border'
+                          : 'bg-accent/20 text-accent-foreground' /* Should not happen */
                   }`}
-                  style={ msg.sender === 'ai' && !msg.requiresAction ? { backgroundColor: 'var(--card)', color: 'var(--card-foreground)' } : {} }
-
                 >
                   {msg.text}
                   {msg.isProcessing && <Loader2 className="inline-block ml-2 h-4 w-4 animate-spin" />}
                 </div>
-                {msg.sender === 'user' && <User className="h-6 w-6 text-muted-foreground flex-shrink-0" />}
+                {msg.sender === 'user' && <User className="h-6 w-6 text-muted-foreground flex-shrink-0 mt-1" />}
               </div>
             ))}
           </div>
