@@ -10,4 +10,5 @@ config(); // Load environment variables from .env file
 
 // Import all your flow files here
 import '@/ai/flows/generate-event-image.ts';
-import '@/ai/flows/natural-language-event-creation.ts';
+import '@/ai/flows/natural-language-event-creation.ts'; // This is now Tolk-AI
+import '@/ai/flows/format-plan-flow.ts'; // New Planformaterar-AI

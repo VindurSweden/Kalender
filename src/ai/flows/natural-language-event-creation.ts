@@ -1,94 +1,108 @@
 
-// src/ai/flows/natural-language-event-creation.ts
 'use server';
-
 /**
- * @fileOverview This file defines a Genkit flow for creating, modifying, or deleting calendar events using natural language in Swedish.
- * It acts as an ORCHESTRATOR: interpreting user intent and extracting parameters to be processed by the frontend (Executor).
+ * @fileOverview VisuCal Tolk-AI (Orchestrator).
+ * This AI flow interprets user's natural language instructions in Swedish.
+ * It understands context, uses tools to fetch information (like calendar events),
+ * and generates a high-level plan in natural language for the Planformaterar-AI,
+ * or asks clarifying questions.
  *
- * - naturalLanguageEventCreation - A function that handles the natural language event creation process.
- * - NaturalLanguageEventCreationInput - The input type for the naturalLanguageEventCreation function.
- * - NaturalLanguageEventCreationOutput - The return type for the naturalLanguageEventCreation function.
+ * - interpretUserInstruction - Main function to call this flow.
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-import { format } from 'date-fns'; // To send current date to AI
+import { format, parse } from 'date-fns';
+import { z } from 'genkit';
+import { 
+  AiEventSchema, 
+  type AiEventType, 
+  type ConversationMessageType,
+  TolkAIInputSchema,
+  TolkAIOutputSchema,
+  type TolkAIInput,
+  type TolkAIOutput,
+} from '@/ai/schemas';
+import { parseFlexibleSwedishDateString } from '@/lib/date-utils';
 
-// Schema for events passed to AI for context
-const AiEventSchema = z.object({
-  title: z.string().describe("Händelsens titel."),
-  date: z.string().describe("Händelsens datum (YYYY-MM-DD)."),
-  startTime: z.string().optional().describe("Händelsens starttid (HH:MM)."),
-});
-export type AiEventType = z.infer<typeof AiEventSchema>;
+// Tool Definition
+const getCalendarEventsTool = ai.defineTool(
+  {
+    name: 'getCalendarEvents',
+    description: 'Hämtar kalenderhändelser för ett givet datum eller en datumfråga (t.ex. "idag", "nästa vecka", "den 15e augusti"). Använd detta för att svara på frågor om schemat eller för att verifiera befintliga händelser innan ändring/borttagning.',
+    inputSchema: z.object({ 
+        dateQuery: z.string().describe('Datumfrågan (t.ex. "idag", "imorgon", "2024-12-25", "nästa tisdag"). Använd detta fält för att skicka den faktiska textfrågan för datumet.')
+    }),
+    outputSchema: z.array(AiEventSchema),
+  },
+  async ({ dateQuery }, context?: { allEvents: AiEventType[], currentDateForTool: string }) => {
+    if (!context || !context.allEvents) {
+        console.warn("[getCalendarEventsTool] Context or allEvents missing.");
+        return [];
+    }
+    console.log(`[getCalendarEventsTool] Called with dateQuery: "${dateQuery}", with ${context.allEvents.length} total events. Current date for tool: ${context.currentDateForTool}`);
+    
+    const referenceDate = parse(context.currentDateForTool, 'yyyy-MM-dd HH:mm', new Date());
+    const targetDate = parseFlexibleSwedishDateString(dateQuery, referenceDate);
 
-// Schema for conversation history messages
-const ConversationMessageSchema = z.object({
-  sender: z.enum(['user', 'ai']).describe("Vem som skickade meddelandet ('user' eller 'ai')."),
-  text: z.string().describe("Textinnehållet i meddelandet."),
-});
-export type ConversationMessageType = z.infer<typeof ConversationMessageSchema>;
+    if (!targetDate) {
+      console.warn(`[getCalendarEventsTool] Could not parse dateQuery "${dateQuery}" into a valid date.`);
+      return [];
+    }
 
+    const formattedTargetDate = format(targetDate, 'yyyy-MM-dd');
+    const relevantEvents = context.allEvents.filter(event => {
+        return event.date === formattedTargetDate;
+    });
+    
+    console.log(`[getCalendarEventsTool] Found ${relevantEvents.length} events for date ${formattedTargetDate}.`);
+    return relevantEvents;
+  }
+);
 
-// Define schemas for input and output
-const NaturalLanguageEventCreationInputSchema = z.object({
-  instruction: z.string().describe('The instruction in natural language (Swedish) to create, modify, or delete a calendar event.'),
-  currentDate: z.string().describe('The current date in YYYY-MM-DD format, for context when interpreting relative dates like "idag" or "imorgon".'),
-  currentEvents: z.array(AiEventSchema).optional().describe("En lista över användarens nuvarande kalenderhändelser för kontext. Används för att hjälpa till att identifiera händelser vid MODIFY/DELETE och för att svara på frågor om schemat."),
-  conversationHistory: z.array(ConversationMessageSchema).optional().describe("Den tidigare konversationen för att ge AI:n kontext. Varje meddelande har en 'sender' ('user' eller 'ai') och 'text'."),
-});
-export type NaturalLanguageEventCreationInput = z.infer<typeof NaturalLanguageEventCreationInputSchema>;
-
-// For identifying the event to modify/delete
-const EventIdentifierSchema = z.object({
-  title: z.string().optional().describe("The current title of the event to find. Example: 'Tandläkarbesök', 'Budgetplanering'. This should be the title of ONE specific event."),
-  dateQuery: z.string().optional().describe("A fuzzy date/time query for the event to find, as mentioned by the user. Example: 'idag', 'imorgon', 'nästa vecka', 'den 10e'."),
-  timeQuery: z.string().optional().describe("The current start time query (e.g., 'kl 10', '11:30') for the event to find. Use this if title and dateQuery are not unique enough, referencing the event's original start time."),
-});
-
-// For details of a new event or changes to an existing one
-const EventDetailsSchema = z.object({
-  title: z.string().optional().describe("The new title for the event. Example: 'Lunch med Kalle'."),
-  dateQuery: z.string().optional().describe("The new date query in natural language. Example: 'nästa fredag', '15 augusti', 'om en vecka'."),
-  timeQuery: z.string().optional().describe("The new time query in natural language. Example: 'kl 14', 'på eftermiddagen', '10:30'."),
-  description: z.string().optional().describe("The new description for the event."),
-  color: z.string().optional().describe("A hex color code for the event, if specified or inferred.")
-});
-
-const SingleCalendarOperationSchema = z.object({
-  commandType: z.enum(['CREATE', 'MODIFY', 'DELETE', 'QUERY']).describe("The type of operation: CREATE, MODIFY, DELETE, or QUERY (if the user is asking about their schedule)."),
-  eventIdentifier: EventIdentifierSchema.optional().describe("Details to identify the event for MODIFY or DELETE operations. This should be populated if commandType is MODIFY or DELETE. Include original title, dateQuery, and timeQuery if needed for uniqueness."),
-  eventDetails: EventDetailsSchema.optional().describe("Details for the event to be CREATED or MODIFIED. This should be populated if commandType is CREATE or MODIFY."),
-});
-
-const NaturalLanguageEventCreationOutputSchema = z.object({
-  operations: z.array(SingleCalendarOperationSchema).optional().describe('An array of calendar operations (the PLAN) derived from the instruction. Usually one, but could be more if the user asks for multiple things.'),
-  userConfirmationMessage: z.string().optional().describe('A **VERY SHORT** message for the user in Swedish. If clarification is needed, this is an intro like "Förtydliga:". If returning operations, this confirms understanding of intent, e.g., "Okej, jag planerar att...". If a QUERY, this contains the answer. MAX 150 CHARACTERS.'),
-  requiresClarification: z.boolean().optional().default(false).describe('Set to true if the AI is unsure or needs more information from the user to proceed confidently. If true, "clarificationQuestion" MUST be populated and "operations" should be empty or not acted upon for the ambiguous part.'),
-  clarificationQuestion: z.string().optional().describe('If requiresClarification is true, this field MUST contain **ONE SINGLE, VERY SHORT, and DIRECT question** to ask the user. Example: "Vilket möte menar du?" or "Ska jag fortfarande lägga till \'Äta banan\' trots din allergi?". MAX 150 CHARACTERS.'),
-});
-type NaturalLanguageEventCreationOutput = z.infer<typeof NaturalLanguageEventCreationOutputSchema>;
-
-
-// Define the main orchestrator prompt
-const orchestratorPrompt = ai.definePrompt({
-  name: 'visuCalOrchestratorPrompt',
-  input: {schema: NaturalLanguageEventCreationInputSchema},
-  output: {schema: NaturalLanguageEventCreationOutputSchema},
+const tolkPrompt = ai.definePrompt({
+  name: 'visuCalTolkPrompt',
+  input: {schema: TolkAIInputSchema},
+  output: {schema: TolkAIOutputSchema},
+  model: 'googleai/gemini-1.5-pro-latest', // Switched to Pro for better reasoning as discussed.
+  tools: [getCalendarEventsTool],
   config: {
-    safetySettings: [
+    temperature: 0.5, 
+    safetySettings: [ 
       { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
       { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
       { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
       { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
     ],
   },
-  prompt: `Du är VisuCal Orkestrerare, en AI som **ENBART TOLKAR, PLANERAR och FRÅGAR VID OKLARHET**. Du är **EXTREMT KONCIS**. Du hjälper användare att hantera sina kalenderhändelser på svenska genom att omvandla deras önskemål till en strukturerad plan.
-Ditt jobb är **INTE** att utföra åtgärder eller bekräfta att något är gjort. Du skapar en plan (operations) eller ställer en förtydligande fråga.
+  prompt: `Du är VisuCal Tolk-AI, en intelligent, koncis och hjälpsam kalenderassistent.
+Din uppgift är att:
+1.  FÖRSTÅ användarens instruktion på svenska.
+2.  ANVÄND VERKTYGET 'getCalendarEvents' om du behöver information om användarens schema för att svara på en fråga eller för att verifiera en händelse innan du planerar en ändring/borttagning. Fråga efter händelser för det specifika datum eller den tidsperiod som är relevant baserat på användarens instruktion. Anropa verktyget med en \`dateQuery\` som representerar användarens tidsfråga (t.ex. "idag", "nästa vecka", "den 15e augusti").
+3.  AVGÖR ANVÄNDARENS AVSIKT: Skapa (CREATE), Ändra (MODIFY), Ta bort (DELETE), eller Fråga (QUERY).
+4.  OM INSTRUKTIONEN ÄR TYDLIG och inga konflikter och avsikten är CREATE, MODIFY eller DELETE:
+    a.  Formulera en **planDescription** på naturlig svenska som beskriver de åtgärder som ska utföras. Exempel: "Skapa ett möte 'Lunch med Kalle' imorgon kl 12 med beskrivning 'Projekt X'. Bildhint: glad hund." Denna text skickas vidare till Planformaterar-AI:n för exakt JSON-formattering. Inkludera eventuell bildhint i slutet av planDescription, tydligt markerad, t.ex., "Bildhint: en glad hund.".
+    b.  Extrahera en eventuell **imageHint** från din planDescription om den finns.
+    c.  Sätt **userFeedbackMessage** till en kort bekräftelse på att du förstått avsikten och att en plan kommer att skapas/utföras. Exempel: "Okej, jag förstår. Jag skapar en plan för det.", "Förstått, jag ska försöka flytta mötet."
+    d.  Sätt **requiresClarification** till false.
+5.  OM ANVÄNDAREN STÄLLER EN FRÅGA (QUERY) som du kan svara på (eventuellt efter att ha använt 'getCalendarEventsTool'):
+    a.  Svara på frågan direkt och koncis i **userFeedbackMessage**. Exempel: "Idag har du: Möte X kl 10, Lunch kl 12."
+    b.  Sätt **planDescription** till en enkel sträng som "Användaren ställde en fråga om sitt schema." eller lämna tom om svaret är helt i userFeedbackMessage.
+    c.  Sätt **requiresClarification** till false.
+6.  OM INSTRUKTIONEN ÄR OKLAR, TVETYDIG, eller om det finns en potentiell KONFLIKT (t.ex. dubbelbokning, eller om användaren ber om något som kan ha oönskade konsekvenser baserat på kontext, som en allergi):
+    a.  Sätt **requiresClarification** till true.
+    b.  Formulera en **ENDA, MYCKET KORT OCH DIREKT fråga** i **clarificationQuestion** för att lösa oklarheten. Frågan ska vara kontextuell och hjälpa användaren att fatta ett bra beslut. Exempel: "Vilket möte menar du?", "Du har redan ett möte då, vill du boka om det andra?", "Du nämnde tidigare en bananallergi. Ska jag boka 'Fruktsallad med banan' ändå?". MAX 150 TECKEN.
+    c.  Sätt **userFeedbackMessage** till en extremt kort introduktion, t.ex. "Förtydliga:", "En fundering:".
+    d.  Generera INGEN **planDescription** för den tvetydiga delen.
+7.  OLÄMPLIGA BEGÄRANDEN: Svara artigt i **userFeedbackMessage** att du endast kan hjälpa med kalenderfrågor, sätt **requiresClarification** till true, och ställ en kort fråga i **clarificationQuestion** som "Har du en kalenderfråga?".
 
-Dagens datum är: {{currentDate}}.
+VIKTIGA REGLER:
+*   **VAR YTTERST KONCIS i all text du genererar för användaren (\`userFeedbackMessage\`, \`clarificationQuestion\`).**
+*   Använd dagens datum och tid ({{currentDate}}) som referens för relativa tidsangivelser och när du anropar verktyg.
+*   Använd information från konversationshistoriken och eventuella hämtade händelser för att ge bästa möjliga hjälp.
+*   Om du genererar en \`planDescription\`, se till att den är en fullständig, naturlig språkbeskrivning av *alla* steg som behöver tas, inklusive eventuell \`imageHint\`.
 
+Kontext:
+Dagens datum och tid: {{currentDate}}
 {{#if conversationHistory.length}}
 Konversationshistorik (senaste först):
 {{#each conversationHistory}}
@@ -97,132 +111,79 @@ Konversationshistorik (senaste först):
 ----
 {{/if}}
 
-{{#if currentEvents.length}}
-Användarens nuvarande händelser:
-{{#each currentEvents}}
-- Titel: "{{this.title}}", Datum: {{this.date}}{{#if this.startTime}}, Tid: {{this.startTime}}{{/if}}
-{{/each}}
-Använd denna lista och historiken för att förstå referenser till befintliga händelser.
-{{else}}
-Användaren har inga kända händelser.
-{{/if}}
-
 ANVÄNDARINSTRUKTION: "{{instruction}}"
-
-DIN UPPGIFT:
-1.  TOLKA instruktionen.
-2.  OMVANDLA den till en eller flera kalenderoperationer (CREATE, MODIFY, DELETE, QUERY) enligt NaturalLanguageEventCreationOutputSchema. Detta är din **PLAN**.
-3.  OM instruktionen är oklar eller om det finns en konflikt (t.ex. allergi mot 'Äta banan'):
-    a.  Sätt \`requiresClarification\` till \`true\`.
-    b.  Sätt \`userConfirmationMessage\` till en **extremt kort** introduktion, t.ex. "Förtydliga:" eller "En fråga:".
-    c.  Formulera en **ENDA, MYCKET KORT, DIREKT fråga** i \`clarificationQuestion\`. Exempel: "Vilket möte menar du?", "Ska 'Äta banan' läggas till trots allergin?". **MAX 150 TECKEN.**
-    d.  Generera **INGA operationer** för den tvetydiga delen.
-4.  OM instruktionen är en fråga om schemat (QUERY):
-    a.  Svara **kortfattat** i \`userConfirmationMessage\`. Exempel: "Idag har du: Möte X kl 10, Lunch kl 12."
-    b.  Sätt \`commandType\` till \`QUERY\` i en operation (utan eventDetails/eventIdentifier).
-5.  OM instruktionen är tydlig och inga konflikter:
-    a.  Sätt \`requiresClarification\` till \`false\`.
-    b.  Populate \`operations\` med din plan.
-    c.  Sätt \`userConfirmationMessage\` till en **mycket kort** bekräftelse på att du förstått avsikten. Exempel: "Okej, jag planerar att skapa ett möte.", "Förstått, här är planen för att flytta händelsen.". **NÄMN INTE ATT DU HAR UTFÖRT NÅGOT.**
-6.  OLÄMPLIGA BEGÄRANDEN:
-    a.  Sätt \`requiresClarification\` till \`true\`.
-    b.  Sätt \`userConfirmationMessage\` till "Kan ej hjälpa:".
-    c.  Sätt \`clarificationQuestion\` till "Jag kan endast hjälpa med kalenderfrågor. Har du en sådan?".
-
-VIKTIGA REGLER FÖR ALL TEXT DU GENERERAR:
-*   **VAR YTTERST KONCIS. ALLTID. MAX 150 TECKEN FÖR \`userConfirmationMessage\` OCH \`clarificationQuestion\`.**
-*   Inga långa förklaringar, varningar, disclaimers eller upprepningar.
-*   Returnera ALLTID ett svar som följer NaturalLanguageEventCreationOutputSchema.
 `,
 });
 
-// Define the Genkit flow
-const naturalLanguageEventCreationFlow = ai.defineFlow(
+const tolkAIFlow = ai.defineFlow(
   {
-    name: 'naturalLanguageEventCreationFlow',
-    inputSchema: NaturalLanguageEventCreationInputSchema,
-    outputSchema: NaturalLanguageEventCreationOutputSchema,
+    name: 'tolkAIFlow',
+    inputSchema: TolkAIInputSchema,
+    outputSchema: TolkAIOutputSchema,
   },
-  async (input: NaturalLanguageEventCreationInput): Promise<NaturalLanguageEventCreationOutput> => {
-    console.log("[AI Orchestrator Flow] Input to orchestratorPrompt:", JSON.stringify(input, null, 2));
-    
-    const promptResponse = await orchestratorPrompt(input);
+  async (input: TolkAIInput): Promise<TolkAIOutput> => {
+    console.log("[Tolk-AI Flow] Input to Tolk-AI prompt. Instruction:", input.instruction, "Current Date:", input.currentDate);
+    if (input.conversationHistory && input.conversationHistory.length > 0) {
+      const formattedHistory = input.conversationHistory.map(m => 
+        `[${m.sender === 'user' ? 'Användare' : 'AI'}]: ${m.text.substring(0, 100)}${m.text.length > 100 ? "..." : ""}`
+      ).join('\n');
+      console.log("[Tolk-AI Flow] Conversation History (last 10 lines):\n", formattedHistory);
+    }
+        
+    const toolContext = { allEvents: input.allCalendarEvents, currentDateForTool: input.currentDate };
+
+    const promptResponse = await tolkPrompt(
+        input, 
+        { tools: { getCalendarEvents: (toolInput) => getCalendarEventsTool(toolInput, toolContext) } }
+    );
     let output = promptResponse.output; 
     
-    console.log("[AI Orchestrator Flow] Raw structured output from orchestratorPrompt:", JSON.stringify(output, null, 2));
+    console.log("[Tolk-AI Flow] Raw structured output from Tolk-AI prompt:", JSON.stringify(output, null, 2));
 
     if (!output) { 
-        console.warn('[AI Orchestrator Flow] Orchestrator prompt did not return a valid structured output object. Input:', input, 'Full response:', promptResponse);
+        console.warn('[Tolk-AI Flow] Tolk-AI prompt did not return a valid structured output object. Input:', input, 'Full response:', promptResponse);
         return {
-            operations: [],
-            userConfirmationMessage: "Tolkningsfel.", // Keep extremely short
+            userFeedbackMessage: "Tolkningsfel.",
             requiresClarification: true,
-            clarificationQuestion: "Kunde inte tolka din förfrågan. Försök igen." // Keep short
+            clarificationQuestion: "Kunde inte tolka din förfrågan. Försök igen."
         };
     }
     
-    // Safeguard for clarification questions
     if (output.requiresClarification) {
         if (!output.clarificationQuestion || output.clarificationQuestion.trim() === '' || output.clarificationQuestion.length > 150) {
-            console.warn(`[AI Orchestrator Flow] Safeguard: AI's clarificationQuestion was invalid or too long. Original: "${output.clarificationQuestion}". Overriding.`);
-            output.clarificationQuestion = "Jag är osäker, kan du förtydliga?"; // Standard short question
+            console.warn(`[Tolk-AI Flow] Safeguard: AI's clarificationQuestion was invalid or too long. Original: "${output.clarificationQuestion}". Overriding.`);
+            output.clarificationQuestion = "Jag är osäker, kan du förtydliga din senaste begäran?";
         }
-        // Ensure userConfirmationMessage is also very short if we override or if it's too long
-        if (!output.userConfirmationMessage || output.userConfirmationMessage.trim() === '' || output.userConfirmationMessage.length > 30) {
-            console.warn(`[AI Orchestrator Flow] Safeguard: AI's userConfirmationMessage with clarification was invalid or too long. Original: "${output.userConfirmationMessage}". Overriding/Shortening.`);
-            output.userConfirmationMessage = "Förtydliga:";
+        if (!output.userFeedbackMessage || output.userFeedbackMessage.trim() === '' || output.userFeedbackMessage.length > 50) { // Increased slightly for context
+             console.warn(`[Tolk-AI Flow] Safeguard: AI's userFeedbackMessage with clarification was invalid or too long. Original: "${output.userFeedbackMessage}". Overriding.`);
+            output.userFeedbackMessage = "Förtydliga:";
         }
-    } else { // Not requiring clarification
-        if (output.userConfirmationMessage && output.userConfirmationMessage.length > 150) {
-            console.warn(`[AI Orchestrator Flow] Safeguard: AI's userConfirmationMessage was too long (no clarification). Original: "${output.userConfirmationMessage}". Shortening.`);
-            // If operations exist, it's a plan confirmation. If not, it might be a query answer that's too long.
-            if (output.operations && output.operations.length > 0) {
-                output.userConfirmationMessage = "Förfrågan tolkad.";
-            } else {
-                // For QUERY results, truncation might be bad. But if it's ridiculously long, we must cap it.
-                // This case should ideally be handled by the AI being concise based on the prompt.
-                // If it's still too long here, it's a model failure to adhere to prompt length constraints.
-                 output.userConfirmationMessage = output.userConfirmationMessage.substring(0, 147) + "...";
-            }
+    } else {
+        if (output.userFeedbackMessage && output.userFeedbackMessage.length > 200) { // Increased slightly for context
+            console.warn(`[Tolk-AI Flow] Safeguard: AI's userFeedbackMessage was too long (no clarification). Original: "${output.userFeedbackMessage}". Shortening.`);
+            output.userFeedbackMessage = output.userFeedbackMessage.substring(0, 197) + "...";
         }
     }
     
-    // Ensure userConfirmationMessage is provided if no clarification is needed and no operations are returned (e.g. a simple acknowledgement or a very short query answer)
-    if (!output.requiresClarification && (!output.operations || output.operations.length === 0) && (!output.userConfirmationMessage || output.userConfirmationMessage.trim() === '')) {
-      // This case should be rare if the prompt is followed.
-      // If it's a QUERY, the answer should be in userConfirmationMessage.
-      // If it's not a QUERY and no ops, it might be a failed interpretation that didn't trigger clarification.
-      console.warn("[AI Orchestrator Flow] Safeguard: No clarification, no operations, and no confirmation message. Setting a default.");
-      output.userConfirmationMessage = "Förfrågan mottagen.";
+    if (!output.userFeedbackMessage || output.userFeedbackMessage.trim() === '') {
+        console.warn("[Tolk-AI Flow] Safeguard: No userFeedbackMessage provided by AI. Setting a default.");
+        output.userFeedbackMessage = output.requiresClarification ? "Förtydliga:" : "Jag har mottagit din förfrågan och skapar en plan.";
     }
 
-
-    console.log("[AI Orchestrator Flow] Final processed output to be sent to UI:", JSON.stringify(output, null, 2));
+    console.log("[Tolk-AI Flow] Final processed output to be sent to UI/Formatter:", JSON.stringify(output, null, 2));
 
     return {
-        operations: output.operations || [], 
-        userConfirmationMessage: output.userConfirmationMessage || undefined, // Explicitly allow undefined if AI omits and not caught by safeguards
+        planDescription: output.planDescription,
+        imageHint: output.imageHint,
+        userFeedbackMessage: output.userFeedbackMessage,
         requiresClarification: output.requiresClarification ?? false, 
         clarificationQuestion: output.clarificationQuestion 
     };
   }
 );
 
-/**
- * Orchestrates natural language event creation.
- * Interprets user instruction and returns a plan or a clarification question.
- * @param instruction The user's instruction in Swedish.
- * @param currentEventsForAI Current calendar events for context.
- * @param conversationHistory Previous messages for context.
- * @returns A promise that resolves to the orchestrator's output.
- */
-export async function naturalLanguageEventCreation(
-  instruction: string, 
-  currentEventsForAI: AiEventType[],
-  conversationHistory: ConversationMessageType[]
-): Promise<NaturalLanguageEventCreationOutput> { 
-  const currentDateStr = format(new Date(), 'yyyy-MM-dd');
-  return naturalLanguageEventCreationFlow({ instruction, currentDate: currentDateStr, currentEvents: currentEventsForAI, conversationHistory });
+export async function interpretUserInstruction(
+  input: TolkAIInput
+): Promise<TolkAIOutput> { 
+  return tolkAIFlow(input);
 }
-
-    
