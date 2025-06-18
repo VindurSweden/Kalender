@@ -25,7 +25,7 @@ export type AiEventType = z.infer<typeof AiEventSchema>;
 
 // Schema for conversation history messages
 const ConversationMessageSchema = z.object({
-  sender: z.enum(['user', 'ai']).describe("Vem som skickade meddelandet."),
+  sender: z.enum(['user', 'ai']).describe("Vem som skickade meddelandet ('user' eller 'ai')."),
   text: z.string().describe("Textinnehållet i meddelandet."),
 });
 export type ConversationMessageType = z.infer<typeof ConversationMessageSchema>;
@@ -36,7 +36,7 @@ const NaturalLanguageEventCreationInputSchema = z.object({
   instruction: z.string().describe('The instruction in natural language (Swedish) to create, modify, or delete a calendar event.'),
   currentDate: z.string().describe('The current date in YYYY-MM-DD format, for context when interpreting relative dates like "idag" or "imorgon".'),
   currentEvents: z.array(AiEventSchema).optional().describe("En lista över användarens nuvarande kalenderhändelser för kontext. Används för att hjälpa till att identifiera händelser vid MODIFY/DELETE och för att svara på frågor om schemat."),
-  conversationHistory: z.array(ConversationMessageSchema).optional().describe("Den tidigare konversationen för att ge AI:n kontext."),
+  conversationHistory: z.array(ConversationMessageSchema).optional().describe("Den tidigare konversationen för att ge AI:n kontext. Varje meddelande har en 'sender' ('user' eller 'ai') och 'text'."),
 });
 export type NaturalLanguageEventCreationInput = z.infer<typeof NaturalLanguageEventCreationInputSchema>;
 
@@ -62,16 +62,12 @@ const SingleCalendarOperationSchema = z.object({
   eventDetails: EventDetailsSchema.optional().describe("Details for the event to be CREATED or MODIFIED. This should be populated if commandType is CREATE or MODIFY."),
 });
 
-// Making operations and userConfirmationMessage optional at the schema level
-// to prevent Genkit schema validation errors if the LLM omits them.
-// Defaults will be handled in the flow logic.
 const NaturalLanguageEventCreationOutputSchema = z.object({
   operations: z.array(SingleCalendarOperationSchema).optional().describe('An array of calendar operations derived from the instruction. Usually one, but could be more if the user asks for multiple things.'),
-  userConfirmationMessage: z.string().optional().describe('A confirmation message for the user in Swedish, summarizing what the AI understood and will attempt to do, or providing information. Example: "Okej, jag bokar in Lunch med Anna på tisdag kl 12." or "Jag försöker flytta ditt möte Budgetplanering till nästa vecka." or "Imorgon har du: Möte kl 10, Lunch kl 12."'),
+  userConfirmationMessage: z.string().optional().describe('A **VERY SHORT** confirmation message or introductory phrase for the user in Swedish. Example: "Okej, jag bokar in...", "Jag försöker flytta...", "Förtydliga:", "En fråga:". Om requiresClarification är true, håll detta extremt kort; huvudfrågan ska vara i clarificationQuestion.'),
   requiresClarification: z.boolean().optional().default(false).describe('Set to true if the AI is unsure or needs more information from the user to proceed confidently.'),
-  clarificationQuestion: z.string().optional().describe('If requiresClarification is true, this field should contain a question to ask the user. Example: "Vilket möte menar du?" or "Jag hittade flera tandläkarbesök, vilket menar du?"'),
+  clarificationQuestion: z.string().optional().describe('If requiresClarification is true, this field MUST contain **ONE SINGLE, SHORT, and DIRECT question** to ask the user. Example: "Vilket möte menar du?" or "Ska jag fortfarande flytta händelsen trots din allergi?" or "Menar du idag eller imorgon?". Håll denna fråga under 150 tecken.'),
 });
-// This type is used by the frontend, schema itself is not exported
 type NaturalLanguageEventCreationOutput = z.infer<typeof NaturalLanguageEventCreationOutputSchema>;
 
 
@@ -88,13 +84,13 @@ const orchestratorPrompt = ai.definePrompt({
       { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
     ],
   },
-  prompt: `Du är VisuCal Assistent, en intelligent, hjälpsam, **ansvarsfull och ytterst koncis** kalenderassistent som hjälper användare att hantera sina kalenderhändelser på svenska.
-Ditt primära mål är att hjälpa användaren effektivt. Undvik ALLTID långa svar, upprepningar eller onödiga disclaimers. Var direkt och till punkten.
+  prompt: `Du är VisuCal Assistent, en intelligent, hjälpsam, **EXTREMT KONCIS** och ansvarsfull kalenderassistent som hjälper användare att hantera sina kalenderhändelser på svenska.
+Ditt absoluta primära mål är att vara **kortfattad och effektiv**. Undvik ALLA långa svar, upprepningar eller onödiga disclaimers. Var direkt och till punkten.
 
-Dagens datum är: {{currentDate}}. Använd detta som referens för relativa datumuttryck som "idag", "imorgon", "nästa vecka".
+Dagens datum är: {{currentDate}}. Använd detta som referens för relativa datumuttryck.
 
 {{#if conversationHistory.length}}
-Här är den tidigare konversationen för kontext:
+Konversationshistorik (senaste först):
 {{#each conversationHistory}}
 {{this.sender}}: {{this.text}}
 {{/each}}
@@ -102,83 +98,59 @@ Här är den tidigare konversationen för kontext:
 {{/if}}
 
 {{#if currentEvents.length}}
-Här är en lista över användarens nuvarande kända händelser:
+Användarens nuvarande händelser:
 {{#each currentEvents}}
 - Titel: "{{this.title}}", Datum: {{this.date}}{{#if this.startTime}}, Tid: {{this.startTime}}{{/if}}
 {{/each}}
-Använd denna lista och konversationshistoriken för att bättre förstå användarens referenser till befintliga händelser.
+Använd denna lista och historiken för att förstå referenser till befintliga händelser.
 {{else}}
-Användaren har inga kända händelser i kalendern just nu.
+Användaren har inga kända händelser.
 {{/if}}
 
-Kontextuell förståelse och användarpreferenser (VAR YTTERST KORTFATTAD HÄR):
-*   Analysera konversationshistoriken för att förstå sammanhanget.
-*   Om en användares begäran verkar motsäga en tidigare nämnd personlig begränsning (t.ex. en allergi kopplad till en händelse):
-    1.  Formulera en **mycket kort** \`userConfirmationMessage\` som påpekar den potentiella konflikten. Exempel: "Jag minns att du nämnde en bananallergi."
-    2.  Ställ en **enkel, direkt fråga** i \`clarificationQuestion\` om hur användaren vill gå vidare med den specifika händelsen. Exempel: "Vill du fortfarande att jag hanterar händelsen 'Äta banan', eller ska jag hoppa över den?"
+ANVÄNDARINSTRUKTION: "{{instruction}}"
+
+DIN UPPGIFT: Tolka instruktionen och omvandla den till en eller flera strukturerade kalenderoperationer (CREATE, MODIFY, DELETE, QUERY) enligt NaturalLanguageEventCreationOutputSchema.
+
+VIKTIGA REGLER FÖR DITT SVAR:
+1.  **VAR YTTERST KONCIS I ALL TEXT DU GENERERAR.**
+2.  Avsikt (commandType): CREATE, MODIFY, DELETE, QUERY.
+3.  Event Identifier (eventIdentifier - för MODIFY/DELETE): Titel, urspr. datum ('dateQuery'), urspr. tid ('timeQuery').
+4.  Event Details (eventDetails - för CREATE/MODIFY): Titel, ny datumfråga ('dateQuery'), ny tidsfråga ('timeQuery'), beskrivning, färg.
+5.  Fler-händelse-operationer: Om instruktionen gäller FLERA händelser (t.ex. "flytta alla möten idag"), generera en SEPARAT operation för VARJE identifierad händelse i 'operations'. Varje 'eventIdentifier.title' ska vara den EXAKTA titeln för den ENKLA ursprungliga händelsen.
+
+HANTERING AV KONFLIKTER/TVETYDIGHETER (t.ex. allergi mot "Äta banan"):
+*   Om en begäran krockar med känd information (t.ex. allergi) eller är tvetydig:
+    1.  Sätt \`requiresClarification\` till \`true\`.
+    2.  Formulera en **ENDA, KORT, DIREKT fråga** i \`clarificationQuestion\`. Exempel: "Ska jag flytta 'Äta banan' trots din allergi?" eller "Vilket möte menar du?". **MAX 150 TECKEN.**
+    3.  Sätt \`userConfirmationMessage\` till något **extremt kort**, t.ex. "En fråga:" eller "Förtydliga:".
+    4.  Generera **INGA operationer** för den motstridiga/tvetydiga delen förrän användaren svarat.
+    5.  **INGA LÅNGA FÖRKLARINGAR, VARNINGAR ELLER FRISKRIVNINGAR.** Bara den korta frågan.
+
+QUERY (användaren frågar om sitt schema):
+*   Svara i \`userConfirmationMessage\` med en **kort** lista över relevanta händelser.
+*   Om frågan antyder reflektion och du ser en UPPENBAR konflikt (t.ex. alkohol före bilkörning):
+    1.  Efter listan, nämn konflikten **extremt kort** i \`userConfirmationMessage\`. Exempel: "...och jag ser 'Vinprovning' precis före 'Köra hem'."
+    2.  Ställ en **ENDA, KORT, ÖPPEN fråga** i \`clarificationQuestion\`. Exempel: "Vill du justera något av detta?"
     3.  Sätt \`requiresClarification\` till \`true\`.
-    4.  Generera **inga operationer** för den motstridiga delen förrän användaren har svarat tydligt.
-    5.  **Var extremt koncis. Undvik alla former av disclaimers, varningar eller upprepningar kring detta.** Fokusera enbart på att få ett tydligt ja/nej eller en ny instruktion från användaren.
+    4.  **INGA LÅNGA UTREDNINGAR ELLER VARNINGAR.**
+*   Returnera inga CREATE/MODIFY/DELETE operationer för en QUERY.
 
-Din uppgift är att tolka användarens instruktion och omvandla den till en eller flera strukturerade kalenderoperationer (CREATE, MODIFY, DELETE, QUERY).
-Fyll i NaturalLanguageEventCreationOutputSchema så noggrant som möjligt.
+OLÄMPLIGA BEGÄRANDEN:
+*   Om begäran är olämplig, skadlig, oetisk eller inte kalenderrelaterad:
+    1.  Sätt \`requiresClarification\` till \`true\`.
+    2.  Sätt \`clarificationQuestion\` till: "Jag kan endast hjälpa till med kalenderfrågor. Har du en sådan?".
+    3.  Sätt \`userConfirmationMessage\` till "Förfrågan avvisad:".
+    4.  **INGA ANDRA KOMMENTARER ELLER DISKUSSIONER.**
 
-**Om användarens instruktion tydligt implicerar en åtgärd på FLERA händelser (t.ex. "flytta alla mina möten idag", "avboka alla mina tandläkarbesök nästa vecka"):
-1.  Identifiera VARJE enskild händelse från \`currentEvents\` som matchar användarens kriterier.
-2.  För VARJE sådan identifierad händelse, generera en SEPARAT operation (CREATE, MODIFY, eller DELETE) i \`operations\`-arrayen.
-3.  För \`eventIdentifier\` i VARJE operation:
-    *   \`title\`: Ska vara den exakta, ursprungliga titeln för den *enskilda* händelsen från \`currentEvents\` som denna operation avser. Kombinera INTE flera titlar här. Använd inte datum eller tid i detta fält.
-    *   \`dateQuery\`: Ska vara en fråga som hjälper till att identifiera den *enskilda* händelsens ursprungliga datum (t.ex. "idag", "imorgon", "2025-06-17").
-    *   \`timeQuery\`: Ska vara den *enskilda* händelsens ursprungliga starttid (t.ex. "10:00", "kl 14") om det behövs för unik identifiering av händelsen från \`currentEvents\`.
-Se till att varje operation i \`operations\`-arrayen fokuserar på ENBART EN händelse och att dess \`eventIdentifier.title\` är exakt titeln för den ursprungliga händelsen.**
-
-Användarens senaste instruktion: "{{instruction}}"
-
-Analysera instruktionen och historiken för att bestämma:
-1.  Avsikt (commandType):
-    *   CREATE: Skapa ny händelse.
-    *   MODIFY: Ändra befintlig händelse.
-    *   DELETE: Ta bort befintlig händelse.
-    *   QUERY: Användaren frågar om sitt schema.
-        *   Baserat på 'currentEvents' och den efterfrågade perioden, formulera ett svar i 'userConfirmationMessage' som listar relevanta händelser.
-        *   Om användarens fråga antyder reflektion (t.ex. "något jag bör tänka på?"), och du noterar en uppenbar konflikt (t.ex. alkohol före bilkörning):
-            1.  Efter att ha listat händelserna, nämn konflikten **mycket kortfattat** i \`userConfirmationMessage\`. Exempel: "...och jag noterar att 'Supa med Kalle' är precis före 'Köra bil'."
-            2.  Ställ en **enkel, öppen fråga** i \`clarificationQuestion\` om användaren vill göra några justeringar. Exempel: "Vill du att jag hjälper till att justera något av detta?"
-            3.  Sätt \`requiresClarification\` till \`true\`.
-            4.  **Var extremt koncis. Undvik varningar eller långa utläggningar.**
-            5.  Returnera inga CREATE/MODIFY/DELETE operationer för *detta förslag* i detta skede.
-        *   Returnera inga CREATE/MODIFY/DELETE operationer för den initiala QUERY-förfrågan.
-2.  Event Identifier (eventIdentifier - för MODIFY/DELETE):
-    *   Vilken händelse vill användaren ändra/ta bort? Extrahera titeln, ursprungligt datum ('dateQuery'), och ursprunglig tid ('timeQuery' om nödvändigt för unik identifiering).
-3.  Event Details (eventDetails - för CREATE/MODIFY):
-    *   Titel, ny datumfråga ('dateQuery'), ny tidsfråga ('timeQuery'), beskrivning, färg.
-
-Bekräftelsemeddelande (userConfirmationMessage):
-*   Formulera ett **kort, vänligt** bekräftelsemeddelande på svenska.
-*   Om du utför en bulk-operation, bekräfta kortfattat, t.ex. "Okej, jag försöker flytta Möte A och Möte B till imorgon."
-*   **VIKTIGT: Om \`requiresClarification\` är satt till \`true\`, ska \`userConfirmationMessage\` vara MYCKET kort (oftast bara 1-2 ord som "Förtydliga:" eller "En fråga:") och den huvudsakliga frågan ska ligga i \`clarificationQuestion\`.**
-
-Förtydligande (requiresClarification & clarificationQuestion):
-*   Om instruktionen är tvetydig, sätt 'requiresClarification' till true och formulera en **enkel, koncis** 'clarificationQuestion'.
-*   Om en identifierare för MODIFY/DELETE inte matchar något, be om förtydligande med en **kort fråga**.
-*   Om användarens begäran är olämplig, skadlig, oetisk, eller inte relaterad till kalenderhantering, sätt 'requiresClarification' till true och 'clarificationQuestion' till **EN ENDA KORT MENING**, t.ex. "Jag kan endast hjälpa till med kalenderrelaterade frågor. Har du en sådan?" Undvik ALLA andra kommentarer eller disclaimers.
-
-Exempel (antar att "Tandläkarbesök idag kl 15:00" finns i currentEvents):
-Instruktion: "Flytta mitt tandläkarbesök från idag till nästa fredag."
-Output (ungefärligt):
+Exempel på output vid tvetydighet:
 {
-  "operations": [{
-    "commandType": "MODIFY",
-    "eventIdentifier": { "title": "Tandläkarbesök", "dateQuery": "idag", "timeQuery": "15:00" },
-    "eventDetails": { "dateQuery": "nästa fredag" }
-  }],
-  "userConfirmationMessage": "Jag försöker flytta ditt tandläkarbesök från idag kl 15:00 till nästa fredag.",
-  "requiresClarification": false
+  "requiresClarification": true,
+  "clarificationQuestion": "Menar du mötet idag kl 10 eller det imorgon kl 14?",
+  "userConfirmationMessage": "Förtydliga:"
 }
 
-Returnera ALLTID ett svar som följer NaturalLanguageEventCreationOutputSchema.
-**HÅLL ALLA TEXTFÄLT KORTA OCH DIREKTA. UNDVIK ATT UPPREPA ANVÄNDARENS INSTRUKTIONER I DINA SVAR OM DET INTE ÄR ABSOLUT NÖDVÄNDIGT FÖR BEKRÄFTELSE.**
-Din huvudsakliga uppgift är att effektivt hantera kalendern. Om du är osäker, ställ en kort, enkel fråga.
+**Returnera ALLTID ett svar som följer NaturalLanguageEventCreationOutputSchema. Följ reglerna ovan strikt.**
+**HÅLL ALLA TEXTFÄLT SÅ KORTA SOM MÖJLIGT. FOKUSERA PÅ ATT VARA EN EFFEKTIV KALENDERASSISTENT.**
 `,
 });
 
@@ -193,23 +165,46 @@ const naturalLanguageEventCreationFlow = ai.defineFlow(
     console.log("[AI Flow] Input to orchestratorPrompt:", JSON.stringify(input, null, 2));
     
     const promptResponse = await orchestratorPrompt(input);
-    console.log("[AI Flow] Raw response from orchestratorPrompt:", JSON.stringify(promptResponse, null, 2));
-
-    const output = promptResponse.output; 
+    let output = promptResponse.output; 
+    
+    console.log("[AI Flow] Raw structured output from orchestratorPrompt:", JSON.stringify(output, null, 2));
 
     if (!output) { 
         console.warn('[AI Flow] Orchestrator prompt did not return a valid structured output object. Input:', input, 'Full response:', promptResponse);
         return {
             operations: [],
-            userConfirmationMessage: "Jag kunde tyvärr inte tolka din förfrågan just nu (internt fel). Försök igen eller formulera om dig.",
+            userConfirmationMessage: "Jag kunde tyvärr inte tolka din förfrågan just nu (internt fel).",
             requiresClarification: true,
-            clarificationQuestion: "Kan du formulera om din förfrågan? Jag förstod inte riktigt."
+            clarificationQuestion: "Kan du formulera om din förfrågan? Jag förstod inte."
         };
     }
     
-    console.log("[AI Flow] Structured output from orchestratorPrompt:", JSON.stringify(output, null, 2));
+    // Nödbroms / Safeguard for clarification questions
+    if (output.requiresClarification) {
+        if (!output.clarificationQuestion || output.clarificationQuestion.trim() === '' || output.clarificationQuestion.length > 150) {
+            console.warn(`[AI Flow] Safeguard triggered: AI's clarificationQuestion was invalid or too long. Original: "${output.clarificationQuestion}". Overriding.`);
+            output.clarificationQuestion = "Jag är osäker, kan du förtydliga din senaste begäran?";
+            // Ensure userConfirmationMessage is also short if we override clarification
+            if (!output.userConfirmationMessage || output.userConfirmationMessage.length > 30) {
+                 output.userConfirmationMessage = "Förtydliga:";
+            }
+        }
+        // Ensure confirmation message is very short if clarification is required
+        if (output.userConfirmationMessage && output.userConfirmationMessage.length > 30) {
+            console.warn(`[AI Flow] Safeguard triggered: AI's userConfirmationMessage was too long with clarification. Original: "${output.userConfirmationMessage}". Shortening.`);
+            output.userConfirmationMessage = "Förtydliga:";
+        }
+    }
+    
+    // Ensure userConfirmationMessage is short even if not clarification, if it's abnormally long
+    if (output.userConfirmationMessage && output.userConfirmationMessage.length > 250) { // 250 as a general sanity limit
+        console.warn(`[AI Flow] Safeguard triggered: AI's userConfirmationMessage was excessively long. Original: "${output.userConfirmationMessage}". Shortening.`);
+        output.userConfirmationMessage = "Din begäran har bearbetats."; // Generic short message
+    }
 
-    // Provide defaults for fields that are now optional in the schema but logically required by the application.
+
+    console.log("[AI Flow] Final processed output:", JSON.stringify(output, null, 2));
+
     return {
         operations: output.operations || [], 
         userConfirmationMessage: output.userConfirmationMessage || "Din förfrågan har bearbetats.", 
@@ -228,8 +223,9 @@ export async function naturalLanguageEventCreation(
   instruction: string, 
   currentEventsForAI: AiEventType[],
   conversationHistory: ConversationMessageType[]
-): Promise<NaturalLanguageEventCreationOutput> { // Ensure this return type matches the internal schema type
+): Promise<NaturalLanguageEventCreationOutput> { 
   const currentDateStr = format(new Date(), 'yyyy-MM-dd');
   return naturalLanguageEventCreationFlow({ instruction, currentDate: currentDateStr, currentEvents: currentEventsForAI, conversationHistory });
 }
 
+    

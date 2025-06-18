@@ -10,13 +10,13 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFo
 import { Bot, User, Send, Loader2 } from 'lucide-react';
 import { 
   naturalLanguageEventCreation, 
-  NaturalLanguageEventCreationOutput,
+  // NaturalLanguageEventCreationOutput, // Type is inferred from the function return
   AiEventType,
   ConversationMessageType
 } from '@/ai/flows/natural-language-event-creation';
 import type { CalendarEvent } from '@/types/event';
 import { useToast } from '@/hooks/use-toast';
-import { formatInputDate, parseFlexibleSwedishDateString } from '@/lib/date-utils';
+// import { formatInputDate, parseFlexibleSwedishDateString } from '@/lib/date-utils'; // Not directly used here now
 
 interface Message {
   id: string;
@@ -34,6 +34,9 @@ interface AiAssistantProps {
   onAiModifyEvent: (eventIdentifier: any, eventDetails: any) => Promise<CalendarEvent | null>;
   onAiDeleteEvent: (eventIdentifier: any) => Promise<string | null>;
 }
+
+type NaturalLanguageEventCreationOutputType = Awaited<ReturnType<typeof naturalLanguageEventCreation>>;
+
 
 const AiAssistant: FC<AiAssistantProps> = ({ 
   isOpen, 
@@ -76,18 +79,17 @@ const AiAssistant: FC<AiAssistantProps> = ({
       }));
 
       const conversationHistoryForAI: ConversationMessageType[] = updatedMessages
-        .filter(msg => msg.id !== thinkingMessageId) // Exclude the "Thinking..." message
+        .filter(msg => msg.id !== thinkingMessageId) 
         .map(msg => ({ sender: msg.sender, text: msg.text }));
 
-      console.log("[AiAssistant] Sending to AI:", {
-        instruction: currentInput,
-        currentEvents: simplifiedEventsForAI,
-        conversationHistory: conversationHistoryForAI
-      });
+      console.log("[AiAssistant] Sending to AI. Instruction:", currentInput);
+      console.log("[AiAssistant] Current Events for AI:", JSON.stringify(simplifiedEventsForAI, null, 2));
+      console.log("[AiAssistant] Conversation History for AI (last 5):", JSON.stringify(conversationHistoryForAI.slice(-5), null, 2));
 
-      const aiResponse: NaturalLanguageEventCreationOutput = await naturalLanguageEventCreation(currentInput, simplifiedEventsForAI, conversationHistoryForAI);
+
+      const aiResponse: NaturalLanguageEventCreationOutputType = await naturalLanguageEventCreation(currentInput, simplifiedEventsForAI, conversationHistoryForAI);
       
-      console.log("[AiAssistant] Received from AI:", aiResponse);
+      console.log("[AiAssistant] Received from AI:", JSON.stringify(aiResponse, null, 2));
 
       setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
 
@@ -95,14 +97,21 @@ const AiAssistant: FC<AiAssistantProps> = ({
       let operationsPerformedOrQueryAnswered = false;
 
       if (aiResponse.requiresClarification && aiResponse.clarificationQuestion) {
-        responseText = aiResponse.clarificationQuestion;
+        // If userConfirmationMessage is very short (like "Förtydliga:"), append the question for a more natural flow.
+        // Otherwise, the clarificationQuestion might be the primary message.
+        if (aiResponse.userConfirmationMessage && aiResponse.userConfirmationMessage.length < 20) {
+            responseText = `${aiResponse.userConfirmationMessage} ${aiResponse.clarificationQuestion}`;
+        } else {
+            responseText = aiResponse.clarificationQuestion;
+        }
         const aiClarificationMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText, requiresAction: true };
         setMessages(prev => [...prev, aiClarificationMessage]);
-        operationsPerformedOrQueryAnswered = true; // Clarification counts as a response
+        operationsPerformedOrQueryAnswered = true; 
       } else if (aiResponse.operations && aiResponse.operations.length > 0) {
         let opDetailsText = "";
         for (const operation of aiResponse.operations) {
           if (operation.commandType.toUpperCase() === 'QUERY') {
+             // The userConfirmationMessage should already contain the query answer
             operationsPerformedOrQueryAnswered = true;
             break; 
           }
@@ -112,30 +121,24 @@ const AiAssistant: FC<AiAssistantProps> = ({
             case 'CREATE':
               if (operation.eventDetails) {
                 const createdEvent = await onAiCreateEvent(operation.eventDetails);
-                if (createdEvent) {
-                  // UserConfirmationMessage from AI should suffice
-                } else {
-                  opDetailsText += `\nMisslyckades med att skapa en händelse baserat på: ${JSON.stringify(operation.eventDetails)}.`;
+                if (!createdEvent) {
+                  opDetailsText += `\nMisslyckades med att skapa händelse: ${JSON.stringify(operation.eventDetails)}.`;
                 }
               }
               break;
             case 'MODIFY':
               if (operation.eventIdentifier && operation.eventDetails) {
                 const modifiedEvent = await onAiModifyEvent(operation.eventIdentifier, operation.eventDetails);
-                if (modifiedEvent) {
-                  // UserConfirmationMessage from AI should suffice
-                } else {
-                  opDetailsText += `\nMisslyckades med att ändra en händelse. Kunde inte hitta matchande händelse eller tolka nya detaljer.`;
+                if (!modifiedEvent) {
+                  opDetailsText += `\nMisslyckades med att ändra händelse.`;
                 }
               }
               break;
             case 'DELETE':
               if (operation.eventIdentifier) {
                 const deletedEventId = await onAiDeleteEvent(operation.eventIdentifier);
-                if (deletedEventId) {
-                  // UserConfirmationMessage from AI should suffice
-                } else {
-                  opDetailsText += `\nMisslyckades med att ta bort en händelse. Kunde inte hitta matchande händelse.`;
+                if (!deletedEventId) {
+                  opDetailsText += `\nMisslyckades med att ta bort händelse.`;
                 }
               }
               break;
@@ -143,21 +146,28 @@ const AiAssistant: FC<AiAssistantProps> = ({
               opDetailsText += `\nOkänt kommando: ${operation.commandType}`;
           }
         }
-        if (opDetailsText && !responseText.includes(opDetailsText)) { 
-          responseText += opDetailsText;
+        // If there are specific failure messages and they aren't already in the main confirmation
+        if (opDetailsText && responseText && !responseText.includes(opDetailsText.trim())) { 
+          // Only append if responseText is not just a generic success and doesn't already contain the details
+          if (responseText.length < 100) { // Heuristic for "generic"
+             responseText += opDetailsText;
+          }
+        } else if (opDetailsText && !responseText) {
+            responseText = opDetailsText.trim();
         }
         
         const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
         setMessages(prev => [...prev, aiResponseMessage]);
 
-      } else if (aiResponse.userConfirmationMessage) {
+      } else if (aiResponse.userConfirmationMessage) { // This handles QUERY responses or general confirmations
         const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
         setMessages(prev => [...prev, aiResponseMessage]);
         operationsPerformedOrQueryAnswered = true;
       }
       
       if (!operationsPerformedOrQueryAnswered && !(aiResponse.requiresClarification && aiResponse.clarificationQuestion)) {
-         responseText = "Jag är osäker på vad jag ska göra med den informationen, eller så kunde jag inte utföra någon åtgärd.";
+         // Fallback if no operations were done, no query answered, and no clarification asked.
+         responseText = "Jag är osäker på hur jag ska tolka det, eller så kunde jag inte utföra någon åtgärd. Försök gärna igen med en tydligare instruktion.";
          const aiResponseMessage: Message = { id: crypto.randomUUID(), sender: 'ai', text: responseText };
          setMessages(prev => [...prev, aiResponseMessage]);
       }
@@ -166,11 +176,11 @@ const AiAssistant: FC<AiAssistantProps> = ({
     } catch (error) {
       setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
       console.error('AI Assistant Error:', error);
-      const errorMessageText = "Ursäkta, jag kunde inte bearbeta din förfrågan just nu. Försök igen.";
+      const errorMessageText = "Ursäkta, jag stötte på ett internt fel och kunde inte bearbeta din förfrågan just nu. Försök igen om en liten stund.";
       setMessages(prev => [...prev, { id: crypto.randomUUID(), sender: 'ai', text: errorMessageText }]);
       toast({
         title: 'AI Assistentfel',
-        description: (error as Error).message || 'Ett okänt fel inträffade.',
+        description: (error as Error).message || 'Ett okänt fel inträffade med AI-assistenten.',
         variant: 'destructive',
       });
     } finally {
@@ -236,3 +246,5 @@ const AiAssistant: FC<AiAssistantProps> = ({
 };
 
 export default AiAssistant;
+
+    
