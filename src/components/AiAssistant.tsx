@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from '@/components/ui/sheet';
-import { Bot, User, Send, Loader2, AlertTriangle, Zap } from 'lucide-react';
+import { Bot, User, Send, Loader2, AlertTriangle, Zap, Info } from 'lucide-react';
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import type { AiEventType, ConversationMessageType, TolkAIOutput, FormatPlanOutput, TolkAIInput } from '@/ai/schemas';
@@ -113,76 +113,80 @@ const AiAssistant: FC<AiAssistantProps> = ({
         
         console.log("[AiAssistant UI] Received from Planformaterar-AI:", JSON.stringify(formatterResponse, null, 2));
 
-        if (formatterResponse.operations && formatterResponse.operations.length > 0) {
+        if (formatterResponse.operations && Array.isArray(formatterResponse.operations) && formatterResponse.operations.length > 0) {
           addMessage('systemInfo', "Startar exekvering av plan...");
 
-          for (const operation of formatterResponse.operations) {
-            let outcomeMessage = "";
-            let success = false;
+          // --- FAIL-SAFE: Only execute the first operation to prevent runaway costs/loops ---
+          const operation = formatterResponse.operations[0];
+          if (formatterResponse.operations.length > 1) {
+              addMessage('systemInfo', `ℹ️ Notis: AI:n föreslog ${formatterResponse.operations.length} åtgärder. Jag utför endast den första för säkerhets skull. Be mig gärna om resten en i taget.`, { isError: false });
+          }
 
-            switch (operation.commandType.toUpperCase()) {
-              case 'CREATE':
-                if (operation.eventDetails) {
-                  try {
-                    const createdEvent = await onAiCreateEvent(operation.eventDetails, tolkResponse.imageHint);
-                    if (createdEvent) {
-                      outcomeMessage = `✅ Händelse "${createdEvent.title}" skapad.`;
-                      success = true;
+          let outcomeMessage = "";
+          let success = false;
+
+          switch (operation.commandType.toUpperCase()) {
+            case 'CREATE':
+              if (operation.eventDetails) {
+                try {
+                  const createdEvent = await onAiCreateEvent(operation.eventDetails, tolkResponse.imageHint);
+                  if (createdEvent) {
+                    outcomeMessage = `✅ Händelse "${createdEvent.title}" skapad.`;
+                    success = true;
+                  } else {
+                    outcomeMessage = `⚠️ Misslyckades med att skapa händelse: ${operation.eventDetails.title || 'Okänd titel'}.`;
+                  }
+                } catch (e: any) {
+                  console.error("Error in onAiCreateEvent:", e);
+                  outcomeMessage = `❌ Fel vid skapande av händelse "${operation.eventDetails.title || 'Okänd titel'}": ${e.message || 'Okänt fel'}.`;
+                }
+              } else {
+                outcomeMessage = "❌ Fel: Skapa-kommando saknade händelsedetaljer.";
+              }
+              break;
+            case 'MODIFY':
+              if (operation.eventIdentifier && operation.eventDetails) {
+                 try {
+                    const modifiedEvent = await onAiModifyEvent(operation.eventIdentifier, operation.eventDetails, tolkResponse.imageHint);
+                    if (modifiedEvent) {
+                        outcomeMessage = `✅ Händelse "${modifiedEvent.title}" (tidigare: "${operation.eventIdentifier.title || 'Okänd'}") ändrad.`;
+                        success = true;
                     } else {
-                      outcomeMessage = `⚠️ Misslyckades med att skapa händelse: ${operation.eventDetails.title || 'Okänd titel'}.`;
+                        outcomeMessage = `⚠️ Kunde inte hitta eller ändra händelsen: ${operation.eventIdentifier.title || 'Okänd titel'}.`;
                     }
-                  } catch (e: any) {
-                    console.error("Error in onAiCreateEvent:", e);
-                    outcomeMessage = `❌ Fel vid skapande av händelse "${operation.eventDetails.title || 'Okänd titel'}": ${e.message || 'Okänt fel'}.`;
-                  }
-                } else {
-                  outcomeMessage = "❌ Fel: Skapa-kommando saknade händelsedetaljer.";
+                } catch (e: any) {
+                    console.error("Error in onAiModifyEvent:", e);
+                    outcomeMessage = `❌ Fel vid ändring av händelse "${operation.eventIdentifier.title || 'Okänd titel'}": ${e.message || 'Okänt fel'}.`;
                 }
-                break;
-              case 'MODIFY':
-                if (operation.eventIdentifier && operation.eventDetails) {
-                   try {
-                      const modifiedEvent = await onAiModifyEvent(operation.eventIdentifier, operation.eventDetails, tolkResponse.imageHint);
-                      if (modifiedEvent) {
-                          outcomeMessage = `✅ Händelse "${modifiedEvent.title}" (tidigare: "${operation.eventIdentifier.title || 'Okänd'}") ändrad.`;
-                          success = true;
-                      } else {
-                          outcomeMessage = `⚠️ Kunde inte hitta eller ändra händelsen: ${operation.eventIdentifier.title || 'Okänd titel'}.`;
-                      }
-                  } catch (e: any) {
-                      console.error("Error in onAiModifyEvent:", e);
-                      outcomeMessage = `❌ Fel vid ändring av händelse "${operation.eventIdentifier.title || 'Okänd titel'}": ${e.message || 'Okänt fel'}.`;
-                  }
-                } else {
-                  outcomeMessage = "❌ Fel: Ändra-kommando saknade nödvändig information.";
+              } else {
+                outcomeMessage = "❌ Fel: Ändra-kommando saknade nödvändig information.";
+              }
+              break;
+            case 'DELETE':
+              if (operation.eventIdentifier) {
+                try {
+                    const deletedEventId = await onAiDeleteEvent(operation.eventIdentifier);
+                    if (deletedEventId) {
+                        outcomeMessage = `✅ Händelse "${operation.eventIdentifier.title || 'Okänd'}" borttagen.`;
+                        success = true;
+                    } else {
+                        outcomeMessage = `⚠️ Kunde inte hitta eller ta bort händelsen: ${operation.eventIdentifier.title || 'Okänd titel'}.`;
+                    }
+                } catch (e: any) {
+                    console.error("Error in onAiDeleteEvent:", e);
+                    outcomeMessage = `❌ Fel vid borttagning av händelse "${operation.eventIdentifier.title || 'Okänd titel'}": ${e.message || 'Okänt fel'}.`;
                 }
-                break;
-              case 'DELETE':
-                if (operation.eventIdentifier) {
-                  try {
-                      const deletedEventId = await onAiDeleteEvent(operation.eventIdentifier);
-                      if (deletedEventId) {
-                          outcomeMessage = `✅ Händelse "${operation.eventIdentifier.title || 'Okänd'}" borttagen.`;
-                          success = true;
-                      } else {
-                          outcomeMessage = `⚠️ Kunde inte hitta eller ta bort händelsen: ${operation.eventIdentifier.title || 'Okänd titel'}.`;
-                      }
-                  } catch (e: any) {
-                      console.error("Error in onAiDeleteEvent:", e);
-                      outcomeMessage = `❌ Fel vid borttagning av händelse "${operation.eventIdentifier.title || 'Okänd titel'}": ${e.message || 'Okänt fel'}.`;
-                  }
-                } else {
-                  outcomeMessage = "❌ Fel: Ta bort-kommando saknade händelseidentifierare.";
-                }
-                break;
-              case 'QUERY':
-                break; 
-              default:
-                outcomeMessage = `❓ Okänt kommando från Planformaterar-AI: ${operation.commandType}`;
-            }
-            if (outcomeMessage) {
-              addMessage('systemInfo', outcomeMessage, { isError: !success });
-            }
+              } else {
+                outcomeMessage = "❌ Fel: Ta bort-kommando saknade händelseidentifierare.";
+              }
+              break;
+            case 'QUERY':
+              break; 
+            default:
+              outcomeMessage = `❓ Okänt kommando från Planformaterar-AI: ${operation.commandType}`;
+          }
+          if (outcomeMessage) {
+            addMessage('systemInfo', outcomeMessage, { isError: !success });
           }
         } else if (tolkResponse.planDescription && (!formatterResponse.operations || formatterResponse.operations.length === 0)) {
             addMessage('systemInfo', "⚠️ Planformaterar-AI:n kunde inte skapa några konkreta åtgärder från Tolk-AI:ns plan.", {isError: true});
@@ -246,6 +250,7 @@ const AiAssistant: FC<AiAssistantProps> = ({
                     msg.text.startsWith("✅") ? <Zap className="h-6 w-6 text-green-500 flex-shrink-0 mt-1" /> :
                     msg.text.startsWith("⚠️") ? <AlertTriangle className="h-6 w-6 text-yellow-500 flex-shrink-0 mt-1" /> :
                     msg.text.startsWith("❌") ? <AlertTriangle className="h-6 w-6 text-red-500 flex-shrink-0 mt-1" /> :
+                    msg.text.startsWith("ℹ️") ? <Info className="h-6 w-6 text-blue-500 flex-shrink-0 mt-1" /> :
                     <AlertTriangle className="h-6 w-6 text-muted-foreground flex-shrink-0 mt-1" />
                 )}
                 
@@ -258,7 +263,7 @@ const AiAssistant: FC<AiAssistantProps> = ({
                         : msg.sender === 'planStep'
                           ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30 italic'
                           : msg.sender === 'systemInfo'
-                            ? msg.isError ? 'bg-destructive/10 text-destructive border border-destructive/30' : 'bg-muted/50 text-muted-foreground border border-border'
+                            ? msg.isError ? 'bg-destructive/10 text-destructive border border-destructive/30' : 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border border-blue-500/30'
                             : 'bg-accent/20 text-accent-foreground' 
                   }`}
                 >

@@ -15,7 +15,6 @@ import {
   FormatPlanOutputSchema, 
   type FormatPlanInput, 
   type FormatPlanOutput,
-  SingleCalendarOperationSchema // Keep this import if used elsewhere, or if FormatPlanOutputSchema depends on it.
 } from '@/ai/schemas';
 
 const formatPlanPrompt = ai.definePrompt({
