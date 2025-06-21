@@ -32,6 +32,8 @@ interface AiAssistantProps {
   onAiDeleteEvent: (eventIdentifier: any) => Promise<string | null>;
 }
 
+const AI_PROCESS_TIMEOUT = 30000; // 30 seconds fail-safe
+
 const AiAssistant: FC<AiAssistantProps> = ({ 
   isOpen, 
   onClose, 
@@ -67,7 +69,7 @@ const AiAssistant: FC<AiAssistantProps> = ({
     const thinkingMessageId = crypto.randomUUID();
     setMessages(prev => [...prev, { id: thinkingMessageId, sender: 'ai', text: "VisuCal Tolk-AI:n tänker...", isProcessing: true }]);
 
-    try {
+    const mainLogic = async () => {
       const simplifiedEventsForAIContext: AiEventType[] = events.map(e => ({
         title: e.title,
         date: e.date, 
@@ -89,12 +91,6 @@ const AiAssistant: FC<AiAssistantProps> = ({
       };
 
       console.log("[AiAssistant UI] Sending to Tolk-AI. Instruction:", userMessageText);
-      if (conversationHistoryForAI.length > 0) {
-          console.log("[AiAssistant UI] Conversation History for Tolk-AI (last 10):", JSON.stringify(conversationHistoryForAI.map(m => ({sender: m.sender, text: m.text.substring(0,70) + (m.text.length > 70 ? "..." : "")})), null, 2));
-      }
-      console.log("[AiAssistant UI] All current events for Tolk-AI's tool context (sample):", JSON.stringify(simplifiedEventsForAIContext.slice(0,2), null, 2) + (simplifiedEventsForAIContext.length > 2 ? `... and ${simplifiedEventsForAIContext.length-2} more` : ""));
-
-
       const tolkResponse: TolkAIOutput = await interpretUserInstruction(tolkInput);
       
       setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId));
@@ -109,7 +105,7 @@ const AiAssistant: FC<AiAssistantProps> = ({
              addMessage('ai', `Tolk-AI: ${tolkResponse.clarificationQuestion}`, { isError: true });
         }
       } else if (tolkResponse.planDescription) {
-        addMessage('planStep', `Planformaterar-AI:n bearbetar planen från Tolk-AI: "${tolkResponse.planDescription.substring(0,100)}${tolkResponse.planDescription.length > 100 ? "..." : ""}"`, { isProcessing: true });
+        addMessage('planStep', `Planformaterar-AI:n bearbetar planen...`, { isProcessing: true });
         
         const currentDateStr = formatDateFns(new Date(), 'yyyy-MM-dd');
         const formatterResponse: FormatPlanOutput = await formatPlan({ planDescription: tolkResponse.planDescription, currentDate: currentDateStr });
@@ -180,9 +176,6 @@ const AiAssistant: FC<AiAssistantProps> = ({
                 }
                 break;
               case 'QUERY':
-                // If Tolk-AI directly answers a query, its userFeedbackMessage is shown.
-                // If it formulated a plan for a query (which is less likely now), it would be handled here.
-                // For now, assume direct answers are in Tolk-AI's userFeedbackMessage.
                 break; 
               default:
                 outcomeMessage = `❓ Okänt kommando från Planformaterar-AI: ${operation.commandType}`;
@@ -201,15 +194,32 @@ const AiAssistant: FC<AiAssistantProps> = ({
          // General fallback if Tolk-AI's response is not actionable and not a clarification.
          addMessage('ai', "Jag kunde inte helt tolka din förfrågan just nu. Försök igen med en annan formulering.", { isError: true });
       }
+    };
 
+    const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Timeout: Processen tog för lång tid och avbröts.")), AI_PROCESS_TIMEOUT)
+    );
+
+    try {
+      await Promise.race([
+        mainLogic(),
+        timeoutPromise,
+      ]);
     } catch (error) {
       setMessages(prev => prev.filter(msg => msg.id !== thinkingMessageId && !(msg.sender === 'planStep' && msg.isProcessing)));
       console.error('VisuCal Assistent Fel:', error);
-      const errorMessageText = "Ursäkta, jag stötte på ett internt fel. Försök igen om en liten stund.";
+      
+      const errorMessage = error instanceof Error ? error.message : 'Ett okänt fel inträffade.';
+      const isTimeout = errorMessage.includes("Timeout");
+      
+      const errorMessageText = isTimeout
+          ? errorMessage
+          : "Ursäkta, jag stötte på ett internt fel. Försök igen om en liten stund.";
+
       addMessage('ai', errorMessageText, { isError: true });
       toast({
         title: 'VisuCal Assistentfel',
-        description: (error as Error).message || 'Ett okänt fel inträffade med assistenten.',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
