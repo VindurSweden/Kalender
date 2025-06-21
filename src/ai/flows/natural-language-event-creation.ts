@@ -17,14 +17,15 @@ import {
   type TolkAIInput,
   type TolkAIOutput,
 } from '@/ai/schemas';
+import { json } from 'genkit';
+
 
 // Define the prompt at the top level to avoid runtime definition errors.
 const tolkPrompt = ai.definePrompt({
   name: 'visuCalTolkPrompt',
   input: {schema: TolkAIInputSchema},
   output: {schema: TolkAIOutputSchema},
-  model: 'googleai/gemini-1.5-pro-latest', 
-  // Tools are removed for now to fix the runtime error, context is passed in the prompt instead.
+  model: 'googleai/gemini-2.5-flash', 
   config: {
     temperature: 0.5, 
     safetySettings: [ 
@@ -37,11 +38,11 @@ const tolkPrompt = ai.definePrompt({
   prompt: `Du är VisuCal Tolk-AI, en intelligent, koncis och hjälpsam kalenderassistent.
 Din uppgift är att:
 1.  FÖRSTÅ användarens instruktion på svenska.
-2.  ANVÄND DEN MEDSKICKADE LISTAN över kalenderhändelser (om den finns i kontexten) för att svara på frågor om användarens schema, eller för att verifiera en händelse innan du planerar en ändring/borttagning.
+2.  ANVÄND DEN MEDSKICKADE LISTAN över kalenderhändelser för att svara på frågor om användarens schema, eller för att verifiera en händelse innan du planerar en ändring/borttagning.
 3.  AVGÖR ANVÄNDARENS AVSIKT: Skapa (CREATE), Ändra (MODIFY), Ta bort (DELETE), eller Fråga (QUERY).
 4.  OM INSTRUKTIONEN ÄR TYDLIG och inga konflikter och avsikten är CREATE, MODIFY eller DELETE:
     a.  Svara först med en kort bekräftelse i \`userFeedbackMessage\`. Exempel: "Okej, jag förstår. Jag skapar en plan för det.", "Förstått, jag ska försöka flytta mötet."
-    b.  Formulera sedan en **planDescription** på naturlig svenska som beskriver de åtgärder som ska utföras. Exempel: "Skapa ett möte 'Lunch med Kalle' imorgon kl 12 med beskrivning 'Projekt X'. Bildhint: glad hund." Denna text skickas vidare till Planformaterar-AI:n. Inkludera eventuell bildhint i slutet, tydligt markerad.
+    b.  Formulera sedan en **planDescription** på naturlig svenska som beskriver de åtgärder som ska utföras. Exempel: "Skapa ett möte 'Lunch med Kalle' imorgon kl 12 med beskrivning 'Projekt X'. Bildhint: en glad hund." Denna text skickas vidare till Planformaterar-AI:n. Inkludera eventuell bildhint i slutet, tydligt markerad.
     c.  Extrahera en eventuell **imageHint** från din planDescription om den finns.
     d.  Sätt **requiresClarification** till false.
 5.  OM ANVÄNDAREN STÄLLER EN FRÅGA (QUERY) som du kan svara på (baserat på den medskickade kontexten):
@@ -103,7 +104,6 @@ const tolkAIFlow = ai.defineFlow(
       console.log("[Tolk-AI Flow] Conversation History (last 10 lines):\n", formattedHistory);
     }
         
-    // Direct call to the globally-defined prompt.
     const promptResponse = await tolkPrompt(input);
     let output = promptResponse.output; 
     
