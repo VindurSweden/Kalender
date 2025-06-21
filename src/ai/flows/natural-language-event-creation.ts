@@ -24,57 +24,76 @@ import {
 } from '@/ai/schemas';
 import { parseFlexibleSwedishDateString } from '@/lib/date-utils';
 
-// Tool Definition
-const getCalendarEventsTool = ai.defineTool(
+
+export async function interpretUserInstruction(
+  input: TolkAIInput
+): Promise<TolkAIOutput> { 
+  return tolkAIFlow(input);
+}
+
+const tolkAIFlow = ai.defineFlow(
   {
-    name: 'getCalendarEvents',
-    description: 'Hämtar kalenderhändelser för ett givet datum eller en datumfråga (t.ex. "idag", "nästa vecka", "den 15e augusti"). Använd detta för att svara på frågor om schemat eller för att verifiera befintliga händelser innan ändring/borttagning.',
-    inputSchema: z.object({ 
-        dateQuery: z.string().describe('Datumfrågan (t.ex. "idag", "imorgon", "2024-12-25", "nästa tisdag"). Använd detta fält för att skicka den faktiska textfrågan för datumet.')
-    }),
-    outputSchema: z.array(AiEventSchema),
+    name: 'tolkAIFlow',
+    inputSchema: TolkAIInputSchema,
+    outputSchema: TolkAIOutputSchema,
   },
-  async ({ dateQuery }, context?: { allEvents: AiEventType[], currentDateForTool: string }) => {
-    if (!context || !context.allEvents) {
-        console.warn("[getCalendarEventsTool] Context or allEvents missing.");
-        return [];
-    }
-    console.log(`[getCalendarEventsTool] Called with dateQuery: "${dateQuery}", with ${context.allEvents.length} total events. Current date for tool: ${context.currentDateForTool}`);
+  async (input: TolkAIInput): Promise<TolkAIOutput> => {
     
-    const referenceDate = parse(context.currentDateForTool, 'yyyy-MM-dd HH:mm', new Date());
-    const targetDate = parseFlexibleSwedishDateString(dateQuery, referenceDate);
+    // Define the tool *inside* the flow so it has access to the flow's input.
+    const getCalendarEventsTool = ai.defineTool(
+      {
+        name: 'getCalendarEvents',
+        description: 'Hämtar kalenderhändelser för ett givet datum eller en datumfråga (t.ex. "idag", "nästa vecka", "den 15e augusti"). Använd detta för att svara på frågor om schemat eller för att verifiera befintliga händelser innan ändring/borttagning.',
+        inputSchema: z.object({ 
+            dateQuery: z.string().describe('Datumfrågan (t.ex. "idag", "imorgon", "2024-12-25", "nästa tisdag"). Använd detta fält för att skicka den faktiska textfrågan för datumet.')
+        }),
+        outputSchema: z.array(AiEventSchema),
+      },
+      async ({ dateQuery }) => {
+        const allEvents = input.allCalendarEvents;
+        const currentDateForTool = input.currentDate;
 
-    if (!targetDate) {
-      console.warn(`[getCalendarEventsTool] Could not parse dateQuery "${dateQuery}" into a valid date.`);
-      return [];
-    }
+        if (!allEvents) {
+            console.warn("[getCalendarEventsTool] allEvents missing from flow input.");
+            return [];
+        }
+        console.log(`[getCalendarEventsTool] Called with dateQuery: "${dateQuery}", with ${allEvents.length} total events. Current date for tool: ${currentDateForTool}`);
+        
+        const referenceDate = parse(currentDateForTool, 'yyyy-MM-dd HH:mm', new Date());
+        const targetDate = parseFlexibleSwedishDateString(dateQuery, referenceDate);
 
-    const formattedTargetDate = format(targetDate, 'yyyy-MM-dd');
-    const relevantEvents = context.allEvents.filter(event => {
-        return event.date === formattedTargetDate;
-    });
-    
-    console.log(`[getCalendarEventsTool] Found ${relevantEvents.length} events for date ${formattedTargetDate}.`);
-    return relevantEvents;
-  }
-);
+        if (!targetDate) {
+          console.warn(`[getCalendarEventsTool] Could not parse dateQuery "${dateQuery}" into a valid date.`);
+          return [];
+        }
 
-const tolkPrompt = ai.definePrompt({
-  name: 'visuCalTolkPrompt',
-  input: {schema: TolkAIInputSchema},
-  output: {schema: TolkAIOutputSchema},
-  model: 'googleai/gemini-1.5-pro-latest', 
-  tools: [getCalendarEventsTool],
-  config: {
-    temperature: 0.5, 
-    safetySettings: [ 
-      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-    ],
-  },
-  prompt: `Du är VisuCal Tolk-AI, en intelligent, koncis och hjälpsam kalenderassistent.
+        const formattedTargetDate = format(targetDate, 'yyyy-MM-dd');
+        const relevantEvents = allEvents.filter(event => {
+            return event.date === formattedTargetDate;
+        });
+        
+        console.log(`[getCalendarEventsTool] Found ${relevantEvents.length} events for date ${formattedTargetDate}.`);
+        return relevantEvents;
+      }
+    );
+
+    // Define the prompt that uses the tool.
+    const tolkPrompt = ai.definePrompt({
+      name: 'visuCalTolkPrompt',
+      input: {schema: TolkAIInputSchema},
+      output: {schema: TolkAIOutputSchema},
+      model: 'googleai/gemini-1.5-pro-latest', 
+      tools: [getCalendarEventsTool],
+      config: {
+        temperature: 0.5, 
+        safetySettings: [ 
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+        ],
+      },
+      prompt: `Du är VisuCal Tolk-AI, en intelligent, koncis och hjälpsam kalenderassistent.
 Din uppgift är att:
 1.  FÖRSTÅ användarens instruktion på svenska.
 2.  ANVÄND VERKTYGET 'getCalendarEvents' om du behöver information om användarens schema för att svara på en fråga eller för att verifiera en händelse innan du planerar en ändring/borttagning. Fråga efter händelser för det specifika datum eller den tidsperiod som är relevant baserat på användarens instruktion. Anropa verktyget med en \`dateQuery\` som representerar användarens tidsfråga (t.ex. "idag", "nästa vecka", "den 15e augusti").
@@ -113,15 +132,8 @@ Konversationshistorik (senaste först):
 
 ANVÄNDARINSTRUKTION: "{{instruction}}"
 `,
-});
+    });
 
-const tolkAIFlow = ai.defineFlow(
-  {
-    name: 'tolkAIFlow',
-    inputSchema: TolkAIInputSchema,
-    outputSchema: TolkAIOutputSchema,
-  },
-  async (input: TolkAIInput): Promise<TolkAIOutput> => {
     console.log("[Tolk-AI Flow] Input to Tolk-AI prompt. Instruction:", input.instruction, "Current Date:", input.currentDate);
     if (input.conversationHistory && input.conversationHistory.length > 0) {
       const formattedHistory = input.conversationHistory.map(m => 
@@ -130,12 +142,8 @@ const tolkAIFlow = ai.defineFlow(
       console.log("[Tolk-AI Flow] Conversation History (last 10 lines):\n", formattedHistory);
     }
         
-    const toolContext = { allEvents: input.allCalendarEvents, currentDateForTool: input.currentDate };
-
-    const promptResponse = await tolkPrompt(
-        input, 
-        { tools: { getCalendarEvents: (toolInput) => getCalendarEventsTool(toolInput, toolContext) } }
-    );
+    // Now the call is simple, as Genkit will handle the tool execution.
+    const promptResponse = await tolkPrompt(input);
     let output = promptResponse.output; 
     
     console.log("[Tolk-AI Flow] Raw structured output from Tolk-AI prompt:", JSON.stringify(output, null, 2));
@@ -181,9 +189,3 @@ const tolkAIFlow = ai.defineFlow(
     };
   }
 );
-
-export async function interpretUserInstruction(
-  input: TolkAIInput
-): Promise<TolkAIOutput> { 
-  return tolkAIFlow(input);
-}
