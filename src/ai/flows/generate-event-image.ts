@@ -1,3 +1,4 @@
+
 'use server';
 
 /**
@@ -40,7 +41,7 @@ const generateEventImageFlow = ai.defineFlow(
     console.log(`[Bildskapar-AI Flow] Generating image with prompt: "${promptText}"`);
 
     const {media} = await ai.generate({
-      model: 'googleai/gemini-2.0-flash-exp', 
+      model: 'googleai/gemini-2.0-flash-preview-image-generation', 
       prompt: promptText,
       config: {
         responseModalities: ['TEXT', 'IMAGE'], 
