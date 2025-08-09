@@ -14,8 +14,12 @@ import subWeeks from 'date-fns/subWeeks';
 import startOfDay from 'date-fns/startOfDay';
 import parseISO from 'date-fns/parseISO';
 import { GoogleGenAI, GenerateContentResponse, Chat } from "@google/genai";
+import { initClient as initGoogleClient, listEvents as listGoogleEvents, createEvent as createGoogleEvent } from './googleCalendar';
 
 const API_KEY = process.env.API_KEY;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID;
 
 const initialDefaultEvents: CalendarEvent[] = [];
 
@@ -240,6 +244,7 @@ const App: React.FC = () => {
   const [isGeneratingImage, setIsGeneratingImage] = useState<boolean>(false);
   const [imageGenError, setImageGenError] = useState<string>('');
   const isApiConfigured = !!API_KEY && !!genericAiInstanceRef.current;
+  const [isGoogleReady, setIsGoogleReady] = useState<boolean>(false);
 
 
   useEffect(() => {
@@ -270,6 +275,44 @@ const App: React.FC = () => {
       console.warn("API_KEY not found. AI chat and image generation functionality will be limited.");
     }
   }, []);
+
+  useEffect(() => {
+    const loadGoogle = async () => {
+      if (!GOOGLE_API_KEY || !GOOGLE_CLIENT_ID || !GOOGLE_CALENDAR_ID) return;
+      try {
+        await initGoogleClient(GOOGLE_API_KEY, GOOGLE_CLIENT_ID);
+        const items = await listGoogleEvents(GOOGLE_CALENDAR_ID);
+        const mapped: CalendarEvent[] = items.map((item: any) => {
+          const start = item.start?.dateTime || item.start?.date;
+          let date = '';
+          let time: string | undefined;
+          let endTime: string | undefined;
+          if (start) {
+            date = start.substring(0,10);
+            if (item.start?.dateTime) {
+              time = new Date(item.start.dateTime).toISOString().substring(11,16);
+            }
+          }
+          if (item.end?.dateTime) {
+            endTime = new Date(item.end.dateTime).toISOString().substring(11,16);
+          }
+          return {
+            id: item.id,
+            date,
+            title: item.summary || 'Untitled',
+            time,
+            endTime,
+            description: item.description || undefined,
+          } as CalendarEvent;
+        });
+        setEvents(mapped);
+        setIsGoogleReady(true);
+      } catch (err) {
+        console.error('Google Calendar init failed', err);
+      }
+    };
+    loadGoogle();
+  }, [setEvents]);
 
 
   const handlePrev = useCallback(() => {
@@ -314,12 +357,27 @@ const App: React.FC = () => {
   const handleSaveEvent = useCallback((eventData: Omit<CalendarEvent, 'id'>) => {
     setEvents(prevEvents => {
       if (eventToEdit) {
-        return prevEvents.map(e => e.id === eventToEdit.id ? { ...eventToEdit, ...eventData } : e);
+        const updated = prevEvents.map(e => e.id === eventToEdit.id ? { ...eventToEdit, ...eventData } : e);
+        return updated;
       }
-      return [...prevEvents, { ...eventData, id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}` }];
+      const newId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const newEvents = [...prevEvents, { ...eventData, id: newId }];
+      if (!eventData.imageUrl && genericAiInstanceRef.current && isApiConfigured) {
+        generateImageForEvent(newId, eventData.title, eventData.description);
+      }
+      return newEvents;
     });
+    if (isGoogleReady && GOOGLE_CALENDAR_ID) {
+      const gEvent: any = {
+        summary: eventData.title,
+        description: eventData.description,
+        start: eventData.time ? { dateTime: `${eventData.date}T${eventData.time}:00` } : { date: eventData.date },
+        end: eventData.endTime ? { dateTime: `${eventData.date}T${eventData.endTime}:00` } : { date: eventData.date },
+      };
+      createGoogleEvent(GOOGLE_CALENDAR_ID, gEvent).catch(err => console.error('Google sync failed', err));
+    }
     handleCloseEventModal();
-  }, [setEvents, handleCloseEventModal, eventToEdit]);
+  }, [setEvents, handleCloseEventModal, eventToEdit, isApiConfigured, isGoogleReady]);
   
   const handleDeleteEventInModal = useCallback(() => {
     if (eventToEdit) {
@@ -336,12 +394,31 @@ const App: React.FC = () => {
             model: "gemini-2.5-flash-preview-04-17",
             config: { systemInstruction: EXECUTOR_SYSTEM_INSTRUCTION }
         });
-        orchestratorChatRef.current = ai.chats.create({ 
+        orchestratorChatRef.current = ai.chats.create({
             model: "gemini-2.5-flash-preview-04-17",
             config: { systemInstruction: ORCHESTRATOR_SYSTEM_INSTRUCTION }
         });
     }
   }, []);
+
+  const generateImageForEvent = async (eventId: string, title: string, description?: string) => {
+    try {
+      if (!genericAiInstanceRef.current) return;
+      const promptText = `A simple visual icon or depiction for a calendar event: "${title}".${description ? ' Context: ' + description : ''} Style: clean, easily recognizable.`;
+      const ai = genericAiInstanceRef.current;
+      const response = await ai.models.generateImages({
+        model: 'imagen-3.0-generate-002',
+        prompt: promptText,
+        config: { numberOfImages: 1, outputMimeType: 'image/jpeg' },
+      });
+      if (response.generatedImages && response.generatedImages.length > 0 && response.generatedImages[0].image?.imageBytes) {
+        const base64ImageBytes = response.generatedImages[0].image.imageBytes;
+        setEvents(prev => prev.map(e => e.id === eventId ? { ...e, imageUrl: `data:image/jpeg;base64,${base64ImageBytes}`, imagePrompt: promptText } : e));
+      }
+    } catch (err) {
+      console.error('Automatic image generation failed', err);
+    }
+  };
 
   const headerDateFormatter = () => {
     if (view === 'month') return format(currentDate, 'MMMM yyyy');

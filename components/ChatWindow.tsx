@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatMessage } from '../types';
-import { PaperAirplaneIcon } from './Icons'; 
+import { PaperAirplaneIcon, MicrophoneIcon } from './Icons';
 
 // Using existing PaperAirplaneIcon from Icons.tsx, so SendIcon duplicate is not needed here.
 
@@ -17,6 +17,9 @@ interface ChatWindowProps {
 const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage, isLoadingAiResponse, isApiConfigured, onClearChat }) => {
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const speechRecognitionRef = useRef<any>(null);
+  const isSpeechSupported = typeof window !== 'undefined' && (('SpeechRecognition' in window) || ('webkitSpeechRecognition' in window));
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -30,6 +33,33 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage, isLoad
       onSendMessage(inputText.trim());
       setInputText('');
     }
+  };
+
+  const handleMicClick = () => {
+    if (!isSpeechSupported || isLoadingAiResponse || !isApiConfigured) return;
+    if (isRecording && speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'sv-SE';
+    recognition.continuous = false;
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      onSendMessage(transcript);
+    };
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+    recognition.onerror = () => {
+      setIsRecording(false);
+    };
+    speechRecognitionRef.current = recognition;
+    setIsRecording(true);
+    recognition.start();
   };
 
   return (
@@ -72,7 +102,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage, isLoad
         )}
         <div ref={messagesEndRef} />
       </div>
-      <form onSubmit={handleSubmit} className="flex items-center border-t pt-3">
+      <form onSubmit={handleSubmit} className="flex items-center border-t pt-3 space-x-2">
+        <button
+          type="button"
+          onClick={handleMicClick}
+          className={`p-2 rounded-full border ${isRecording ? 'bg-red-500 text-white' : 'text-gray-600 hover:text-primary hover:bg-primary-light'} disabled:opacity-50`}
+          aria-label="Voice input"
+          disabled={!isSpeechSupported || isLoadingAiResponse || !isApiConfigured}
+        >
+          <MicrophoneIcon className="w-5 h-5" />
+        </button>
         <input
           type="text"
           value={inputText}
@@ -88,7 +127,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage, isLoad
           disabled={isLoadingAiResponse || !inputText.trim() || !isApiConfigured}
           aria-label="Send chat message"
         >
-          <PaperAirplaneIcon className="w-5 h-5" /> {/* Use imported PaperAirplaneIcon */}
+          <PaperAirplaneIcon className="w-5 h-5" />
         </button>
       </form>
       {!isApiConfigured && (
