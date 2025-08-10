@@ -1,15 +1,15 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { CalendarEvent, ChatMessage } from './types';
-import CalendarGrid from './components/CalendarGrid';
+// Use week and day views
 import WeekViewGrid from './components/WeekViewGrid';
+import DayView from './components/DayView';
 import EventModal from './components/EventModal';
 import ImageGenModal from './components/ImageGenModal'; // New Import
 import ChatWindow from './components/ChatWindow';
 import useLocalStorage from './hooks/useLocalStorage';
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, PhotoIcon } from './components/Icons'; // Added PhotoIcon
-import { format, addMonths, addWeeks, addDays, differenceInMinutes, isSameDay as fnsIsSameDay, isValid } from 'date-fns';
-import subMonths from 'date-fns/subMonths';
+import { format, addWeeks, addDays, differenceInMinutes, isSameDay as fnsIsSameDay, isValid } from 'date-fns';
 import subWeeks from 'date-fns/subWeeks';
 import startOfDay from 'date-fns/startOfDay';
 import parseISO from 'date-fns/parseISO';
@@ -226,7 +226,8 @@ const App: React.FC = () => {
   const [selectedDateForModal, setSelectedDateForModal] = useState<Date | null>(null);
   const [initialTimeForModal, setInitialTimeForModal] = useState<string | undefined>(undefined);
   const [eventToEdit, setEventToEdit] = useState<CalendarEvent | null>(null);
-  const [view, setView] = useState<'month' | 'week'>('month');
+  const [view, setView] = useState<'week' | 'day'>('week');
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isAiProcessing, setIsAiProcessing] = useState<boolean>(false); 
@@ -316,16 +317,20 @@ const App: React.FC = () => {
 
 
   const handlePrev = useCallback(() => {
-    if (view === 'month') setCurrentDate(prev => subMonths(prev, 1));
+    if (view === 'day' && selectedDay) setSelectedDay(prev => addDays(prev!, -1));
     else setCurrentDate(prev => subWeeks(prev, 1));
-  }, [view]);
+  }, [view, selectedDay]);
 
   const handleNext = useCallback(() => {
-    if (view === 'month') setCurrentDate(prev => addMonths(prev, 1));
+    if (view === 'day' && selectedDay) setSelectedDay(prev => addDays(prev!, 1));
     else setCurrentDate(prev => addWeeks(prev, 1));
-  }, [view]);
+  }, [view, selectedDay]);
 
-  const handleToday = useCallback(() => setCurrentDate(startOfDay(new Date())), []);
+  const handleToday = useCallback(() => {
+    const today = startOfDay(new Date());
+    if (view === 'day') setSelectedDay(today);
+    else setCurrentDate(today);
+  }, [view]);
 
   const openModalForNewEvent = useCallback((date: Date, details?: Partial<Omit<CalendarEvent, 'id' | 'date'>>, time?: string) => {
     setSelectedDateForModal(date);
@@ -335,7 +340,6 @@ const App: React.FC = () => {
     setIsEventModalOpen(true);
   }, []);
   
-  const openModalForNewEventOnDate = useCallback((date: Date) => openModalForNewEvent(date, {}), [openModalForNewEvent]);
   const openModalForNewEventOnSlot = useCallback((date: Date, time: string) => openModalForNewEvent(date, {}, time), [openModalForNewEvent]);
   
   const openModalForEditingEvent = useCallback((event: CalendarEvent) => {
@@ -421,8 +425,10 @@ const App: React.FC = () => {
   };
 
   const headerDateFormatter = () => {
-    if (view === 'month') return format(currentDate, 'MMMM yyyy');
-    const weekStart = startOfDay(currentDate); 
+    if (view === 'day' && selectedDay) {
+      return format(selectedDay, 'EEEE d MMMM yyyy');
+    }
+    const weekStart = startOfDay(currentDate);
     return format(weekStart, 'MMMM') === format(addDays(weekStart,6), 'MMMM')
       ? `${format(weekStart, 'MMMM d')} - ${format(addDays(weekStart,6), 'd, yyyy')}`
       : `${format(weekStart, 'MMMM d')} - ${format(addDays(weekStart,6), 'MMMM d, yyyy')}`;
@@ -686,28 +692,24 @@ Your output must be one of:
 
       <div className="flex items-center justify-between mb-0 bg-white p-3 rounded-t-lg shadow">
         <div className="flex items-center space-x-2">
-          <button onClick={handlePrev} className="p-2 text-gray-600 hover:text-primary hover:bg-primary-light rounded-full" aria-label={view === 'month' ? "Previous month" : "Previous week"}><ChevronLeftIcon className="w-6 h-6" /></button>
-          <button onClick={handleNext} className="p-2 text-gray-600 hover:text-primary hover:bg-primary-light rounded-full" aria-label={view === 'month' ? "Next month" : "Next week"}><ChevronRightIcon className="w-6 h-6" /></button>
+          <button onClick={handlePrev} className="p-2 text-gray-600 hover:text-primary hover:bg-primary-light rounded-full" aria-label={view === 'day' ? "Föregående dag" : "Föregående vecka"}><ChevronLeftIcon className="w-6 h-6" /></button>
+          <button onClick={handleNext} className="p-2 text-gray-600 hover:text-primary hover:bg-primary-light rounded-full" aria-label={view === 'day' ? "Nästa dag" : "Nästa vecka"}><ChevronRightIcon className="w-6 h-6" /></button>
           <button onClick={handleToday} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">Idag</button>
         </div>
         <h2 className="text-xl font-semibold text-gray-800 hidden md:block">{headerDateFormatter()}</h2>
         <div className="flex items-center space-x-2">
-          <div className="flex rounded-md shadow-sm">
-            <button onClick={() => setView('month')} className={`px-3 py-2 text-sm font-medium rounded-l-md border ${view === 'month' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Månad</button>
-            <button onClick={() => setView('week')} className={`px-3 py-2 text-sm font-medium rounded-r-md border ${view === 'week' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-300 border-l-0 hover:bg-gray-50'}`}>Vecka</button>
-          </div>
-           <button 
-             onClick={openImageGenModal} 
-             className="p-2 bg-accent text-white rounded-full hover:bg-green-600 shadow disabled:bg-gray-400" 
+           <button
+             onClick={openImageGenModal}
+             className="p-2 bg-accent text-white rounded-full hover:bg-green-600 shadow disabled:bg-gray-400"
              aria-label="Generate image"
              title="Generate Image (General)"
              disabled={!isApiConfigured || !genericAiInstanceRef.current}
             >
              <PhotoIcon className="w-5 h-5" />
            </button>
-           <button 
-            onClick={() => openModalForNewEvent(currentDate, {})} 
-            className="p-2 bg-primary text-white rounded-full hover:bg-primary-hover shadow" 
+           <button
+            onClick={() => openModalForNewEvent(view === 'day' && selectedDay ? selectedDay : currentDate, {})}
+            className="p-2 bg-primary text-white rounded-full hover:bg-primary-hover shadow"
             aria-label="Lägg till ny händelse"
             title="Add New Event"
             >
@@ -718,10 +720,21 @@ Your output must be one of:
       <h2 className="text-xl font-semibold text-gray-800 text-center md:hidden mb-3 -mt-1">{headerDateFormatter()}</h2>
 
       <main className="flex-grow overflow-y-auto" style={{minHeight: '300px'}}>
-        {view === 'month' ? (
-          <CalendarGrid currentDate={currentDate} events={events} onDayClick={openModalForNewEventOnDate} onEventClick={openModalForEditingEvent} />
+        {view === 'day' && selectedDay ? (
+          <DayView
+            date={selectedDay}
+            events={events}
+            onBack={() => { setView('week'); setCurrentDate(selectedDay); }}
+            onEventClick={openModalForEditingEvent}
+          />
         ) : (
-          <WeekViewGrid currentDate={currentDate} events={events} onSlotClick={openModalForNewEventOnSlot} onEventClick={openModalForEditingEvent} />
+          <WeekViewGrid
+            currentDate={currentDate}
+            events={events}
+            onSlotClick={openModalForNewEventOnSlot}
+            onEventClick={openModalForEditingEvent}
+            onDaySelect={(d) => { setSelectedDay(d); setView('day'); }}
+          />
         )}
       </main>
 

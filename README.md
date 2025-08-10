@@ -21,3 +21,4 @@ This contains everything you need to run your app locally.
 * **Voice control** – click the microphone in the chat window to dictate questions or calendar commands using the browser's speech recognition (tested in Chrome on Android).
 * **Google Calendar sync** – events load from and are pushed to the calendar specified by `GOOGLE_CALENDAR_ID` once the Google client is authorised.
 * **Automatic image support** – when creating events without an image, the app generates a simple pictogram using the Gemini image API.
+* **Week-first interface** – the planner opens on a week grid; click a day header to drill down into a child-friendly day view with large image cards for each event.
