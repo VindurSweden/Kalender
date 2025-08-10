@@ -1,21 +1,25 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { CalendarEvent, ChatMessage } from './types';
-import CalendarGrid from './components/CalendarGrid';
 import WeekViewGrid from './components/WeekViewGrid';
+import DayView from './components/DayView';
 import EventModal from './components/EventModal';
 import ImageGenModal from './components/ImageGenModal'; // New Import
 import ChatWindow from './components/ChatWindow';
 import useLocalStorage from './hooks/useLocalStorage';
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, PhotoIcon } from './components/Icons'; // Added PhotoIcon
-import { format, addMonths, addWeeks, addDays, differenceInMinutes, isSameDay as fnsIsSameDay, isValid } from 'date-fns';
-import subMonths from 'date-fns/subMonths';
+import { format, addWeeks, addDays, differenceInMinutes, isSameDay as fnsIsSameDay, isValid } from 'date-fns';
 import subWeeks from 'date-fns/subWeeks';
+import startOfWeek from 'date-fns/startOfWeek';
 import startOfDay from 'date-fns/startOfDay';
 import parseISO from 'date-fns/parseISO';
 import { GoogleGenAI, GenerateContentResponse, Chat } from "@google/genai";
+import { initClient as initGoogleClient, listEvents as listGoogleEvents, createEvent as createGoogleEvent } from './googleCalendar';
 
 const API_KEY = process.env.API_KEY;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID;
 
 const initialDefaultEvents: CalendarEvent[] = [];
 
@@ -222,7 +226,16 @@ const App: React.FC = () => {
   const [selectedDateForModal, setSelectedDateForModal] = useState<Date | null>(null);
   const [initialTimeForModal, setInitialTimeForModal] = useState<string | undefined>(undefined);
   const [eventToEdit, setEventToEdit] = useState<CalendarEvent | null>(null);
-  const [view, setView] = useState<'month' | 'week'>('month');
+  const [view, setView] = useState<'week' | 'day'>('week');
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  const people = ['Alla', 'Leia', 'Gabriel', 'Antony', 'Familjen'];
+  const [selectedPerson, setSelectedPerson] = useState<string>('Alla');
+  const personColors: Record<string, string> = {
+    Leia: 'bg-blue-500',
+    Gabriel: 'bg-green-500',
+    Antony: 'bg-red-500',
+    Familjen: 'bg-purple-500',
+  };
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isAiProcessing, setIsAiProcessing] = useState<boolean>(false); 
@@ -240,6 +253,7 @@ const App: React.FC = () => {
   const [isGeneratingImage, setIsGeneratingImage] = useState<boolean>(false);
   const [imageGenError, setImageGenError] = useState<string>('');
   const isApiConfigured = !!API_KEY && !!genericAiInstanceRef.current;
+  const [isGoogleReady, setIsGoogleReady] = useState<boolean>(false);
 
 
   useEffect(() => {
@@ -271,18 +285,66 @@ const App: React.FC = () => {
     }
   }, []);
 
+  useEffect(() => {
+    const loadGoogle = async () => {
+      if (!GOOGLE_API_KEY || !GOOGLE_CLIENT_ID || !GOOGLE_CALENDAR_ID) return;
+      try {
+        await initGoogleClient(GOOGLE_API_KEY, GOOGLE_CLIENT_ID);
+        const items = await listGoogleEvents(GOOGLE_CALENDAR_ID);
+        const mapped: CalendarEvent[] = items.map((item: any) => {
+          const start = item.start?.dateTime || item.start?.date;
+          let date = '';
+          let time: string | undefined;
+          let endTime: string | undefined;
+          if (start) {
+            date = start.substring(0,10);
+            if (item.start?.dateTime) {
+              time = new Date(item.start.dateTime).toISOString().substring(11,16);
+            }
+          }
+          if (item.end?.dateTime) {
+            endTime = new Date(item.end.dateTime).toISOString().substring(11,16);
+          }
+          const description = item.description || '';
+          let person = 'Familjen';
+          const match = description.match(/\[PERSON:(.*?)\]/);
+          if (match) person = match[1];
+          const cleanDesc = description.replace(/\[PERSON:.*?\]/, '').trim();
+          return {
+            id: item.id,
+            date,
+            title: item.summary || 'Untitled',
+            time,
+            endTime,
+            description: cleanDesc || undefined,
+            person,
+            color: personColors[person] || 'bg-purple-500',
+          } as CalendarEvent;
+        });
+        setEvents(mapped);
+        setIsGoogleReady(true);
+      } catch (err) {
+        console.error('Google Calendar init failed', err);
+      }
+    };
+    loadGoogle();
+  }, [setEvents]);
+
 
   const handlePrev = useCallback(() => {
-    if (view === 'month') setCurrentDate(prev => subMonths(prev, 1));
-    else setCurrentDate(prev => subWeeks(prev, 1));
-  }, [view]);
+    if (view === 'week') setCurrentDate(prev => subWeeks(prev, 1));
+    else if (view === 'day' && selectedDay) setSelectedDay(addDays(selectedDay, -1));
+  }, [view, selectedDay]);
 
   const handleNext = useCallback(() => {
-    if (view === 'month') setCurrentDate(prev => addMonths(prev, 1));
-    else setCurrentDate(prev => addWeeks(prev, 1));
-  }, [view]);
+    if (view === 'week') setCurrentDate(prev => addWeeks(prev, 1));
+    else if (view === 'day' && selectedDay) setSelectedDay(addDays(selectedDay, 1));
+  }, [view, selectedDay]);
 
-  const handleToday = useCallback(() => setCurrentDate(startOfDay(new Date())), []);
+  const handleToday = useCallback(() => {
+    if (view === 'week') setCurrentDate(startOfDay(new Date()));
+    else setSelectedDay(startOfDay(new Date()));
+  }, [view]);
 
   const openModalForNewEvent = useCallback((date: Date, details?: Partial<Omit<CalendarEvent, 'id' | 'date'>>, time?: string) => {
     setSelectedDateForModal(date);
@@ -292,7 +354,6 @@ const App: React.FC = () => {
     setIsEventModalOpen(true);
   }, []);
   
-  const openModalForNewEventOnDate = useCallback((date: Date) => openModalForNewEvent(date, {}), [openModalForNewEvent]);
   const openModalForNewEventOnSlot = useCallback((date: Date, time: string) => openModalForNewEvent(date, {}, time), [openModalForNewEvent]);
   
   const openModalForEditingEvent = useCallback((event: CalendarEvent) => {
@@ -314,12 +375,27 @@ const App: React.FC = () => {
   const handleSaveEvent = useCallback((eventData: Omit<CalendarEvent, 'id'>) => {
     setEvents(prevEvents => {
       if (eventToEdit) {
-        return prevEvents.map(e => e.id === eventToEdit.id ? { ...eventToEdit, ...eventData } : e);
+        const updated = prevEvents.map(e => e.id === eventToEdit.id ? { ...eventToEdit, ...eventData } : e);
+        return updated;
       }
-      return [...prevEvents, { ...eventData, id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}` }];
+      const newId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const newEvents = [...prevEvents, { ...eventData, id: newId }];
+      if (!eventData.imageUrl && genericAiInstanceRef.current && isApiConfigured) {
+        generateImageForEvent(newId, eventData.title, eventData.description);
+      }
+      return newEvents;
     });
+    if (isGoogleReady && GOOGLE_CALENDAR_ID) {
+      const gEvent: any = {
+        summary: eventData.title,
+        description: `${eventData.description || ''}\n[PERSON:${eventData.person}]`,
+        start: eventData.time ? { dateTime: `${eventData.date}T${eventData.time}:00` } : { date: eventData.date },
+        end: eventData.endTime ? { dateTime: `${eventData.date}T${eventData.endTime}:00` } : { date: eventData.date },
+      };
+      createGoogleEvent(GOOGLE_CALENDAR_ID, gEvent).catch(err => console.error('Google sync failed', err));
+    }
     handleCloseEventModal();
-  }, [setEvents, handleCloseEventModal, eventToEdit]);
+  }, [setEvents, handleCloseEventModal, eventToEdit, isApiConfigured, isGoogleReady]);
   
   const handleDeleteEventInModal = useCallback(() => {
     if (eventToEdit) {
@@ -336,20 +412,43 @@ const App: React.FC = () => {
             model: "gemini-2.5-flash-preview-04-17",
             config: { systemInstruction: EXECUTOR_SYSTEM_INSTRUCTION }
         });
-        orchestratorChatRef.current = ai.chats.create({ 
+        orchestratorChatRef.current = ai.chats.create({
             model: "gemini-2.5-flash-preview-04-17",
             config: { systemInstruction: ORCHESTRATOR_SYSTEM_INSTRUCTION }
         });
     }
   }, []);
 
-  const headerDateFormatter = () => {
-    if (view === 'month') return format(currentDate, 'MMMM yyyy');
-    const weekStart = startOfDay(currentDate); 
-    return format(weekStart, 'MMMM') === format(addDays(weekStart,6), 'MMMM')
-      ? `${format(weekStart, 'MMMM d')} - ${format(addDays(weekStart,6), 'd, yyyy')}`
-      : `${format(weekStart, 'MMMM d')} - ${format(addDays(weekStart,6), 'MMMM d, yyyy')}`;
+  const generateImageForEvent = async (eventId: string, title: string, description?: string) => {
+    try {
+      if (!genericAiInstanceRef.current) return;
+      const promptText = `A simple visual icon or depiction for a calendar event: "${title}".${description ? ' Context: ' + description : ''} Style: clean, easily recognizable.`;
+      const ai = genericAiInstanceRef.current;
+      const response = await ai.models.generateImages({
+        model: 'imagen-3.0-generate-002',
+        prompt: promptText,
+        config: { numberOfImages: 1, outputMimeType: 'image/jpeg' },
+      });
+      if (response.generatedImages && response.generatedImages.length > 0 && response.generatedImages[0].image?.imageBytes) {
+        const base64ImageBytes = response.generatedImages[0].image.imageBytes;
+        setEvents(prev => prev.map(e => e.id === eventId ? { ...e, imageUrl: `data:image/jpeg;base64,${base64ImageBytes}`, imagePrompt: promptText } : e));
+      }
+    } catch (err) {
+      console.error('Automatic image generation failed', err);
+    }
   };
+
+  const headerDateFormatter = () => {
+    if (view === 'week') {
+      const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
+      const weekEnd = addDays(weekStart, 6);
+      return `${format(weekStart, 'd MMM')} - ${format(weekEnd, 'd MMM yyyy')}`;
+    }
+    if (selectedDay) return format(selectedDay, 'd MMMM yyyy');
+    return '';
+  };
+
+  const filteredEvents = events.filter(e => selectedPerson === 'Alla' || e.person === selectedPerson);
   
   const processApprovedExecutorResponse = (approvedResponseText: string) => {
     const responseLines = approvedResponseText.split('\n');
@@ -599,38 +698,46 @@ Your output must be one of:
         <h1 className="text-3xl font-bold text-gray-800 text-center">VisuCal Planner</h1>
       </header>
 
-      <ChatWindow 
+      <ChatWindow
         messages={chatMessages}
         onSendMessage={handleSendChatMessage}
         isLoadingAiResponse={isAiProcessing}
         isApiConfigured={isApiConfigured && !!genericAiInstanceRef.current && !!executorChatRef.current && !!orchestratorChatRef.current}
-        onClearChat={handleClearChat} 
+        onClearChat={handleClearChat}
       />
+
+      <div className="flex justify-center space-x-2">
+        {people.map(p => (
+          <button
+            key={p}
+            onClick={() => setSelectedPerson(p)}
+            className={`px-3 py-2 rounded-lg text-sm font-medium shadow ${selectedPerson === p ? 'bg-primary text-white' : 'bg-white text-gray-700'}`}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
 
       <div className="flex items-center justify-between mb-0 bg-white p-3 rounded-t-lg shadow">
         <div className="flex items-center space-x-2">
-          <button onClick={handlePrev} className="p-2 text-gray-600 hover:text-primary hover:bg-primary-light rounded-full" aria-label={view === 'month' ? "Previous month" : "Previous week"}><ChevronLeftIcon className="w-6 h-6" /></button>
-          <button onClick={handleNext} className="p-2 text-gray-600 hover:text-primary hover:bg-primary-light rounded-full" aria-label={view === 'month' ? "Next month" : "Next week"}><ChevronRightIcon className="w-6 h-6" /></button>
+          <button onClick={handlePrev} className="p-2 text-gray-600 hover:text-primary hover:bg-primary-light rounded-full" aria-label={view === 'day' ? 'Previous day' : 'Previous week'}><ChevronLeftIcon className="w-6 h-6" /></button>
+          <button onClick={handleNext} className="p-2 text-gray-600 hover:text-primary hover:bg-primary-light rounded-full" aria-label={view === 'day' ? 'Next day' : 'Next week'}><ChevronRightIcon className="w-6 h-6" /></button>
           <button onClick={handleToday} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">Idag</button>
         </div>
-        <h2 className="text-xl font-semibold text-gray-800 hidden md:block">{headerDateFormatter()}</h2>
+        <h2 className="text-xl font-semibold text-gray-800">{headerDateFormatter()}</h2>
         <div className="flex items-center space-x-2">
-          <div className="flex rounded-md shadow-sm">
-            <button onClick={() => setView('month')} className={`px-3 py-2 text-sm font-medium rounded-l-md border ${view === 'month' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}>Månad</button>
-            <button onClick={() => setView('week')} className={`px-3 py-2 text-sm font-medium rounded-r-md border ${view === 'week' ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-300 border-l-0 hover:bg-gray-50'}`}>Vecka</button>
-          </div>
-           <button 
-             onClick={openImageGenModal} 
-             className="p-2 bg-accent text-white rounded-full hover:bg-green-600 shadow disabled:bg-gray-400" 
+           <button
+             onClick={openImageGenModal}
+             className="p-2 bg-accent text-white rounded-full hover:bg-green-600 shadow disabled:bg-gray-400"
              aria-label="Generate image"
              title="Generate Image (General)"
              disabled={!isApiConfigured || !genericAiInstanceRef.current}
             >
              <PhotoIcon className="w-5 h-5" />
            </button>
-           <button 
-            onClick={() => openModalForNewEvent(currentDate, {})} 
-            className="p-2 bg-primary text-white rounded-full hover:bg-primary-hover shadow" 
+           <button
+            onClick={() => openModalForNewEvent(view === 'day' && selectedDay ? selectedDay : currentDate, {})}
+            className="p-2 bg-primary text-white rounded-full hover:bg-primary-hover shadow"
             aria-label="Lägg till ny händelse"
             title="Add New Event"
             >
@@ -638,13 +745,26 @@ Your output must be one of:
            </button>
         </div>
       </div>
-      <h2 className="text-xl font-semibold text-gray-800 text-center md:hidden mb-3 -mt-1">{headerDateFormatter()}</h2>
 
       <main className="flex-grow overflow-y-auto" style={{minHeight: '300px'}}>
-        {view === 'month' ? (
-          <CalendarGrid currentDate={currentDate} events={events} onDayClick={openModalForNewEventOnDate} onEventClick={openModalForEditingEvent} />
+        {view === 'week' ? (
+          <WeekViewGrid
+            currentDate={currentDate}
+            events={filteredEvents}
+            onSlotClick={openModalForNewEventOnSlot}
+            onEventClick={openModalForEditingEvent}
+            onDaySelect={(day) => { setSelectedDay(day); setView('day'); }}
+          />
         ) : (
-          <WeekViewGrid currentDate={currentDate} events={events} onSlotClick={openModalForNewEventOnSlot} onEventClick={openModalForEditingEvent} />
+          selectedDay && (
+            <DayView
+              date={selectedDay}
+              events={filteredEvents.filter(e => { const d = parseISO(e.date); return fnsIsSameDay(d, selectedDay); })}
+              onBack={() => setView('week')}
+              onAdd={() => openModalForNewEvent(selectedDay, {})}
+              onEventClick={openModalForEditingEvent}
+            />
+          )
         )}
       </main>
 

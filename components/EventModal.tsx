@@ -18,14 +18,7 @@ interface EventModalProps {
   aiInstance: GoogleGenAI | null;
 }
 
-const eventColors = [
-  { name: 'Blue', class: 'bg-blue-500' },
-  { name: 'Green', class: 'bg-green-500' },
-  { name: 'Red', class: 'bg-red-500' },
-  { name: 'Yellow', class: 'bg-yellow-500' },
-  { name: 'Purple', class: 'bg-purple-500' },
-  { name: 'Indigo', class: 'bg-indigo-500' },
-];
+
 
 const EventModal: React.FC<EventModalProps> = ({
   isOpen,
@@ -39,12 +32,20 @@ const EventModal: React.FC<EventModalProps> = ({
   isApiConfigured,
   aiInstance,
 }) => {
+  const people = [
+    { name: 'Leia', color: 'bg-blue-500' },
+    { name: 'Gabriel', color: 'bg-green-500' },
+    { name: 'Antony', color: 'bg-red-500' },
+    { name: 'Familjen', color: 'bg-purple-500' },
+  ];
+
   const [title, setTitle] = useState('');
   const [time, setTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [description, setDescription] = useState('');
   const [eventDate, setEventDate] = useState<string>('');
-  const [color, setColor] = useState<string>(eventColors[0].class);
+  const [person, setPerson] = useState<string>(people[0].name);
+  const [color, setColor] = useState<string>(people[0].color);
   
   // Event image generation states
   const [eventImageUrl, setEventImageUrl] = useState<string | null | undefined>(null);
@@ -61,7 +62,8 @@ const EventModal: React.FC<EventModalProps> = ({
       setEndTime(eventToEdit.endTime || '');
       setDescription(eventToEdit.description || '');
       setEventDate(eventToEdit.date);
-      setColor(eventToEdit.color || eventColors[0].class);
+      setPerson(eventToEdit.person);
+      setColor(eventToEdit.color || people.find(p => p.name === eventToEdit.person)?.color || people[0].color);
       setEventImageUrl(eventToEdit.imageUrl);
       setCurrentImagePrompt(eventToEdit.imagePrompt);
     } else if (selectedDate) {
@@ -70,7 +72,8 @@ const EventModal: React.FC<EventModalProps> = ({
       setEndTime(initialDetails?.endTime || '');
       setDescription(initialDetails?.description || '');
       setEventDate(format(selectedDate, 'yyyy-MM-dd'));
-      setColor(initialDetails?.color || eventColors[0].class);
+      setPerson(initialDetails?.person || people[0].name);
+      setColor(initialDetails?.color || people.find(p => p.name === (initialDetails?.person || people[0].name))?.color || people[0].color);
       setEventImageUrl(initialDetails?.imageUrl);
       setCurrentImagePrompt(initialDetails?.imagePrompt);
     } else {
@@ -79,7 +82,8 @@ const EventModal: React.FC<EventModalProps> = ({
       setEndTime(initialDetails?.endTime || '');
       setDescription(initialDetails?.description || '');
       setEventDate(format(new Date(), 'yyyy-MM-dd'));
-      setColor(initialDetails?.color || eventColors[0].class);
+      setPerson(initialDetails?.person || people[0].name);
+      setColor(initialDetails?.color || people.find(p => p.name === (initialDetails?.person || people[0].name))?.color || people[0].color);
       setEventImageUrl(initialDetails?.imageUrl);
       setCurrentImagePrompt(initialDetails?.imagePrompt);
     }
@@ -145,7 +149,8 @@ const EventModal: React.FC<EventModalProps> = ({
       time: time || undefined,
       endTime: endTime || undefined,
       description: description || undefined,
-      color: color,
+      person,
+      color,
       imageUrl: eventImageUrl || undefined,
       imagePrompt: currentImagePrompt || undefined,
     });
@@ -230,16 +235,18 @@ const EventModal: React.FC<EventModalProps> = ({
             />
           </div>
           <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Person</label>
             <div className="flex space-x-2">
-              {eventColors.map(c => (
+              {people.map(p => (
                 <button
-                  key={c.name}
+                  key={p.name}
                   type="button"
-                  onClick={() => setColor(c.class)}
-                  className={`w-8 h-8 rounded-full ${c.class} ${color === c.class ? 'ring-2 ring-offset-2 ring-primary' : ''} transition-all`}
-                  aria-label={`Select ${c.name} color`}
-                />
+                  onClick={() => { setPerson(p.name); setColor(p.color); }}
+                  className={`flex-1 px-3 py-2 rounded-md border text-sm ${person === p.name ? `${p.color} text-white` : 'border-gray-300 text-gray-700 bg-white'}`}
+                  aria-label={`Assign to ${p.name}`}
+                >
+                  {p.name}
+                </button>
               ))}
             </div>
           </div>

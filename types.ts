@@ -3,6 +3,7 @@ export interface CalendarEvent {
   id: string;
   date: string; // YYYY-MM-DD format
   title: string;
+  person: string; // Person or calendar this event belongs to
   time?: string; // HH:MM format, optional start time
   endTime?: string; // HH:MM format, optional end time
   description?: string; // Optional

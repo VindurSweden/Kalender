@@ -22,6 +22,7 @@ interface WeekViewGridProps {
   events: CalendarEvent[];
   onSlotClick: (date: Date, startTime: string) => void;
   onEventClick: (event: CalendarEvent) => void;
+  onDaySelect?: (date: Date) => void;
 }
 
 const hours = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
@@ -37,12 +38,17 @@ const WeekViewGrid: React.FC<WeekViewGridProps> = ({ currentDate, events, onSlot
       <div className="grid grid-cols-[60px_repeat(7,minmax(0,1fr))] sticky top-0 bg-white z-20 border-b border-gray-300">
         <div className="p-2 border-r border-gray-200 text-xs text-gray-500 flex items-center justify-center">Time</div>
         {daysInWeek.map(day => (
-          <div key={day.toISOString()} className={`py-2 px-1 border-r border-gray-200 text-center ${isToday(day) ? 'bg-primary-light' : ''}`}>
+          <button
+            key={day.toISOString()}
+            onClick={() => onDaySelect && onDaySelect(day)}
+            className={`py-2 px-1 border-r border-gray-200 text-center focus:outline-none ${isToday(day) ? 'bg-primary-light' : ''}`}
+            aria-label={`View ${format(day,'EEEE d MMMM')}`}
+          >
             <div className={`text-xs font-medium ${isToday(day) ? 'text-primary' : 'text-gray-600'}`}>{format(day, 'EEE')}</div>
             <div className={`text-lg font-bold mt-1 ${isToday(day) ? 'bg-primary text-white rounded-full w-7 h-7 mx-auto flex items-center justify-center' : 'text-gray-800'}`}>
               {format(day, 'd')}
             </div>
-          </div>
+          </button>
         ))}
       </div>
 
