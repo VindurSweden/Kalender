@@ -4,10 +4,11 @@ import { CalendarEvent, ChatMessage } from './types';
 import CalendarGrid from './components/CalendarGrid';
 import WeekViewGrid from './components/WeekViewGrid';
 import EventModal from './components/EventModal';
-import ImageGenModal from './components/ImageGenModal'; // New Import
+import ImageGenModal from './components/ImageGenModal';
 import ChatWindow from './components/ChatWindow';
 import useLocalStorage from './hooks/useLocalStorage';
-import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, PhotoIcon } from './components/Icons'; // Added PhotoIcon
+import { useGoogleCalendar } from './hooks/useGoogleCalendar';
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, PhotoIcon } from './components/Icons';
 import { format, addMonths, addWeeks, addDays, differenceInMinutes, isSameDay as fnsIsSameDay, isValid } from 'date-fns';
 import subMonths from 'date-fns/subMonths';
 import subWeeks from 'date-fns/subWeeks';
@@ -16,6 +17,7 @@ import parseISO from 'date-fns/parseISO';
 import { GoogleGenAI, GenerateContentResponse, Chat } from "@google/genai";
 
 const API_KEY = process.env.API_KEY;
+const GOOGLE_CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID || '';
 
 const initialDefaultEvents: CalendarEvent[] = [];
 
@@ -232,6 +234,8 @@ const App: React.FC = () => {
   const orchestratorChatRef = useRef<Chat | null>(null); 
   const genericAiInstanceRef = useRef<GoogleGenAI | null>(null);
 
+  const { isReady: isGapiReady, isSignedIn, signIn, listEvents, addEvent: addToCalendar } = useGoogleCalendar();
+
   // State for Image Generation Modal
   const [isImageGenModalOpen, setIsImageGenModalOpen] = useState<boolean>(false);
   const [imageGenUserPrompt, setImageGenUserPrompt] = useState<string>('');
@@ -240,6 +244,18 @@ const App: React.FC = () => {
   const [isGeneratingImage, setIsGeneratingImage] = useState<boolean>(false);
   const [imageGenError, setImageGenError] = useState<string>('');
   const isApiConfigured = !!API_KEY && !!genericAiInstanceRef.current;
+
+  useEffect(() => {
+    const sync = async () => {
+      if (isGapiReady && isSignedIn && GOOGLE_CALENDAR_ID) {
+        const remoteEvents = await listEvents(GOOGLE_CALENDAR_ID);
+        if (remoteEvents.length > 0) {
+          setEvents(remoteEvents);
+        }
+      }
+    };
+    sync();
+  }, [isGapiReady, isSignedIn, listEvents, setEvents]);
 
 
   useEffect(() => {
@@ -308,18 +324,49 @@ const App: React.FC = () => {
     setSelectedDateForModal(null);
     setInitialTimeForModal(undefined);
     setEventToEdit(null);
-    setAiSuggestedEventDetails({}); 
+    setAiSuggestedEventDetails({});
   }, []);
 
+  const generateImageForEvent = async (event: CalendarEvent) => {
+    if (!genericAiInstanceRef.current) return;
+    try {
+      const ai = genericAiInstanceRef.current;
+      const promptText = `A simple visual icon for a calendar event: "${event.title}"`;
+      const response = await ai.models.generateImages({
+        model: 'imagen-3.0-generate-002',
+        prompt: promptText,
+        config: { numberOfImages: 1, outputMimeType: 'image/jpeg' },
+      });
+      if (response.generatedImages && response.generatedImages[0].image?.imageBytes) {
+        const base64 = response.generatedImages[0].image.imageBytes;
+        setEvents(prev => prev.map(e => e.id === event.id ? { ...e, imageUrl: `data:image/jpeg;base64,${base64}`, imagePrompt: promptText } : e));
+      }
+    } catch (e) {
+      console.error('Image generation failed', e);
+    }
+  };
+
   const handleSaveEvent = useCallback((eventData: Omit<CalendarEvent, 'id'>) => {
+    let newEvent: CalendarEvent | null = null;
     setEvents(prevEvents => {
       if (eventToEdit) {
-        return prevEvents.map(e => e.id === eventToEdit.id ? { ...eventToEdit, ...eventData } : e);
+        const updated = prevEvents.map(e => e.id === eventToEdit.id ? { ...eventToEdit, ...eventData } : e);
+        newEvent = updated.find(e => e.id === eventToEdit.id) || null;
+        return updated;
       }
-      return [...prevEvents, { ...eventData, id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}` }];
+      newEvent = { ...eventData, id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}` };
+      return [...prevEvents, newEvent];
     });
     handleCloseEventModal();
-  }, [setEvents, handleCloseEventModal, eventToEdit]);
+    if (newEvent) {
+      if (isSignedIn && GOOGLE_CALENDAR_ID) {
+        addToCalendar(GOOGLE_CALENDAR_ID, newEvent);
+      }
+      if (!newEvent.imageUrl) {
+        generateImageForEvent(newEvent);
+      }
+    }
+  }, [setEvents, handleCloseEventModal, eventToEdit, isSignedIn, addToCalendar]);
   
   const handleDeleteEventInModal = useCallback(() => {
     if (eventToEdit) {
@@ -595,8 +642,11 @@ Your output must be one of:
 
   return (
     <div className="flex flex-col h-screen bg-gray-100 font-sans p-4 gap-4">
-      <header className="mb-0">
-        <h1 className="text-3xl font-bold text-gray-800 text-center">VisuCal Planner</h1>
+      <header className="mb-0 flex items-center justify-between">
+        <h1 className="text-3xl font-bold text-gray-800">VisuCal Planner</h1>
+        {!isSignedIn && isGapiReady && (
+          <button onClick={signIn} className="ml-4 px-3 py-1 bg-primary text-white rounded">Koppla Google</button>
+        )}
       </header>
 
       <ChatWindow 

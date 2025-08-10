@@ -12,11 +12,12 @@
     "react-dom": "^19.1.0",
     "react": "^19.1.0",
     "date-fns": "^4.1.0",
-    "@google/genai": "latest",
-    "date-fns/isValid": "^4.1.0"
+    "@google/genai": "latest"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/gapi": "^0.0.47",
+    "@types/gapi.client.calendar": "^3.0.6",
     "typescript": "~5.7.2",
     "vite": "^6.2.0"
   }

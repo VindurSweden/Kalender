@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatMessage } from '../types';
-import { PaperAirplaneIcon } from './Icons'; 
+import { PaperAirplaneIcon, MicrophoneIcon } from './Icons';
 
 // Using existing PaperAirplaneIcon from Icons.tsx, so SendIcon duplicate is not needed here.
 
@@ -16,6 +16,7 @@ interface ChatWindowProps {
 
 const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage, isLoadingAiResponse, isApiConfigured, onClearChat }) => {
   const [inputText, setInputText] = useState('');
+  const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -30,6 +31,24 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage, isLoad
       onSendMessage(inputText.trim());
       setInputText('');
     }
+  };
+
+  const handleStartListening = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Taligenkänning stöds inte i denna webbläsare.');
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'sv-SE';
+    recognition.onstart = () => setIsListening(true);
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      onSendMessage(transcript);
+    };
+    recognition.start();
   };
 
   return (
@@ -73,12 +92,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage, isLoad
         <div ref={messagesEndRef} />
       </div>
       <form onSubmit={handleSubmit} className="flex items-center border-t pt-3">
+        <button
+          type="button"
+          onClick={handleStartListening}
+          className={`px-3 py-2 bg-primary text-white rounded-l-md hover:bg-primary-hover disabled:bg-gray-400 flex items-center justify-center ${isListening ? 'animate-pulse' : ''}`}
+          disabled={isLoadingAiResponse || !isApiConfigured}
+          aria-label="Start voice input"
+        >
+          <MicrophoneIcon className="w-5 h-5" />
+        </button>
         <input
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           placeholder={isApiConfigured ? "Fråga VisuCal..." : "AI Assistent offline (API-nyckel saknas)"}
-          className="flex-grow px-3 py-2 border border-gray-300 rounded-l-md focus:ring-primary focus:border-primary transition-shadow"
+          className="flex-grow px-3 py-2 border-t border-b border-gray-300 focus:ring-primary focus:border-primary transition-shadow"
           aria-label="Chat message input"
           disabled={isLoadingAiResponse || !isApiConfigured}
         />
@@ -88,7 +116,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ messages, onSendMessage, isLoad
           disabled={isLoadingAiResponse || !inputText.trim() || !isApiConfigured}
           aria-label="Send chat message"
         >
-          <PaperAirplaneIcon className="w-5 h-5" /> {/* Use imported PaperAirplaneIcon */}
+          <PaperAirplaneIcon className="w-5 h-5" />
         </button>
       </form>
       {!isApiConfigured && (
