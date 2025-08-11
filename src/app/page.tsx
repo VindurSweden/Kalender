@@ -33,7 +33,7 @@ import { format as formatDateFns } from 'date-fns';
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
-import type { Event, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput, AiEventType as AiEvent, SingleCalendarOperationType } from '@/types/event';
+import { Event, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput, AiEventType as AiEvent, SingleCalendarOperationType } from '@/types/event';
 import { parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, isSameDay } from '@/lib/date-utils';
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -170,10 +170,11 @@ const synthesizeDayFill = (personEvents: Event[], personId: string, day: Date, c
 
 // --- Main Component ---
 export default function NPFScheduleApp() {
-  const [people, setPeople] = useState<Person[]>(() => loadLS("npf.people", DEFAULT_PEOPLE));
-  const [events, setEvents] = useState<Event[]>(() => loadLS("npf.events", DEFAULT_EVENTS));
+  const [isClient, setIsClient] = useState(false);
+  const [people, setPeople] = useState<Person[]>(DEFAULT_PEOPLE);
+  const [events, setEvents] = useState<Event[]>(DEFAULT_EVENTS);
   const [date, setDate] = useState(() => new Date());
-  const [showFor, setShowFor] = useState<string[]>(() => people.slice(0, 2).map(p => p.id));
+  const [showFor, setShowFor] = useState<string[]>(DEFAULT_PEOPLE.slice(0, 2).map(p => p.id));
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [dark, setDark] = useState(true);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -181,6 +182,14 @@ export default function NPFScheduleApp() {
   const [progress, setProgress] = useState(0);
   const [now, setNow] = useState(Date.now());
   const { toast } = useToast();
+
+  // Hydration fix: Load from localStorage only on the client
+  useEffect(() => {
+    setIsClient(true);
+    setPeople(loadLS("npf.people", DEFAULT_PEOPLE));
+    setEvents(loadLS("npf.events", DEFAULT_EVENTS));
+    setShowFor(loadLS("npf.showFor", DEFAULT_PEOPLE.slice(0, 2).map(p => p.id)));
+  }, []);
 
   const viewConfig = useMemo(() => ({
     SLOTS: 5,
@@ -194,8 +203,9 @@ export default function NPFScheduleApp() {
     }
   }), []);
 
-  useEffect(() => saveLS("npf.people", people), [people]);
-  useEffect(() => saveLS("npf.events", events), [events]);
+  useEffect(() => { if (isClient) saveLS("npf.people", people)}, [people, isClient]);
+  useEffect(() => { if (isClient) saveLS("npf.events", events)}, [events, isClient]);
+  useEffect(() => { if (isClient) saveLS("npf.showFor", showFor)}, [showFor, isClient]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
 
   const orderedShowFor = useMemo(() => {
@@ -217,12 +227,16 @@ export default function NPFScheduleApp() {
 
   // --- View Logic ---
   const columnsData = useMemo(() => {
-    const dayEvents = events.filter(e => isSameDay(new Date(e.start), date) && (orderedShowFor.includes(e.personId) || (e.isFamily && orderedShowFor.length > 0)));
+    if (!isClient) return [];
     
-    // Create a set of all unique start times from all visible events
-    const allStartTimes = [...new Set(dayEvents.map(e => new Date(e.start).getTime()))].sort();
+    // Collect all unique start times from all events of the visible people for the current day
+    const allStartTimes = [...new Set(
+        events
+            .filter(e => isSameDay(new Date(e.start), date) && (orderedShowFor.includes(e.personId) || (e.isFamily && orderedShowFor.length > 0)))
+            .map(e => new Date(e.start).getTime())
+    )].sort();
     
-    // Take the first 5 unique start times to define the rows
+    // The grid is defined by the first X unique start times
     const uniqueTimeKeys = allStartTimes.slice(0, viewConfig.SLOTS);
     
     return orderedShowFor.map(personId => {
@@ -252,7 +266,7 @@ export default function NPFScheduleApp() {
       }
       
       while(eventGrid.length < viewConfig.SLOTS) {
-        if(viewConfig.fillPolicy === 'repeat' && lastRealEvent && new Date(lastRealEvent.end) > new Date(uniqueTimeKeys[uniqueTimeKeys.length - 1] || 0)) {
+        if(viewConfig.fillPolicy === 'repeat' && lastRealEvent && new Date(lastRealEvent.end) > (uniqueTimeKeys.length > 0 ? new Date(uniqueTimeKeys[uniqueTimeKeys.length - 1] || 0) : new Date(0))) {
              eventGrid.push({ ...lastRealEvent, meta: { ...lastRealEvent.meta, isContinuation: true } });
         } else {
              eventGrid.push(null);
@@ -261,7 +275,7 @@ export default function NPFScheduleApp() {
 
       return { person, eventGrid };
     });
-  }, [date, events, orderedShowFor, people, viewConfig]);
+  }, [date, events, orderedShowFor, people, viewConfig, isClient]);
   
   // --- Event Handlers ---
     const handleEventOperation = async (op: SingleCalendarOperationType, imageHint?: string): Promise<Event | null> => {
@@ -341,13 +355,17 @@ export default function NPFScheduleApp() {
   function longPressFilter(personId: string) { setShowFor([personId]); }
   useEffect(() => { if (typeof window !== 'undefined') { if (dark) document.documentElement.classList.add("dark"); else document.documentElement.classList.remove("dark"); } }, [dark]);
 
+  if (!isClient) {
+    return null; // Or a loading spinner
+  }
+
   return (
     <div className="min-h-screen w-full bg-neutral-950 text-neutral-100 antialiased">
       <Header date={date} shift={(d) => setDate(new Date(date.setDate(date.getDate() + d)))} dark={dark} setDark={setDark} assistantOpen={assistantOpen} setAssistantOpen={setAssistantOpen} />
       <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         
-        <div className={`grid gap-4 mt-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-${orderedShowFor.length > 3 ? 3 : orderedShowFor.length}`}>
+        <div className={`grid gap-4 mt-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-${orderedShowFor.length > 0 ? Math.min(orderedShowFor.length, 3) : 1}`}>
           {columnsData.map(({ person, eventGrid }) => (
             <div key={person.id} className={`rounded-2xl p-1 md:p-2 border-t border-neutral-800 ${person.bg}`}>
               <div className="flex items-center gap-2 mb-2 select-none sticky top-[70px] bg-neutral-950/80 backdrop-blur-sm p-2 rounded-lg z-10" onPointerDown={()=>longPressFilter(person.id)}>
@@ -612,5 +630,7 @@ function fmtTime(iso: string | number | undefined) { if (!iso) return ""; try { 
 function isNowWithin(ev: Event, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); return nowTs >= s && nowTs <= e; }
 function progressForEvent(ev: Event, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); if (!isFinite(s) || !isFinite(e) || e <= s) return 0; const p = (nowTs - s) / (e - s); return Math.max(0, Math.min(1, p)); }
 function remainingTime(ev: Event, nowTs: number) { const e = new Date(ev.end).getTime(); const diff = Math.max(0, e - nowTs); const m = Math.floor(diff / 60000); const s = Math.floor((diff % 60000) / 1000); return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; }
+
+    
 
     
