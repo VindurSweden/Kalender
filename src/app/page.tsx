@@ -34,7 +34,7 @@ import { format as formatDateFns } from 'date-fns';
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
-import type { AiEvent, Person, EventItem, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput } from '@/types/event';
+import type { EventItem, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput, AiEvent } from '@/types/event';
 import { parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, formatInputDate, formatInputTime, isSameDay } from '@/lib/date-utils';
 
 
@@ -329,10 +329,10 @@ export default function NPFScheduleApp() {
         assistantOpen={assistantOpen} setAssistantOpen={setAssistantOpen}
         targetCards={targetCards} setTargetCards={setTargetCards}
       />
-      <main className="p-3 md:p-6 max-w-[1400px] mx-auto">
+      <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         <NowIndicator now={now} />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-3" style={{ gridTemplateColumns: orderedShowFor.length > 3 ? `repeat(${orderedShowFor.length}, minmax(240px, 1fr))` : undefined }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-3">
           {orderedShowFor.map(pid => {
             const person = people.find(p => p.id === pid);
             if (!person) return null;
@@ -382,14 +382,14 @@ function Header({ date, shift, dark, setDark, assistantOpen, setAssistantOpen, t
   const dstr = date.toLocaleDateString("sv-SE", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   return (
     <header className="sticky top-0 z-40 bg-neutral-950/80 backdrop-blur border-b border-neutral-800">
-      <div className="max-w-[1400px] mx-auto flex items-center gap-2 p-3 md:p-4">
+      <div className="max-w-[1600px] mx-auto flex items-center gap-2 p-3 md:p-4">
         <CalendarIcon className="w-6 h-6" />
         <h1 className="font-semibold tracking-tight">NPF‑kalender</h1>
-        <div className="mx-2 opacity-60">{dstr}</div>
+        <div className="mx-2 opacity-60 hidden sm:block">{dstr}</div>
         <div className="ml-auto flex items-center gap-2">
           <Button size="icon" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={() => shift(-1)}><ChevronLeft className="w-4 h-4" /></Button>
           <Button size="icon" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={() => shift(1)}><ChevronRight className="w-4 h-4" /></Button>
-           <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700 hidden sm:flex" onClick={() => shift(0)}>Idag</Button>
+           <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700 hidden sm:flex" onClick={() => setDate(new Date())}>Idag</Button>
           <div className="flex items-center gap-3 ml-2">
             <label className="text-xs opacity-70 flex-wrap items-center gap-2 hidden lg:flex">
               <span>Mål: {targetCards} kort/kolumn</span>
@@ -556,7 +556,7 @@ interface AssistantPanelProps {
   onAiDeleteEvent: (eventIdentifier: any) => Promise<string | null>;
 }
 
-const AI_PROCESS_TIMEOUT = 60000; // 60 seconds
+const AI_PROCESS_TIMEOUT = 30000; // 30 seconds
 
 const AssistantPanel: FC<AssistantPanelProps> = ({ open, onClose, people, events, onAiCreateEvent, onAiModifyEvent, onAiDeleteEvent }) => {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -688,8 +688,14 @@ const AssistantPanel: FC<AssistantPanelProps> = ({ open, onClose, people, events
   return (
     <AnimatePresence>
       {open && (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }} className="fixed bottom-4 right-4 w-[360px] max-w-[92vw] z-50">
-          <Card className="bg-neutral-900 border-neutral-800 shadow-xl flex flex-col h-[60vh]">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }} 
+          animate={{ opacity: 1, y: 0 }} 
+          exit={{ opacity: 0, y: 20 }} 
+          transition={{ ease: "easeInOut", duration: 0.3 }}
+          className="fixed bottom-0 left-0 right-0 z-50 md:bottom-4 md:right-4 md:left-auto md:w-[380px] md:max-w-[92vw]"
+        >
+          <Card className="bg-neutral-900/90 backdrop-blur-lg border-neutral-800 shadow-xl flex flex-col h-[85vh] md:h-[60vh] rounded-b-none md:rounded-b-lg">
             <CardHeader className="pb-2 flex-shrink-0">
               <CardTitle className="text-sm tracking-tight flex items-center gap-2"><Bot className="w-5 h-5" /> Assistent</CardTitle>
             </CardHeader>
@@ -702,7 +708,7 @@ const AssistantPanel: FC<AssistantPanelProps> = ({ open, onClose, people, events
                       className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
                         msg.sender === 'user' ? 'bg-blue-600 text-white' : 
                         msg.sender === 'ai' ? (msg.isError ? 'bg-red-900/50' : 'bg-neutral-800') :
-                        'bg-neutral-700/50 italic text-neutral-400'
+                        'bg-transparent italic text-neutral-400 text-xs text-center w-full'
                       }`}
                     >
                       {msg.text}
@@ -721,7 +727,7 @@ const AssistantPanel: FC<AssistantPanelProps> = ({ open, onClose, people, events
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   disabled={isProcessing}
-                  className="flex-1 bg-neutral-800 border-neutral-700"
+                  className="flex-1 bg-neutral-800 border-neutral-700 text-sm md:text-base"
                 />
                 <Button type="submit" size="icon" disabled={isProcessing || input.trim() === ''}><Send className="h-4 w-4" /></Button>
               </form>
