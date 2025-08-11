@@ -13,7 +13,6 @@ import {
   ChevronRight,
   Timer as TimerIcon,
   Trash2,
-  Clock3,
   Bot,
   User,
   Send,
@@ -23,14 +22,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { format as formatDateFns } from 'date-fns';
 
-// AI Integration
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
@@ -38,10 +35,9 @@ import type { EventItem, Person, ConversationMessage, TolkAIOutput, FormatPlanOu
 import { parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, formatInputDate, formatInputTime, isSameDay } from '@/lib/date-utils';
 
 
-// ======= Helper Functions =======
 const uid = () => Math.random().toString(36).slice(2, 9);
 const todayISO = () => new Date().toISOString().slice(0, 10);
-const INCR = 20; // standard 20-minute increment
+const INCR = 20; 
 
 function loadLS(key: string, fallback: any) {
   try {
@@ -67,7 +63,6 @@ async function boom() {
   } catch {}
 }
 
-// ======= Mock Data =======
 const DEFAULT_PEOPLE: Person[] = [
   { id: "gabriel", name: "Gabriel", color: "#5B9BFF", bg: "bg-blue-600/40", speak: true },
   { id: "leia", name: "Leia", color: "#F28CB2", bg: "bg-pink-600/40", speak: true },
@@ -77,19 +72,18 @@ const DEFAULT_PEOPLE: Person[] = [
 
 const DEFAULT_EVENTS: EventItem[] = [
   { id: uid(), title: "Skola", personId: "gabriel", start: `${todayISO()}T08:00:00`, end: `${todayISO()}T13:30:00`, imageUrl: "", recurrence: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR" },
-  { id: uid(), title: "Borsta tänderna", personId: "gabriel", start: `${todayISO()}T07:20:00`, end: `${todayISO()}T07:40:00`, challenge: "Klar innan timern tar slut" },
+  { id: uid(), title: "Borsta tänderna", personId: "gabriel", start: `${todayISO()}T07:30:00`, end: `${todayISO()}T07:45:00`, challenge: "Klar innan timern tar slut" },
+  { id: uid(), title: "Äta frukost", personId: "leia", start: `${todayISO()}T07:00:00`, end: `${todayISO()}T07:20:00` },
+  { id: uid(), title: "Medicin", personId: "leia", start: `${todayISO()}T07:20:00`, end: `${todayISO()}T07:30:00` },
+  { id: uid(), title: "Borsta tänder", personId: "leia", start: `${todayISO()}T07:30:00`, end: `${todayISO()}T07:45:00` },
   { id: uid(), title: "Middag (Familj)", personId: "family", start: `${todayISO()}T17:30:00`, end: `${todayISO()}T18:00:00`, isFamily: true, recurrence: "FREQ=DAILY" },
-  { id: uid(), title: "Läsläxa", personId: "leia", start: `${todayISO()}T19:00:00`, end: `${todayISO()}T19:20:00` },
 ];
 
-
-// ======= Main Component =======
 export default function NPFScheduleApp() {
   const [people, setPeople] = useState<Person[]>(() => loadLS("npf.people", DEFAULT_PEOPLE));
   const [events, setEvents] = useState<EventItem[]>(() => loadLS("npf.events", DEFAULT_EVENTS));
-  const [view, setView] = useState("day"); // 'day' | 'week' | 'all'
   const [date, setDate] = useState(() => new Date());
-  const [showFor, setShowFor] = useState<string[]>(() => people.map(p => p.id));
+  const [showFor, setShowFor] = useState<string[]>(() => people.slice(0, 2).map(p => p.id));
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [dark, setDark] = useState(true);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -101,7 +95,6 @@ export default function NPFScheduleApp() {
   useEffect(() => saveLS("npf.people", people), [people]);
   useEffect(() => saveLS("npf.events", events), [events]);
 
-  // Global clock
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
@@ -111,24 +104,6 @@ export default function NPFScheduleApp() {
     const order = new Map(people.map((p, i) => [p.id, i]));
     return [...showFor].sort((a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99));
   }, [showFor, people]);
-
-  const dayKey = date.toISOString().slice(0, 10);
-
-  const grouped = useMemo(() => {
-    const byPerson = new Map<string, EventItem[]>();
-    people.forEach(p => byPerson.set(p.id, []));
-    events.forEach(ev => {
-      if (ev.isFamily) {
-        people.forEach(p => byPerson.get(p.id)?.push(ev));
-      } else {
-        byPerson.get(ev.personId)?.push(ev);
-      }
-    });
-    for (const arr of byPerson.values()) {
-      arr.sort((a, b) => (a.start || "").localeCompare(b.start || ""));
-    }
-    return byPerson;
-  }, [events, people]);
 
   const tickRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
@@ -144,10 +119,8 @@ export default function NPFScheduleApp() {
     };
   }, [runningId, events]);
 
-  // ======= AI Handlers =======
   const findEventToModifyOrDelete = (identifier: any): EventItem | null => {
       if (!identifier || !identifier.title) return null;
-  
       let potentialEvents = events.filter(e => e.title.toLowerCase().includes(identifier.title.toLowerCase()));
       if (potentialEvents.length === 0) return null;
   
@@ -307,29 +280,30 @@ export default function NPFScheduleApp() {
     else document.documentElement.classList.remove("dark");
   }, [dark]);
 
-  // Determine the day's time range for vertical sync
-  const dayTimeRange = useMemo(() => {
-    const todaysEvents = orderedShowFor.flatMap(pid => {
-      const personEvents = grouped.get(pid) || [];
-      return personEvents.filter(ev => inView(ev, date, 'day'));
+  // Block-based time synchronization
+  const timeSlots = useMemo(() => {
+    const todaysEvents = events.filter(ev => inView(ev, date, 'day'));
+    if (todaysEvents.length === 0) return [];
+
+    const timePoints = new Set<number>();
+    todaysEvents.forEach(ev => {
+      timePoints.add(new Date(ev.start).getTime());
+      timePoints.add(new Date(ev.end).getTime());
     });
 
-    if (todaysEvents.length === 0) {
-      const startOfDay = new Date(date);
-      startOfDay.setHours(8, 0, 0, 0);
-      const endOfDay = new Date(date);
-      endOfDay.setHours(20, 0, 0, 0);
-      return { start: startOfDay.getTime(), end: endOfDay.getTime() };
-    }
-
-    const startTimes = todaysEvents.map(ev => new Date(ev.start).getTime());
-    const endTimes = todaysEvents.map(ev => new Date(ev.end).getTime());
+    const sortedTimes = Array.from(timePoints).sort((a, b) => a - b);
     
-    const minTime = Math.min(...startTimes);
-    const maxTime = Math.max(...endTimes);
-
-    return { start: minTime, end: maxTime };
-  }, [orderedShowFor, grouped, date]);
+    const slots = [];
+    for (let i = 0; i < sortedTimes.length - 1; i++) {
+        if (sortedTimes[i+1] > sortedTimes[i]) {
+            slots.push({
+                start: sortedTimes[i],
+                end: sortedTimes[i+1]
+            });
+        }
+    }
+    return slots;
+  }, [events, date]);
 
 
   return (
@@ -342,24 +316,18 @@ export default function NPFScheduleApp() {
       />
       <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
-        <NowIndicator now={now} />
-        <div 
-          className="grid gap-4 mt-3"
-          style={{
-              gridTemplateColumns: `repeat(${orderedShowFor.length > 2 ? 2 : orderedShowFor.length > 0 ? orderedShowFor.length : 1}, minmax(0, 1fr))`
-          }}
-        >
+        
+        <div className="grid gap-4 mt-3" style={{ gridTemplateColumns: `repeat(${orderedShowFor.length > 2 ? 2 : orderedShowFor.length > 0 ? orderedShowFor.length : 1}, minmax(0, 1fr))` }}>
           {orderedShowFor.map(pid => {
             const person = people.find(p => p.id === pid);
             if (!person) return null;
-            const list = grouped.get(pid) || [];
             return (
-              <Column key={pid} person={person} events={list}
+              <Column key={pid} person={person} events={events}
                 onGenerate={ensureImage} onDelete={deleteEvent} onComplete={toggleComplete} onPickTimer={setRunningId}
                 selectedEventId={selectedEventId} setSelectedEventId={setSelectedEventId} runningId={runningId} now={now}
                 onLongPress={longPressFilter}
                 showSimple={orderedShowFor.length > 1}
-                dayTimeRange={dayTimeRange}
+                timeSlots={timeSlots}
                 currentDate={date}
               />
             );
@@ -396,14 +364,13 @@ export default function NPFScheduleApp() {
 }
 
 
-// ======= Subcomponents =======
 function Header({ date, shift, dark, setDark, assistantOpen, setAssistantOpen }: any) {
   const dstr = date.toLocaleDateString("sv-SE", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   return (
     <header className="sticky top-0 z-40 bg-neutral-950/80 backdrop-blur border-b border-neutral-800">
       <div className="max-w-[1600px] mx-auto flex items-center gap-2 p-3 md:p-4">
         <CalendarIcon className="w-6 h-6" />
-        <h1 className="font-semibold tracking-tight">NPF‑kalender</h1>
+        <h1 className="font-semibold tracking-tight">VisuCal</h1>
         <div className="mx-2 opacity-60 hidden sm:block">{dstr}</div>
         <div className="ml-auto flex items-center gap-2">
           <Button size="icon" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={() => shift(-1)}><ChevronLeft className="w-4 h-4" /></Button>
@@ -454,14 +421,14 @@ function Toolbar({ people, showFor, setShowFor }: any) {
   );
 }
 
-function Column({ person, events, onGenerate, onDelete, onComplete, onPickTimer, selectedEventId, setSelectedEventId, runningId, now, onLongPress, showSimple, dayTimeRange, currentDate }: any) {
+function Column({ person, events, onGenerate, onDelete, onComplete, onPickTimer, selectedEventId, setSelectedEventId, runningId, now, onLongPress, showSimple, timeSlots, currentDate }: any) {
   const downRef = useRef<NodeJS.Timeout | null>(null);
   const onHeaderPointerDown = () => { downRef.current = setTimeout(() => onLongPress(person.id), 600); };
   const cancelLP = () => { if(downRef.current) clearTimeout(downRef.current); };
-
-  const inDay = events.filter((ev: EventItem) => inView(ev, currentDate, "day"));
-
-  const totalDayDuration = dayTimeRange.end - dayTimeRange.start;
+  
+  const personEvents = useMemo(() => {
+    return events.filter((ev: EventItem) => (ev.personId === person.id || (ev.isFamily && person.id !== 'family')) && inView(ev, currentDate, "day"));
+  }, [events, person.id, currentDate]);
 
   return (
     <div className={`rounded-2xl p-1 md:p-2 border-t border-neutral-800 ${person.bg}`}>
@@ -469,27 +436,47 @@ function Column({ person, events, onGenerate, onDelete, onComplete, onPickTimer,
         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: person.color }} />
         <div className="font-semibold">{person.name}</div>
       </div>
+        <div className="space-y-1 relative">
+            {timeSlots.length > 0 ? (
+                timeSlots.map((slot: {start: number, end: number}, index: number) => {
+                    const eventInSlot = personEvents.find(ev => {
+                        const evStart = new Date(ev.start).getTime();
+                        const evEnd = new Date(ev.end).getTime();
+                        return evStart < slot.end && evEnd > slot.start;
+                    });
+                    
+                    if (eventInSlot) {
+                        const evStart = new Date(eventInSlot.start).getTime();
+                        if (evStart > slot.start) {
+                           return <div key={`${slot.start}-empty-before`} className="h-4" />;
+                        }
 
-      <div className="relative" style={{ height: '150vh' }}>
-         {inDay.map((ev: EventItem) => {
-           const eventStart = new Date(ev.start).getTime();
-           const eventEnd = new Date(ev.end).getTime();
-
-           const top = ((eventStart - dayTimeRange.start) / totalDayDuration) * 100;
-           const height = ((eventEnd - eventStart) / totalDayDuration) * 100;
-           
-           return (
-             <div key={ev.id} className="absolute w-full" style={{ top: `${top}%`, height: `${height}%`, padding: '2px' }}>
-                <EventCard 
-                    person={person} 
-                    ev={ev} 
-                    {...{ onGenerate, onDelete, onComplete, onPickTimer, selectedEventId, setSelectedEventId, runningId, now, showSimple }}
-                />
-             </div>
-           )
-         })}
-      </div>
-      
+                        const startSlotIndex = timeSlots.findIndex(s => s.start === evStart);
+                        const endSlotIndex = timeSlots.findIndex(s => s.end === new Date(eventInSlot.end).getTime());
+                        
+                        // Render card only for the first slot it appears in
+                        if (index === startSlotIndex) {
+                           const slotSpan = (endSlotIndex === -1 ? timeSlots.length : endSlotIndex) - startSlotIndex + 1;
+                            return (
+                                <div key={eventInSlot.id} style={{ minHeight: `calc(${slotSpan} * 10rem)` }}>
+                                    <EventCard 
+                                        person={person} 
+                                        ev={eventInSlot} 
+                                        {...{ onGenerate, onDelete, onComplete, onPickTimer, selectedEventId, setSelectedEventId, runningId, now, showSimple }}
+                                    />
+                                </div>
+                            );
+                        }
+                        return null; // Don't render anything for subsequent slots covered by the same event
+                    }
+                    return <div key={`${slot.start}-empty`} style={{ minHeight: '10rem' }} className="rounded-xl bg-neutral-900/10" />;
+                })
+            ) : (
+                <div className="text-center p-10 text-neutral-500 text-sm">
+                    Inga händelser planerade idag.
+                </div>
+            )}
+        </div>
       <Button size="sm" variant="secondary" className="bg-neutral-900/60 hover:bg-neutral-800 w-full mt-3">
         <Plus className="w-4 h-4 mr-2" />Lägg till (TBD)
       </Button>
@@ -523,7 +510,6 @@ function EventCard({ person, ev, onGenerate, onDelete, onComplete, onPickTimer, 
           </div>
            <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent p-3 flex flex-col justify-end">
                <div className="flex items-start gap-2">
-                 <div className="w-1.5 h-6 rounded-full mt-1" style={{ backgroundColor: person.color }} />
                  <div className="font-semibold text-lg text-white" style={{textShadow: '1px 1px 3px rgba(0,0,0,0.7)'}}>{ev.title}</div>
                </div>
            </div>
@@ -557,12 +543,10 @@ function EventCard({ person, ev, onGenerate, onDelete, onComplete, onPickTimer, 
   );
 }
 
-function NowIndicator({ now }: any) {
-  const t = new Date(now).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
-  return <div className="mt-2 text-xs opacity-60 flex items-center gap-2"><Clock3 className="w-3 h-3" /> Nu: {t}</div>;
-}
 
-interface AssistantPanelProps {
+const AI_PROCESS_TIMEOUT = 30000; 
+
+const AssistantPanel: FC<{
   open: boolean;
   onClose: () => void;
   people: Person[];
@@ -570,11 +554,7 @@ interface AssistantPanelProps {
   onAiCreateEvent: (eventDetails: any, imageHint?: string) => Promise<EventItem | null>;
   onAiModifyEvent: (eventIdentifier: any, eventDetails: any, imageHint?: string) => Promise<EventItem | null>;
   onAiDeleteEvent: (eventIdentifier: any) => Promise<string | null>;
-}
-
-const AI_PROCESS_TIMEOUT = 30000; // 30 seconds
-
-const AssistantPanel: FC<AssistantPanelProps> = ({ open, onClose, people, events, onAiCreateEvent, onAiModifyEvent, onAiDeleteEvent }) => {
+}> = ({ open, onClose, people, events, onAiCreateEvent, onAiModifyEvent, onAiDeleteEvent }) => {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -640,47 +620,46 @@ const AssistantPanel: FC<AssistantPanelProps> = ({ open, onClose, people, events
 
         if (formatterResponse.operations && formatterResponse.operations.length > 0) {
           addMessage('systemInfo', "Startar exekvering av plan...");
-          const operation = formatterResponse.operations[0];
           
-          if (formatterResponse.operations.length > 1) {
-            addMessage('systemInfo', `ℹ️ Notis: AI:n föreslog ${formatterResponse.operations.length} åtgärder. Jag utför endast den första.`);
-          }
+          for (const operation of formatterResponse.operations.slice(0, 1)) {
+            let outcomeMessage = "";
+            let success = false;
 
-          let outcomeMessage = "";
-          let success = false;
-
-          switch (operation.commandType.toUpperCase()) {
-            case 'CREATE':
-              if (operation.eventDetails) {
-                const created = await onAiCreateEvent(operation.eventDetails, tolkResponse.imageHint);
-                if(created) { outcomeMessage = `✅ Händelse "${created.title}" skapad.`; success = true; boom(); } 
-                else { outcomeMessage = `⚠️ Misslyckades skapa händelse.` }
-              }
-              break;
-            case 'MODIFY':
-              if (operation.eventIdentifier && operation.eventDetails) {
-                const modified = await onAiModifyEvent(operation.eventIdentifier, operation.eventDetails, tolkResponse.imageHint);
-                if(modified) { outcomeMessage = `✅ Händelse "${modified.title}" ändrad.`; success = true; }
-                else { outcomeMessage = `⚠️ Kunde inte hitta/ändra händelse.`}
-              }
-              break;
-            case 'DELETE':
-               if (operation.eventIdentifier) {
-                const deletedId = await onAiDeleteEvent(operation.eventIdentifier);
-                if(deletedId) { outcomeMessage = `✅ Händelse borttagen.`; success = true; }
-                else { outcomeMessage = `⚠️ Kunde inte hitta/ta bort händelse.`}
-               }
-              break;
-             case 'QUERY':
-                // Query results are handled by Tolk-AI's userFeedbackMessage, so no action needed here.
-                outcomeMessage = `✅ Svar levererat.`;
-                success = true;
+            switch (operation.commandType.toUpperCase()) {
+              case 'CREATE':
+                if (operation.eventDetails) {
+                  const created = await onAiCreateEvent(operation.eventDetails, tolkResponse.imageHint);
+                  if(created) { outcomeMessage = `✅ Händelse "${created.title}" skapad.`; success = true; boom(); } 
+                  else { outcomeMessage = `⚠️ Misslyckades skapa händelse.` }
+                }
                 break;
-             default:
-                outcomeMessage = `⚠️ Okänd åtgärd från AI: ${operation.commandType}`;
+              case 'MODIFY':
+                if (operation.eventIdentifier && operation.eventDetails) {
+                  const modified = await onAiModifyEvent(operation.eventIdentifier, operation.eventDetails, tolkResponse.imageHint);
+                  if(modified) { outcomeMessage = `✅ Händelse "${modified.title}" ändrad.`; success = true; }
+                  else { outcomeMessage = `⚠️ Kunde inte hitta/ändra händelse.`}
+                }
                 break;
+              case 'DELETE':
+                 if (operation.eventIdentifier) {
+                  const deletedId = await onAiDeleteEvent(operation.eventIdentifier);
+                  if(deletedId) { outcomeMessage = `✅ Händelse borttagen.`; success = true; }
+                  else { outcomeMessage = `⚠️ Kunde inte hitta/ta bort händelse.`}
+                 }
+                break;
+               case 'QUERY':
+                  outcomeMessage = `✅ Svar levererat.`;
+                  success = true;
+                  break;
+               default:
+                  outcomeMessage = `⚠️ Okänd åtgärd från AI: ${operation.commandType}`;
+                  break;
+            }
+            if(outcomeMessage) addMessage('systemInfo', outcomeMessage, { isError: !success });
+             if (formatterResponse.operations.length > 1) {
+              addMessage('systemInfo', `ℹ️ Notis: AI:n föreslog ${formatterResponse.operations.length} åtgärder. Jag utförde endast den första.`);
+            }
           }
-          if(outcomeMessage) addMessage('systemInfo', outcomeMessage, { isError: !success });
         } else {
             addMessage('systemInfo', "⚠️ AI:n kunde inte skapa några åtgärder från planen.", {isError: true});
         }
@@ -758,16 +737,10 @@ const AssistantPanel: FC<AssistantPanelProps> = ({ open, onClose, people, events
 
 function MoonToggle({ dark, setDark }: any) { return (<label className="flex items-center gap-2 text-sm cursor-pointer"><span className="opacity-70">Mörkt läge</span><Switch checked={dark} onCheckedChange={setDark} /></label>); }
 
-// ======= Utils =======
-function fmtTime(iso: string | undefined) { if (!iso) return ""; try { const d = new Date(iso); return d.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } }
-function inView(ev: EventItem, currentDate: Date, view: 'day' | 'week' | 'all') { if (view === 'all') return true; const d = new Date(ev.start || Date.now()); if (view === 'day') return sameDayFn(d, currentDate); if (view === 'week') return sameWeekFn(d, currentDate); return true; }
-function sameDayFn(a: Date, b: Date) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
-function sameWeekFn(a: Date, b: Date) { const da = new Date(a); da.setHours(0, 0, 0, 0); const db = new Date(b); db.setHours(0, 0, 0, 0); const day = db.getDay() || 7; const monday = new Date(db); monday.setDate(db.getDate() - (day - 1)); const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6); return da >= monday && da <= sunday; }
-function getWeekDays(date: Date) { const db = new Date(date); const day = db.getDay() || 7; const monday = new Date(db); monday.setDate(db.getDate() - (day - 1)); return Array.from({ length: 7 }, (_, i) => { const d = new Date(monday); d.setDate(monday.getDate() + i); return d; }); }
-function isToday(d: Date) { const t = new Date(); return sameDayFn(d, t); }
+function fmtTime(iso: string | number | undefined) { if (!iso) return ""; try { const d = new Date(iso); return d.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } }
+function inView(ev: EventItem, currentDate: Date, view: 'day' | 'week' | 'all') { if (view === 'all') return true; const d = new Date(ev.start || Date.now()); return isSameDay(d, currentDate); }
 function isNowWithin(ev: EventItem, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); return nowTs >= s && nowTs <= e; }
 function progressForEvent(ev: EventItem, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); if (!isFinite(s) || !isFinite(e) || e <= s) return 0; const p = (nowTs - s) / (e - s); return Math.max(0, Math.min(1, p)); }
 function remainingTime(ev: EventItem, nowTs: number) { const e = new Date(ev.end).getTime(); const diff = Math.max(0, e - nowTs); const m = Math.floor(diff / 60000); const s = Math.floor((diff % 60000) / 1000); return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; }
-
 
     
