@@ -176,8 +176,8 @@ type NPFScheduleAppProps = {
 
 export default function NPFScheduleApp({ params, searchParams }: NPFScheduleAppProps) {
   const [isClient, setIsClient] = useState(false);
-  const [people, setPeople] = useState<Person[]>(DEFAULT_PEOPLE);
-  const [events, setEvents] = useState<Event[]>(DEFAULT_EVENTS);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [date, setDate] = useState(() => new Date());
   const [showFor, setShowFor] = useState<string[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -188,7 +188,6 @@ export default function NPFScheduleApp({ params, searchParams }: NPFScheduleAppP
   const [now, setNow] = useState(Date.now());
   const { toast } = useToast();
 
-  // Hydration fix: Load from localStorage only on the client
   useEffect(() => {
     setIsClient(true);
     setPeople(loadLS("npf.people", DEFAULT_PEOPLE));
@@ -366,7 +365,7 @@ export default function NPFScheduleApp({ params, searchParams }: NPFScheduleAppP
       <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         
-        <div className={`grid gap-4 mt-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-${orderedShowFor.length > 0 ? Math.min(orderedShowFor.length, 3) : 1}`}>
+        <div className={`grid gap-4 mt-3 grid-cols-${orderedShowFor.length > 0 ? orderedShowFor.length : 1} md:grid-cols-${orderedShowFor.length > 0 ? Math.min(orderedShowFor.length, 2) : 1} lg:grid-cols-${orderedShowFor.length > 0 ? Math.min(orderedShowFor.length, 3) : 1}`}>
           {columnsData.map(({ person, eventGrid }) => (
             <div key={person.id} className={`rounded-2xl p-1 md:p-2 border-t border-neutral-800 ${person.bg}`}>
               <div className="flex items-center gap-2 mb-2 select-none sticky top-[70px] bg-neutral-950/80 backdrop-blur-sm p-2 rounded-lg z-10" onPointerDown={()=>longPressFilter(person.id)}>
@@ -479,8 +478,6 @@ function EventCard({ person, ev, onDelete, onComplete, onPickTimer, onGenerate, 
       <div className={`group rounded-xl overflow-hidden border bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-white/20 h-full flex flex-col ${activeNow ? "border-amber-500/70" : "border-neutral-800"} ${ev.meta?.synthetic ? "border-dashed border-neutral-700" : ""}`}>
         <div className="relative flex-grow h-40">
           <div className="absolute inset-0 w-full h-full bg-neutral-800" onClick={(e) => {
-              // Only trigger image generation if there isn't an image already
-              // and the event is not a synthetic one.
               if (!ev.imageUrl && !ev.meta?.synthetic) {
                 e.stopPropagation();
                 onGenerate(ev);
@@ -499,7 +496,7 @@ function EventCard({ person, ev, onDelete, onComplete, onPickTimer, onGenerate, 
               </div>
             }
           </div>
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 flex flex-col justify-end">
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 flex flex-col justify-end pointer-events-none">
             <div className={`font-semibold text-white ${showSimple ? 'text-base' : 'text-xl'}`} style={{textShadow: '2px 2px 4px rgba(0,0,0,0.8)'}}>
               {displayTitle}
               {ev.meta?.isContinuation && <Repeat className="w-4 h-4 text-white/70 inline-block ml-1" title="Pågående aktivitet" />}
@@ -639,4 +636,6 @@ function isNowWithin(ev: Event, nowTs: number) { const s = new Date(ev.start).ge
 function progressForEvent(ev: Event, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); if (!isFinite(s) || !isFinite(e) || e <= s) return 0; const p = (nowTs - s) / (e - s); return Math.max(0, Math.min(1, p)); }
 function remainingTime(ev: Event, nowTs: number) { const e = new Date(ev.end).getTime(); const diff = Math.max(0, e - nowTs); const m = Math.floor(diff / 60000); const s = Math.floor((diff % 60000) / 1000); return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; }
     
+    
+
     
