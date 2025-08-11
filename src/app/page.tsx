@@ -25,23 +25,22 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { format as formatDateFns } from 'date-fns';
-
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
 import type { EventItem, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput, AiEvent } from '@/types/event';
 import { parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, formatInputDate, formatInputTime, isSameDay } from '@/lib/date-utils';
 
-
 const uid = () => Math.random().toString(36).slice(2, 9);
 const todayISO = () => new Date().toISOString().slice(0, 10);
-const INCR = 20; 
+const INCR = 20;
 
 function loadLS(key: string, fallback: any) {
+  if (typeof window === 'undefined') return fallback;
   try {
-    if (typeof window === 'undefined') return fallback;
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
   } catch {
@@ -50,13 +49,14 @@ function loadLS(key: string, fallback: any) {
 }
 
 function saveLS(key: string, value: any) {
+  if (typeof window === 'undefined') return;
   try {
-    if (typeof window === 'undefined') return;
     localStorage.setItem(key, JSON.stringify(value));
   } catch {}
 }
 
 async function boom() {
+  if (typeof window === 'undefined') return;
   try {
     const confetti = (await import("canvas-confetti")).default;
     confetti({ particleCount: 200, spread: 75, origin: { y: 0.7 } });
@@ -276,34 +276,27 @@ export default function NPFScheduleApp() {
   }
   
   useEffect(() => {
-    if (dark) document.documentElement.classList.add("dark");
-    else document.documentElement.classList.remove("dark");
+    if (typeof window !== 'undefined') {
+      if (dark) document.documentElement.classList.add("dark");
+      else document.documentElement.classList.remove("dark");
+    }
   }, [dark]);
 
   // Block-based time synchronization
   const timeSlots = useMemo(() => {
-    const todaysEvents = events.filter(ev => inView(ev, date, 'day'));
-    if (todaysEvents.length === 0) return [];
+      // 1. Get all events for the selected people on the current date
+      const todaysEvents = events.filter(ev => 
+          (orderedShowFor.includes(ev.personId) || (ev.isFamily && orderedShowFor.length > 0)) && 
+          inView(ev, date, 'day')
+      );
+      
+      // 2. Sort them by start time
+      todaysEvents.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
-    const timePoints = new Set<number>();
-    todaysEvents.forEach(ev => {
-      timePoints.add(new Date(ev.start).getTime());
-      timePoints.add(new Date(ev.end).getTime());
-    });
-
-    const sortedTimes = Array.from(timePoints).sort((a, b) => a - b);
-    
-    const slots = [];
-    for (let i = 0; i < sortedTimes.length - 1; i++) {
-        if (sortedTimes[i+1] > sortedTimes[i]) {
-            slots.push({
-                start: sortedTimes[i],
-                end: sortedTimes[i+1]
-            });
-        }
-    }
-    return slots;
-  }, [events, date]);
+      // 3. Get the first 5 unique start times
+      const uniqueStartTimes = [...new Set(todaysEvents.map(e => e.start))];
+      return uniqueStartTimes.slice(0, 5);
+  }, [events, date, orderedShowFor]);
 
 
   return (
@@ -426,7 +419,7 @@ function Column({ person, events, onGenerate, onDelete, onComplete, onPickTimer,
   const onHeaderPointerDown = () => { downRef.current = setTimeout(() => onLongPress(person.id), 600); };
   const cancelLP = () => { if(downRef.current) clearTimeout(downRef.current); };
   
-  const personEvents = useMemo(() => {
+  const personEventsForDay = useMemo(() => {
     return events.filter((ev: EventItem) => (ev.personId === person.id || (ev.isFamily && person.id !== 'family')) && inView(ev, currentDate, "day"));
   }, [events, person.id, currentDate]);
 
@@ -436,40 +429,23 @@ function Column({ person, events, onGenerate, onDelete, onComplete, onPickTimer,
         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: person.color }} />
         <div className="font-semibold">{person.name}</div>
       </div>
-        <div className="space-y-1 relative">
+        <div className="space-y-3 relative">
             {timeSlots.length > 0 ? (
-                timeSlots.map((slot: {start: number, end: number}, index: number) => {
-                    const eventInSlot = personEvents.find(ev => {
-                        const evStart = new Date(ev.start).getTime();
-                        const evEnd = new Date(ev.end).getTime();
-                        return evStart < slot.end && evEnd > slot.start;
-                    });
+                timeSlots.map((slotTime: string) => {
+                    const eventInSlot = personEventsForDay.find(ev => ev.start === slotTime);
                     
                     if (eventInSlot) {
-                        const evStart = new Date(eventInSlot.start).getTime();
-                        if (evStart > slot.start) {
-                           return <div key={`${slot.start}-empty-before`} className="h-4" />;
-                        }
-
-                        const startSlotIndex = timeSlots.findIndex(s => s.start === evStart);
-                        const endSlotIndex = timeSlots.findIndex(s => s.end === new Date(eventInSlot.end).getTime());
-                        
-                        // Render card only for the first slot it appears in
-                        if (index === startSlotIndex) {
-                           const slotSpan = (endSlotIndex === -1 ? timeSlots.length : endSlotIndex) - startSlotIndex + 1;
-                            return (
-                                <div key={eventInSlot.id} style={{ minHeight: `calc(${slotSpan} * 10rem)` }}>
-                                    <EventCard 
-                                        person={person} 
-                                        ev={eventInSlot} 
-                                        {...{ onGenerate, onDelete, onComplete, onPickTimer, selectedEventId, setSelectedEventId, runningId, now, showSimple }}
-                                    />
-                                </div>
-                            );
-                        }
-                        return null; // Don't render anything for subsequent slots covered by the same event
+                        return (
+                            <EventCard 
+                                key={eventInSlot.id}
+                                person={person} 
+                                ev={eventInSlot} 
+                                {...{ onGenerate, onDelete, onComplete, onPickTimer, selectedEventId, setSelectedEventId, runningId, now, showSimple }}
+                            />
+                        );
                     }
-                    return <div key={`${slot.start}-empty`} style={{ minHeight: '10rem' }} className="rounded-xl bg-neutral-900/10" />;
+                    // Render an empty placeholder block
+                    return <div key={`${person.id}-${slotTime}-empty`} className="h-40 rounded-xl bg-neutral-900/10" />;
                 })
             ) : (
                 <div className="text-center p-10 text-neutral-500 text-sm">
@@ -501,16 +477,16 @@ function EventCard({ person, ev, onGenerate, onDelete, onComplete, onPickTimer, 
       className="h-full"
       >
       <div onClick={onSelect} className={`group rounded-xl overflow-hidden border bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-white/20 h-full flex flex-col ${selected ? "ring-2 ring-white/30" : ""} ${activeNow ? "border-amber-500/70" : "border-neutral-800"}`}>
-        <div className="relative flex-grow">
+        <div className="relative flex-grow h-40">
           <div className="absolute inset-0 w-full h-full bg-neutral-800">
             {ev.imageUrl ? <img src={ev.imageUrl} alt={ev.title} className="w-full h-full object-cover" /> :
               <div className="w-full h-full flex items-center justify-center">
                 <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={async (e) => { e.stopPropagation(); await onGenerate(ev); }}>Skapa bild</Button>
               </div>}
           </div>
-           <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent p-3 flex flex-col justify-end">
+           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 flex flex-col justify-end">
                <div className="flex items-start gap-2">
-                 <div className="font-semibold text-lg text-white" style={{textShadow: '1px 1px 3px rgba(0,0,0,0.7)'}}>{ev.title}</div>
+                 <div className="font-semibold text-xl text-white" style={{textShadow: '2px 2px 4px rgba(0,0,0,0.8)'}}>{ev.title}</div>
                </div>
            </div>
            {(running || activeNow) && (
@@ -530,7 +506,7 @@ function EventCard({ person, ev, onGenerate, onDelete, onComplete, onPickTimer, 
           </div>
           {ev.challenge && <div className="text-sm mt-1 opacity-80 px-2 py-0.5 rounded-full bg-neutral-800 border border-neutral-700 inline-block">Utmaning: {ev.challenge}</div>}
           
-          {!showSimple && (
+          {(!showSimple || showSimple.length <= 1) && (
             <div className="flex items-center gap-2 mt-3">
               <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={(e) => { e.stopPropagation(); onPickTimer(ev.id); }}><TimerIcon className="w-4 h-4 mr-2" />Starta timer</Button>
               <Button size="sm" className="bg-green-700 hover:bg-green-600" onClick={(e) => { e.stopPropagation(); onComplete(ev.id); }}><Play className="w-4 h-4 mr-2" />Markera klart</Button>
