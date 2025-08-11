@@ -18,9 +18,6 @@ import {
   User,
   Send,
   Loader2,
-  AlertTriangle,
-  Zap,
-  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,7 +35,7 @@ import { interpretUserInstruction } from '@/ai/flows/natural-language-event-crea
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
 import type { AiEvent, Person, EventItem, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput } from '@/types/event';
-import { parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, formatInputDate, formatInputTime, parseInputDate, parseInputTime, combineDateAndTime, isSameDay } from '@/lib/date-utils';
+import { parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, formatInputDate, formatInputTime, isSameDay } from '@/lib/date-utils';
 
 
 // ======= Helper Functions =======
@@ -335,7 +332,7 @@ export default function NPFScheduleApp() {
       <main className="p-3 md:p-6 max-w-[1400px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         <NowIndicator now={now} />
-        <div className="grid gap-4 mt-3" style={{ gridTemplateColumns: `repeat(${orderedShowFor.length || 1}, minmax(240px, 1fr))` }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-3" style={{ gridTemplateColumns: orderedShowFor.length > 3 ? `repeat(${orderedShowFor.length}, minmax(240px, 1fr))` : undefined }}>
           {orderedShowFor.map(pid => {
             const person = people.find(p => p.id === pid);
             if (!person) return null;
@@ -559,14 +556,13 @@ interface AssistantPanelProps {
   onAiDeleteEvent: (eventIdentifier: any) => Promise<string | null>;
 }
 
-const AI_PROCESS_TIMEOUT = 30000;
+const AI_PROCESS_TIMEOUT = 60000; // 60 seconds
 
 const AssistantPanel: FC<AssistantPanelProps> = ({ open, onClose, people, events, onAiCreateEvent, onAiModifyEvent, onAiDeleteEvent }) => {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const { toast } = useToast();
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -641,7 +637,7 @@ const AssistantPanel: FC<AssistantPanelProps> = ({ open, onClose, people, events
             case 'CREATE':
               if (operation.eventDetails) {
                 const created = await onAiCreateEvent(operation.eventDetails, tolkResponse.imageHint);
-                if(created) { outcomeMessage = `✅ Händelse "${created.title}" skapad.`; success = true; } 
+                if(created) { outcomeMessage = `✅ Händelse "${created.title}" skapad.`; success = true; boom(); } 
                 else { outcomeMessage = `⚠️ Misslyckades skapa händelse.` }
               }
               break;
@@ -659,6 +655,14 @@ const AssistantPanel: FC<AssistantPanelProps> = ({ open, onClose, people, events
                 else { outcomeMessage = `⚠️ Kunde inte hitta/ta bort händelse.`}
                }
               break;
+             case 'QUERY':
+                // Query results are handled by Tolk-AI's userFeedbackMessage, so no action needed here.
+                outcomeMessage = `✅ Svar levererat.`;
+                success = true;
+                break;
+             default:
+                outcomeMessage = `⚠️ Okänd åtgärd från AI: ${operation.commandType}`;
+                break;
           }
           if(outcomeMessage) addMessage('systemInfo', outcomeMessage, { isError: !success });
         } else {
@@ -743,3 +747,5 @@ function isNowWithin(ev: EventItem, nowTs: number) { const s = new Date(ev.start
 function progressForEvent(ev: EventItem, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); if (!isFinite(s) || !isFinite(e) || e <= s) return 0; const p = (nowTs - s) / (e - s); return Math.max(0, Math.min(1, p)); }
 function remainingTime(ev: EventItem, nowTs: number) { const e = new Date(ev.end).getTime(); const diff = Math.max(0, e - nowTs); const m = Math.floor(diff / 60000); const s = Math.floor((diff % 60000) / 1000); return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; }
 
+
+    
