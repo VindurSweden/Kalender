@@ -229,15 +229,11 @@ export default function NPFScheduleApp() {
   const columnsData = useMemo(() => {
     if (!isClient) return [];
     
-    // Collect all unique start times from all events of the visible people for the current day
-    const allStartTimes = [...new Set(
-        events
-            .filter(e => isSameDay(new Date(e.start), date) && (orderedShowFor.includes(e.personId) || (e.isFamily && orderedShowFor.length > 0)))
-            .map(e => new Date(e.start).getTime())
-    )].sort();
+    const allEventsForDay = events.filter(e => isSameDay(new Date(e.start), date) && (orderedShowFor.includes(e.personId) || (e.isFamily && orderedShowFor.length > 0)));
+
+    const allTimeKeys = [...new Set(allEventsForDay.map(e => new Date(e.start).getTime()))].sort();
     
-    // The grid is defined by the first X unique start times
-    const uniqueTimeKeys = allStartTimes.slice(0, viewConfig.SLOTS);
+    const timeSlots = allTimeKeys.slice(0, viewConfig.SLOTS);
     
     return orderedShowFor.map(personId => {
       const person = people.find(p => p.id === personId)!;
@@ -250,7 +246,7 @@ export default function NPFScheduleApp() {
       const eventGrid: (Event | null)[] = [];
       let lastRealEvent: Event | null = null;
       
-      for(const timeKey of uniqueTimeKeys) {
+      for(const timeKey of timeSlots) {
         const eventInSlot = personEventsToday.find(e => new Date(e.start).getTime() === timeKey);
         if (eventInSlot) {
             eventGrid.push(eventInSlot);
@@ -266,7 +262,7 @@ export default function NPFScheduleApp() {
       }
       
       while(eventGrid.length < viewConfig.SLOTS) {
-        if(viewConfig.fillPolicy === 'repeat' && lastRealEvent && new Date(lastRealEvent.end) > (uniqueTimeKeys.length > 0 ? new Date(uniqueTimeKeys[uniqueTimeKeys.length - 1] || 0) : new Date(0))) {
+        if(viewConfig.fillPolicy === 'repeat' && lastRealEvent && new Date(lastRealEvent.end) > (timeSlots.length > 0 ? new Date(timeSlots[timeSlots.length - 1] || 0) : new Date(0))) {
              eventGrid.push({ ...lastRealEvent, meta: { ...lastRealEvent.meta, isContinuation: true } });
         } else {
              eventGrid.push(null);
@@ -477,13 +473,20 @@ function EventCard({ person, ev, onDelete, onComplete, onPickTimer, onGenerate, 
     <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="h-full">
       <div className={`group rounded-xl overflow-hidden border bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-white/20 h-full flex flex-col ${activeNow ? "border-amber-500/70" : "border-neutral-800"} ${ev.meta?.synthetic ? "border-dashed border-neutral-700" : ""}`}>
         <div className="relative flex-grow h-40">
-          <div className="absolute inset-0 w-full h-full bg-neutral-800">
+          <div className="absolute inset-0 w-full h-full bg-neutral-800" onClick={(e) => {
+              // Only trigger image generation if there isn't an image already
+              // and the event is not a synthetic one.
+              if (!ev.imageUrl && !ev.meta?.synthetic) {
+                e.stopPropagation();
+                onGenerate(ev);
+              }
+            }}>
             {ev.imageUrl ? <img src={ev.imageUrl} alt={ev.title} className="w-full h-full object-cover" /> :
               <div className="w-full h-full flex items-center justify-center">
                 {ev.meta?.synthetic ? (
                   <div className="text-neutral-500 text-sm">(Assistentfyllt)</div>
                 ) : (
-                  <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={(e) => { e.stopPropagation(); onGenerate(ev); }}>
+                  <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700 pointer-events-none">
                     <ImageIcon className="mr-2 h-4 w-4" />
                     Skapa bild
                   </Button>
@@ -630,6 +633,8 @@ function fmtTime(iso: string | number | undefined) { if (!iso) return ""; try { 
 function isNowWithin(ev: Event, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); return nowTs >= s && nowTs <= e; }
 function progressForEvent(ev: Event, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); if (!isFinite(s) || !isFinite(e) || e <= s) return 0; const p = (nowTs - s) / (e - s); return Math.max(0, Math.min(1, p)); }
 function remainingTime(ev: Event, nowTs: number) { const e = new Date(ev.end).getTime(); const diff = Math.max(0, e - nowTs); const m = Math.floor(diff / 60000); const s = Math.floor((diff % 60000) / 1000); return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; }
+
+    
 
     
 
