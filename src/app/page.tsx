@@ -71,8 +71,8 @@ async function boom() {
 const DEFAULT_PEOPLE: Person[] = [
   { id: "gabriel", name: "Gabriel", color: "#5B9BFF", bg: "bg-blue-600/40", speak: true },
   { id: "leia", name: "Leia", color: "#F28CB2", bg: "bg-pink-600/40", speak: true },
-  { id: "antony", name: "Antony", color: "#8AE68C", bg: "bg-green-600/40" },
-  { id: "maria", name: "Maria", color: "#C9A7FF", bg: "bg-purple-600/40" },
+  { id: "pappa", name: "Pappa", color: "#8AE68C", bg: "bg-green-600/40" },
+  { id: "mamma", name: "Mamma", color: "#C9A7FF", bg: "bg-purple-600/40" },
 ];
 
 const DEFAULT_EVENTS: EventItem[] = [
@@ -96,7 +96,6 @@ export default function NPFScheduleApp() {
   const [runningId, setRunningId] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [now, setNow] = useState(Date.now());
-  const [targetCards, setTargetCards] = useState(6); // Aim for 6 visible cards
   const { toast } = useToast();
 
   useEffect(() => saveLS("npf.people", people), [people]);
@@ -144,18 +143,6 @@ export default function NPFScheduleApp() {
       if (tickRef.current) clearInterval(tickRef.current);
     };
   }, [runningId, events]);
-
-  useEffect(() => {
-    const recalc = () => {
-      const vh = window.innerHeight;
-      const headroom = 300;
-      const imgH = Math.max(110, Math.floor((vh - headroom) / targetCards - 52));
-      document.documentElement.style.setProperty("--cardImgH", `${imgH}px`);
-    };
-    recalc();
-    window.addEventListener("resize", recalc);
-    return () => window.removeEventListener("resize", recalc);
-  }, [targetCards]);
 
   // ======= AI Handlers =======
   const findEventToModifyOrDelete = (identifier: any): EventItem | null => {
@@ -320,6 +307,31 @@ export default function NPFScheduleApp() {
     else document.documentElement.classList.remove("dark");
   }, [dark]);
 
+  // Determine the day's time range for vertical sync
+  const dayTimeRange = useMemo(() => {
+    const todaysEvents = orderedShowFor.flatMap(pid => {
+      const personEvents = grouped.get(pid) || [];
+      return personEvents.filter(ev => inView(ev, date, 'day'));
+    });
+
+    if (todaysEvents.length === 0) {
+      const startOfDay = new Date(date);
+      startOfDay.setHours(8, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(20, 0, 0, 0);
+      return { start: startOfDay.getTime(), end: endOfDay.getTime() };
+    }
+
+    const startTimes = todaysEvents.map(ev => new Date(ev.start).getTime());
+    const endTimes = todaysEvents.map(ev => new Date(ev.end).getTime());
+    
+    const minTime = Math.min(...startTimes);
+    const maxTime = Math.max(...endTimes);
+
+    return { start: minTime, end: maxTime };
+  }, [orderedShowFor, grouped, date]);
+
+
   return (
     <div className="min-h-screen w-full bg-neutral-950 text-neutral-100 antialiased">
       <Header
@@ -327,7 +339,6 @@ export default function NPFScheduleApp() {
         shift={(d) => setDate(new Date(date.setDate(date.getDate() + d)))}
         dark={dark} setDark={setDark}
         assistantOpen={assistantOpen} setAssistantOpen={setAssistantOpen}
-        targetCards={targetCards} setTargetCards={setTargetCards}
       />
       <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
@@ -335,7 +346,7 @@ export default function NPFScheduleApp() {
         <div 
           className="grid gap-4 mt-3"
           style={{
-              gridTemplateColumns: `repeat(${orderedShowFor.length > 0 ? orderedShowFor.length : 1}, minmax(0, 1fr))`
+              gridTemplateColumns: `repeat(${orderedShowFor.length > 2 ? 2 : orderedShowFor.length > 0 ? orderedShowFor.length : 1}, minmax(0, 1fr))`
           }}
         >
           {orderedShowFor.map(pid => {
@@ -343,10 +354,13 @@ export default function NPFScheduleApp() {
             if (!person) return null;
             const list = grouped.get(pid) || [];
             return (
-              <Column key={pid} view={view} date={date} person={person} events={list}
+              <Column key={pid} person={person} events={list}
                 onGenerate={ensureImage} onDelete={deleteEvent} onComplete={toggleComplete} onPickTimer={setRunningId}
                 selectedEventId={selectedEventId} setSelectedEventId={setSelectedEventId} runningId={runningId} now={now}
                 onLongPress={longPressFilter}
+                showSimple={orderedShowFor.length > 1}
+                dayTimeRange={dayTimeRange}
+                currentDate={date}
               />
             );
           })}
@@ -383,7 +397,7 @@ export default function NPFScheduleApp() {
 
 
 // ======= Subcomponents =======
-function Header({ date, shift, dark, setDark, assistantOpen, setAssistantOpen, targetCards, setTargetCards }: any) {
+function Header({ date, shift, dark, setDark, assistantOpen, setAssistantOpen }: any) {
   const dstr = date.toLocaleDateString("sv-SE", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   return (
     <header className="sticky top-0 z-40 bg-neutral-950/80 backdrop-blur border-b border-neutral-800">
@@ -396,10 +410,6 @@ function Header({ date, shift, dark, setDark, assistantOpen, setAssistantOpen, t
           <Button size="icon" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={() => shift(1)}><ChevronRight className="w-4 h-4" /></Button>
            <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700 hidden sm:flex" onClick={() => setDate(new Date())}>Idag</Button>
           <div className="flex items-center gap-3 ml-2">
-            <label className="text-xs opacity-70 flex-wrap items-center gap-2 hidden lg:flex">
-              <span>Mål: {targetCards} kort/kolumn</span>
-              <input type="range" min={4} max={8} value={targetCards} onChange={(e) => setTargetCards(Number(e.target.value))} />
-            </label>
             <MoonToggle dark={dark} setDark={setDark} />
             <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={() => setAssistantOpen(!assistantOpen)}>Assistent</Button>
             <Dialog>
@@ -444,23 +454,41 @@ function Toolbar({ people, showFor, setShowFor }: any) {
   );
 }
 
-function Column({ view, date, person, events, onGenerate, onDelete, onComplete, onPickTimer, selectedEventId, setSelectedEventId, runningId, now, onLongPress }: any) {
+function Column({ person, events, onGenerate, onDelete, onComplete, onPickTimer, selectedEventId, setSelectedEventId, runningId, now, onLongPress, showSimple, dayTimeRange, currentDate }: any) {
   const downRef = useRef<NodeJS.Timeout | null>(null);
   const onHeaderPointerDown = () => { downRef.current = setTimeout(() => onLongPress(person.id), 600); };
   const cancelLP = () => { if(downRef.current) clearTimeout(downRef.current); };
 
-  const inDay = events.filter((ev: EventItem) => inView(ev, date, "day"));
+  const inDay = events.filter((ev: EventItem) => inView(ev, currentDate, "day"));
+
+  const totalDayDuration = dayTimeRange.end - dayTimeRange.start;
 
   return (
-    <div className={`rounded-2xl p-2 md:p-3 border border-neutral-800 ${person.bg}`}>
-      <div className="flex items-center gap-2 mb-2 select-none" onPointerDown={onHeaderPointerDown} onPointerUp={cancelLP} onPointerLeave={cancelLP}>
+    <div className={`rounded-2xl p-1 md:p-2 border-t border-neutral-800 ${person.bg}`}>
+       <div className="flex items-center gap-2 mb-2 select-none sticky top-[70px] bg-neutral-950/80 backdrop-blur-sm p-2 rounded-lg z-10" onPointerDown={onHeaderPointerDown} onPointerUp={cancelLP} onPointerLeave={cancelLP}>
         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: person.color }} />
         <div className="font-semibold">{person.name}</div>
-        <div className="ml-auto text-xs opacity-70 flex items-center gap-1"><Clock3 className="w-3 h-3" />{new Date(now).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" })}</div>
       </div>
 
-      {view === "day" && <EventList person={person} items={inDay} {...{ onGenerate, onDelete, onComplete, onPickTimer, selectedEventId, setSelectedEventId, runningId, now }} />}
-      {view === "week" && <WeekBuckets date={date} person={person} events={events} {...{ onGenerate, onDelete, onComplete, onPickTimer, selectedEventId, setSelectedEventId, runningId, now }} />}
+      <div className="relative" style={{ height: '150vh' }}>
+         {inDay.map((ev: EventItem) => {
+           const eventStart = new Date(ev.start).getTime();
+           const eventEnd = new Date(ev.end).getTime();
+
+           const top = ((eventStart - dayTimeRange.start) / totalDayDuration) * 100;
+           const height = ((eventEnd - eventStart) / totalDayDuration) * 100;
+           
+           return (
+             <div key={ev.id} className="absolute w-full" style={{ top: `${top}%`, height: `${height}%`, padding: '2px' }}>
+                <EventCard 
+                    person={person} 
+                    ev={ev} 
+                    {...{ onGenerate, onDelete, onComplete, onPickTimer, selectedEventId, setSelectedEventId, runningId, now, showSimple }}
+                />
+             </div>
+           )
+         })}
+      </div>
       
       <Button size="sm" variant="secondary" className="bg-neutral-900/60 hover:bg-neutral-800 w-full mt-3">
         <Plus className="w-4 h-4 mr-2" />Lägg till (TBD)
@@ -469,40 +497,8 @@ function Column({ view, date, person, events, onGenerate, onDelete, onComplete, 
   );
 }
 
-function EventList({ items, ...props }: any) {
-  return (
-    <div className="space-y-3 min-h-[420px]">
-      {items.map((ev: EventItem) => <EventCard key={ev.id} ev={ev} {...props} />)}
-    </div>
-  );
-}
 
-function WeekBuckets({ date, person, events, ...props }: any) {
-  const days = getWeekDays(date);
-  return (
-    <div className="space-y-3">
-      {days.map(d => {
-        const key = d.toISOString().slice(0, 10);
-        const items = events.filter((ev: EventItem) => sameDayFn(new Date(ev.start), d)).sort((a: EventItem, b: EventItem) => a.start.localeCompare(b.start));
-        return (
-          <div key={key} className="rounded-xl border border-neutral-800 bg-neutral-900/50">
-            <div className="px-3 py-2 text-xs opacity-70 flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: person.color }} />
-              {d.toLocaleDateString("sv-SE", { weekday: "short", day: "2-digit", month: "2-digit" })}
-              {isToday(d) && <Badge className="bg-amber-600/80">Idag</Badge>}
-            </div>
-            <div className="p-2 space-y-2">
-              {items.length === 0 && <div className="text-xs opacity-50 px-2 py-3">Inget planerat</div>}
-              {items.map((ev: EventItem) => <EventCard key={ev.id} ev={ev} person={person} {...props} />)}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function EventCard({ person, ev, onGenerate, onDelete, onComplete, onPickTimer, selected, onSelect, running, now }: any) {
+function EventCard({ person, ev, onGenerate, onDelete, onComplete, onPickTimer, selected, onSelect, running, now, showSimple }: any) {
   const from = fmtTime(ev.start);
   const to = fmtTime(ev.end);
   const activeNow = isNowWithin(ev, now);
@@ -510,36 +506,51 @@ function EventCard({ person, ev, onGenerate, onDelete, onComplete, onPickTimer, 
   const remaining = remainingTime(ev, now);
 
   return (
-    <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}>
-      <div onClick={onSelect} className={`group rounded-xl overflow-hidden border bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-white/20 ${selected ? "ring-2 ring-white/30" : ""} ${activeNow ? "border-amber-500/70" : "border-neutral-800"}`}>
-        <div className="relative">
-          <div className="w-full bg-neutral-800" style={{ height: "var(--cardImgH, 160px)" }}>
+    <motion.div 
+      layout 
+      initial={{ opacity: 0, y: 6 }} 
+      animate={{ opacity: 1, y: 0 }} 
+      exit={{ opacity: 0, y: -6 }}
+      className="h-full"
+      >
+      <div onClick={onSelect} className={`group rounded-xl overflow-hidden border bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-white/20 h-full flex flex-col ${selected ? "ring-2 ring-white/30" : ""} ${activeNow ? "border-amber-500/70" : "border-neutral-800"}`}>
+        <div className="relative flex-grow">
+          <div className="absolute inset-0 w-full h-full bg-neutral-800">
             {ev.imageUrl ? <img src={ev.imageUrl} alt={ev.title} className="w-full h-full object-cover" /> :
               <div className="w-full h-full flex items-center justify-center">
                 <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={async (e) => { e.stopPropagation(); await onGenerate(ev); }}>Skapa bild</Button>
               </div>}
-            {(running || activeNow) && (
+          </div>
+           <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent p-3 flex flex-col justify-end">
+               <div className="flex items-start gap-2">
+                 <div className="w-1.5 h-6 rounded-full mt-1" style={{ backgroundColor: person.color }} />
+                 <div className="font-semibold text-lg text-white" style={{textShadow: '1px 1px 3px rgba(0,0,0,0.7)'}}>{ev.title}</div>
+               </div>
+           </div>
+           {(running || activeNow) && (
               <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                 <div className="rounded-full bg-black/40 p-3 backdrop-blur">
                   <svg width="84" height="84" viewBox="0 0 100 100" className="block"><circle cx="50" cy="50" r="42" stroke="rgba(255,255,255,0.2)" strokeWidth="8" fill="none" /><circle cx="50" cy="50" r="42" stroke="white" strokeWidth="8" fill="none" strokeDasharray={2 * Math.PI * 42} strokeDashoffset={(1 - p) * (2 * Math.PI * 42)} strokeLinecap="round" /></svg>
                   <div className="-mt-16 text-center"><div className="text-xs opacity-80">{activeNow ? "Pågår" : "Timer"}</div><div className="text-lg font-semibold">{remaining}</div></div>
                 </div>
-              </div>)}
-          </div>
+              </div>
+            )}
         </div>
-        <div className="p-3">
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-6 rounded" style={{ backgroundColor: person.color }} />
-            <div className="font-medium">{ev.title}</div>
-            {ev.completed && <Badge className="ml-auto bg-green-700/80">Klart</Badge>}
-            {ev.isFamily && <Badge className="ml-auto bg-amber-600/80">Familj</Badge>}
+        <div className="p-3 bg-neutral-900 flex-shrink-0">
+          <div className="flex items-center gap-3 text-sm opacity-80">
+            <span>{from}–{to}</span>
+             {ev.completed && <Badge className="ml-auto bg-green-700/80">Klart</Badge>}
+             {ev.isFamily && <Badge className="ml-auto bg-amber-600/80">Familj</Badge>}
           </div>
-          <div className="flex items-center gap-3 text-sm opacity-80 mt-1"><span>{from}–{to}</span>{ev.challenge && <span className="px-2 py-0.5 rounded-full bg-neutral-800 border border-neutral-700">Utmaning: {ev.challenge}</span>}</div>
-          <div className="flex items-center gap-2 mt-3">
-            <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={(e) => { e.stopPropagation(); onPickTimer(ev.id); }}><TimerIcon className="w-4 h-4 mr-2" />Starta timer</Button>
-            <Button size="sm" className="bg-green-700 hover:bg-green-600" onClick={(e) => { e.stopPropagation(); onComplete(ev.id); }}><Play className="w-4 h-4 mr-2" />Markera klart</Button>
-            <Button size="icon" variant="secondary" className="ml-auto bg-neutral-800 hover:bg-neutral-700" onClick={(e) => { e.stopPropagation(); onDelete(ev.id); }}><Trash2 className="w-4 h-4" /></Button>
-          </div>
+          {ev.challenge && <div className="text-sm mt-1 opacity-80 px-2 py-0.5 rounded-full bg-neutral-800 border border-neutral-700 inline-block">Utmaning: {ev.challenge}</div>}
+          
+          {!showSimple && (
+            <div className="flex items-center gap-2 mt-3">
+              <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={(e) => { e.stopPropagation(); onPickTimer(ev.id); }}><TimerIcon className="w-4 h-4 mr-2" />Starta timer</Button>
+              <Button size="sm" className="bg-green-700 hover:bg-green-600" onClick={(e) => { e.stopPropagation(); onComplete(ev.id); }}><Play className="w-4 h-4 mr-2" />Markera klart</Button>
+            </div>
+          )}
+          <Button size="icon" variant="secondary" className="ml-auto bg-neutral-800 hover:bg-neutral-700 absolute right-2 bottom-2" onClick={(e) => { e.stopPropagation(); onDelete(ev.id); }}><Trash2 className="w-4 h-4" /></Button>
         </div>
       </div>
     </motion.div>
@@ -758,7 +769,5 @@ function isNowWithin(ev: EventItem, nowTs: number) { const s = new Date(ev.start
 function progressForEvent(ev: EventItem, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); if (!isFinite(s) || !isFinite(e) || e <= s) return 0; const p = (nowTs - s) / (e - s); return Math.max(0, Math.min(1, p)); }
 function remainingTime(ev: EventItem, nowTs: number) { const e = new Date(ev.end).getTime(); const diff = Math.max(0, e - nowTs); const m = Math.floor(diff / 60000); const s = Math.floor((diff % 60000) / 1000); return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; }
 
-
-    
 
     
