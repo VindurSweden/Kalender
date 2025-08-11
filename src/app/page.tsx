@@ -33,7 +33,7 @@ import { format as formatDateFns } from 'date-fns';
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
-import type { Event, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput, SingleCalendarOperationType } from '@/types/event';
+import type { Event, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, SingleCalendarOperationType } from '@/types/event';
 import { AiEventSchema as AiEvent } from '@/ai/schemas';
 import { parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, isSameDay } from '@/lib/date-utils';
 
@@ -379,7 +379,10 @@ export default function NPFScheduleApp({ params, searchParams }: NPFScheduleAppP
       <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         
-        <div className={`grid gap-4 mt-3 grid-cols-${orderedShowFor.length > 0 ? orderedShowFor.length : 1}`}>
+        <div 
+          className="grid gap-4 mt-3" 
+          style={{ gridTemplateColumns: `repeat(${orderedShowFor.length > 0 ? orderedShowFor.length : 1}, 1fr)` }}
+        >
           {columnsData.map(({ person, eventGrid }) => (
             <div key={person.id} className={`rounded-2xl p-1 md:p-2 border-t border-neutral-800 ${person.bg}`}>
               <div className="flex items-center gap-2 mb-2 select-none sticky top-[70px] bg-neutral-950/80 backdrop-blur-sm p-2 rounded-lg z-10" onPointerDown={()=>longPressFilter(person.id)}>
