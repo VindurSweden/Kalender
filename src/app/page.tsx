@@ -33,7 +33,8 @@ import { format as formatDateFns } from 'date-fns';
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
-import { Event, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput, AiEventType as AiEvent, SingleCalendarOperationType } from '@/types/event';
+import type { Event, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput, SingleCalendarOperationType } from '@/types/event';
+import { AiEventSchema as AiEvent } from '@/ai/schemas';
 import { parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, isSameDay } from '@/lib/date-utils';
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -176,10 +177,10 @@ type NPFScheduleAppProps = {
 
 export default function NPFScheduleApp({ params, searchParams }: NPFScheduleAppProps) {
   const [isClient, setIsClient] = useState(false);
-  const [people, setPeople] = useState<Person[]>([]);
-  const [events, setEvents] = useState<Event[]>([]);
+  const [people, setPeople] = useState<Person[]>(DEFAULT_PEOPLE);
+  const [events, setEvents] = useState<Event[]>(DEFAULT_EVENTS);
   const [date, setDate] = useState(() => new Date());
-  const [showFor, setShowFor] = useState<string[]>([]);
+  const [showFor, setShowFor] = useState<string[]>(DEFAULT_PEOPLE.slice(0, 2).map(p => p.id));
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [dark, setDark] = useState(true);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -278,59 +279,72 @@ export default function NPFScheduleApp({ params, searchParams }: NPFScheduleAppP
   }, [date, events, orderedShowFor, people, viewConfig, isClient]);
   
   // --- Event Handlers ---
-    const handleEventOperation = async (op: SingleCalendarOperationType, imageHint?: string): Promise<Event | null> => {
-        const { commandType, eventIdentifier, eventDetails } = op;
-        
-        if (commandType.toUpperCase() === 'CREATE' && eventDetails) {
-            const newStart = parseFlexibleSwedishDateString(eventDetails.dateQuery || '', new Date()) || date;
-            const newTime = parseFlexibleSwedishTimeString(eventDetails.timeQuery || '', newStart);
-            if(newTime) {
-                newStart.setHours(newTime.getHours(), newTime.getMinutes(), 0, 0);
-            }
+  const handleEventOperation = async (op: SingleCalendarOperationType, imageHint?: string): Promise<Event | null> => {
+      const { commandType, eventIdentifier, eventDetails } = op;
+      
+      if (commandType.toUpperCase() === 'CREATE' && eventDetails) {
+          const newStart = parseFlexibleSwedishDateString(eventDetails.dateQuery || '', new Date()) || date;
+          const newTime = parseFlexibleSwedishTimeString(eventDetails.timeQuery || '', newStart);
+          if(newTime) {
+              newStart.setHours(newTime.getHours(), newTime.getMinutes(), 0, 0);
+          }
 
-            const personId = people.find(p => p.name.toLowerCase() === (eventDetails.person?.toLowerCase() || ''))?.id || orderedShowFor[0] || people[0].id;
-            
-            const conflict = events.some(e => e.personId === personId && new Date(e.start).getTime() === newStart.getTime());
-            if (conflict) {
-                toast({ title: "Konflikt!", description: `Det finns redan en händelse för ${eventDetails.person || personId} vid denna tid.`, variant: "destructive" });
-                return null;
-            }
-            
-            try {
-              const title = eventDetails.title || 'AI Händelse';
-              const start = newStart.toISOString();
-              const end = new Date(newStart.getTime() + INCR * 60 * 1000).toISOString();
-              
-              let imageUrl: string | undefined = undefined;
-              if (title) {
-                try {
-                  const imageResult = await generateEventImage({ eventTitle: title, imageHint });
-                  imageUrl = imageResult.imageUrl;
-                } catch (err) { console.error("Image generation failed", err) }
-              }
+          // Fallback to first selected person if no person is specified in the instruction
+          const personName = eventDetails.person?.toLowerCase();
+          let personId = people.find(p => p.name.toLowerCase() === personName)?.id;
+          if (!personId && orderedShowFor.length > 0) {
+              personId = orderedShowFor[0];
+          } else if (!personId) {
+              personId = people[0]?.id; // Fallback to the very first person if no one is selected
+          }
 
-              const newEvent: Event = {
-                id: uid(),
-                title,
-                personId,
-                start,
-                end,
-                imageUrl,
-                challenge: eventDetails.description,
-                meta: { source: 'assistant' }
-              };
-              
-              setEvents(prev => [...prev, newEvent].sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime()));
-              return newEvent;
-
-            } catch (e) {
-              console.error("[AI Create] Error:", e);
-              toast({ title: "Internt Fel", description: "Kunde inte skapa händelse från AI instruktion.", variant: "destructive" });
+          if (!personId) {
+              toast({ title: "Ingen person vald", description: "Kan inte skapa en händelse utan att veta vem den är för.", variant: "destructive" });
               return null;
+          }
+          
+          const conflict = events.some(e => e.personId === personId && new Date(e.start).getTime() === newStart.getTime());
+          if (conflict) {
+              const personName = people.find(p => p.id === personId)?.name || personId;
+              toast({ title: "Konflikt!", description: `Det finns redan en händelse för ${personName} vid denna tid.`, variant: "destructive" });
+              return null;
+          }
+          
+          try {
+            const title = eventDetails.title || 'AI Händelse';
+            const start = newStart.toISOString();
+            const end = new Date(newStart.getTime() + INCR * 60 * 1000).toISOString();
+            
+            let imageUrl: string | undefined = undefined;
+            if (title) {
+              try {
+                const imageResult = await generateEventImage({ eventTitle: title, imageHint });
+                imageUrl = imageResult.imageUrl;
+              } catch (err) { console.error("Image generation failed", err) }
             }
-        }
-        // Lägg till MODIFY och DELETE här senare
-        return null;
+
+            const newEvent: Event = {
+              id: uid(),
+              title,
+              personId,
+              start,
+              end,
+              imageUrl,
+              challenge: eventDetails.description,
+              meta: { source: 'assistant' }
+            };
+            
+            setEvents(prev => [...prev, newEvent].sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime()));
+            return newEvent;
+
+          } catch (e) {
+            console.error("[AI Create] Error:", e);
+            toast({ title: "Internt Fel", description: "Kunde inte skapa händelse från AI instruktion.", variant: "destructive" });
+            return null;
+          }
+      }
+      // Lägg till MODIFY och DELETE här senare
+      return null;
   };
 
   const handleGenerateImage = async (event: Event) => {
@@ -365,7 +379,7 @@ export default function NPFScheduleApp({ params, searchParams }: NPFScheduleAppP
       <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         
-        <div className={`grid gap-4 mt-3 grid-cols-${orderedShowFor.length > 0 ? orderedShowFor.length : 1} md:grid-cols-${orderedShowFor.length > 0 ? Math.min(orderedShowFor.length, 2) : 1} lg:grid-cols-${orderedShowFor.length > 0 ? Math.min(orderedShowFor.length, 3) : 1}`}>
+        <div className={`grid gap-4 mt-3 grid-cols-${orderedShowFor.length > 0 ? orderedShowFor.length : 1}`}>
           {columnsData.map(({ person, eventGrid }) => (
             <div key={person.id} className={`rounded-2xl p-1 md:p-2 border-t border-neutral-800 ${person.bg}`}>
               <div className="flex items-center gap-2 mb-2 select-none sticky top-[70px] bg-neutral-950/80 backdrop-blur-sm p-2 rounded-lg z-10" onPointerDown={()=>longPressFilter(person.id)}>
@@ -484,7 +498,7 @@ function EventCard({ person, ev, onDelete, onComplete, onPickTimer, onGenerate, 
               }
             }}>
             {ev.imageUrl ? <img src={ev.imageUrl} alt={ev.title} className="w-full h-full object-cover" /> :
-              <div className="w-full h-full flex items-center justify-center">
+              <div className="w-full h-full flex items-center justify-center hover:bg-neutral-700 transition-colors">
                 {ev.meta?.synthetic ? (
                   <div className="text-neutral-500 text-sm">(Assistentfyllt)</div>
                 ) : (
@@ -553,7 +567,7 @@ const AssistantPanel: FC<{ open: boolean; onClose: () => void; events: Event[]; 
     setMessages(prev => [...prev, { id: thinkingMessageId, sender: 'ai', text: "Assistenten tänker...", isProcessing: true }]);
 
     const mainLogic = async () => {
-      const simplifiedEventsForAIContext: AiEvent[] = events.map(e => ({ title: e.title, date: e.start.slice(0, 10), startTime: e.start.slice(11, 16) }));
+      const simplifiedEventsForAIContext = events.map(e => ({ title: e.title, date: e.start.slice(0, 10), startTime: e.start.slice(11, 16) }));
       const conversationHistoryForAI: { sender: 'user' | 'ai'; text: string }[] = messages.filter(msg => msg.id !== thinkingMessageId && (msg.sender === 'user' || msg.sender === 'ai')).map(msg => ({ sender: msg.sender as 'user' | 'ai', text: msg.text })).slice(-10);
 
       const tolkInput: TolkAIInput = {
