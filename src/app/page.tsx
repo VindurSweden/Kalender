@@ -18,6 +18,7 @@ import {
   Send,
   Loader2,
   Repeat,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,13 +26,14 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { format as formatDateFns } from 'date-fns';
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
-import type { Event, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput, AiEventType as AiEvent } from '@/types/event';
+import type { Event, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput, AiEventType as AiEvent, SingleCalendarOperationType } from '@/types/event';
 import { parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, isSameDay } from '@/lib/date-utils';
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -64,8 +66,8 @@ async function boom() {
 }
 
 const DEFAULT_PEOPLE: Person[] = [
-  { id: "gabriel", name: "Gabriel", color: "#5B9BFF", bg: "bg-blue-600/40", speak: true },
   { id: "leia", name: "Leia", color: "#F28CB2", bg: "bg-pink-600/40", speak: true },
+  { id: "gabriel", name: "Gabriel", color: "#5B9BFF", bg: "bg-blue-600/40", speak: true },
   { id: "pappa", name: "Pappa", color: "#8AE68C", bg: "bg-green-600/40" },
   { id: "mamma", name: "Mamma", color: "#C9A7FF", bg: "bg-purple-600/40" },
 ];
@@ -76,13 +78,14 @@ const DEFAULT_EVENTS: Event[] = [
     { id: uid(), title: "Borsta tänderna", personId: "gabriel", start: `${todayISO()}T07:30:00`, end: `${todayISO()}T07:45:00`, challenge: "Klar innan timern tar slut" },
     
     // Leia's detailed morning
-    { id: uid(), title: "Vakna", personId: "leia", start: `${todayISO()}T07:00:00`, end: `${todayISO()}T07:05:00` },
-    { id: uid(), title: "Gå på toa", personId: "leia", start: `${todayISO()}T07:05:00`, end: `${todayISO()}T07:10:00` },
-    { id: uid(), title: "Klä på dig", personId: "leia", start: `${todayISO()}T07:10:00`, end: `${todayISO()}T07:20:00` },
-    { id: uid(), title: "Äta frukost", personId: "leia", start: `${todayISO()}T07:20:00`, end: `${todayISO()}T07:40:00` },
+    { id: uid(), title: "Vakna & klä på dig", personId: "leia", start: `${todayISO()}T07:00:00`, end: `${todayISO()}T07:10:00` },
+    { id: uid(), title: "Gå på toa", personId: "leia", start: `${todayISO()}T07:10:00`, end: `${todayISO()}T07:15:00` },
+    { id: uid(), title: "Äta frukost", personId: "leia", start: `${todayISO()}T07:15:00`, end: `${todayISO()}T07:35:00` },
+    { id: uid(), title: "Medicin", personId: "leia", start: `${todayISO()}T07:35:00`, end: `${todayISO()}T07:40:00` },
     { id: uid(), title: "Borsta tänderna", personId: "leia", start: `${todayISO()}T07:40:00`, end: `${todayISO()}T07:45:00` },
-    { id: uid(), title: "Ta på skor & jacka", personId: "leia", start: `${todayISO()}T07:45:00`, end: `${todayISO()}T07:50:00` },
-    { id: uid(), title: "Gå till skolan", personId: "leia", start: `${todayISO()}T07:50:00`, end: `${todayISO()}T08:00:00` },
+    { id: uid(), title: "Packa väskan", personId: "leia", start: `${todayISO()}T07:45:00`, end: `${todayISO()}T07:50:00` },
+    { id: uid(), title: "Ta på skor & jacka", personId: "leia", start: `${todayISO()}T07:50:00`, end: `${todayISO()}T07:55:00` },
+    { id: uid(), title: "Gå till skolan", personId: "leia", start: `${todayISO()}T07:55:00`, end: `${todayISO()}T08:00:00` },
     { id: uid(), title: "I skolan", personId: "leia", start: `${todayISO()}T08:00:00`, end: `${todayISO()}T13:30:00` },
     { id: uid(), title: "Åka till träning", personId: "leia", start: `${todayISO()}T16:00:00`, end: `${todayISO()}T17:30:00` },
     
@@ -214,7 +217,7 @@ export default function NPFScheduleApp() {
 
   // --- View Logic ---
   const columnsData = useMemo(() => {
-    const dayEvents = events.filter(e => isSameDay(new Date(e.start), date) && (orderedShowFor.includes(e.personId) || e.isFamily));
+    const dayEvents = events.filter(e => isSameDay(new Date(e.start), date) && (orderedShowFor.includes(e.personId) || (e.isFamily && orderedShowFor.length > 0)));
     
     // Create a set of all unique start times from all visible events
     const allStartTimes = [...new Set(dayEvents.map(e => new Date(e.start).getTime()))].sort();
@@ -224,7 +227,7 @@ export default function NPFScheduleApp() {
     
     return orderedShowFor.map(personId => {
       const person = people.find(p => p.id === personId)!;
-      let personEventsToday = events.filter(e => isSameDay(new Date(e.start), date) && (e.personId === personId || (e.isFamily && e.personId === 'family')));
+      let personEventsToday = events.filter(e => isSameDay(new Date(e.start), date) && (e.personId === personId || (e.isFamily && e.personId === 'family' && orderedShowFor.includes(personId))));
 
       if (viewConfig.assistant.enableDayFill) {
           personEventsToday = synthesizeDayFill(personEventsToday, personId, date, viewConfig);
@@ -261,53 +264,59 @@ export default function NPFScheduleApp() {
   }, [date, events, orderedShowFor, people, viewConfig]);
   
   // --- Event Handlers ---
-  const handleCreateEvent = async (eventDetails: any, imageHint?: string): Promise<Event | null> => {
-    const newStart = new Date(parseFlexibleSwedishDateString(eventDetails.dateQuery, new Date()) || date);
-    const newTime = parseFlexibleSwedishTimeString(eventDetails.timeQuery, newStart);
-    if(newTime) {
-      newStart.setHours(newTime.getHours(), newTime.getMinutes());
-    }
+    const handleEventOperation = async (op: SingleCalendarOperationType, imageHint?: string): Promise<Event | null> => {
+        const { commandType, eventIdentifier, eventDetails } = op;
+        
+        if (commandType.toUpperCase() === 'CREATE' && eventDetails) {
+            const newStart = parseFlexibleSwedishDateString(eventDetails.dateQuery || '', new Date()) || date;
+            const newTime = parseFlexibleSwedishTimeString(eventDetails.timeQuery || '', newStart);
+            if(newTime) {
+                newStart.setHours(newTime.getHours(), newTime.getMinutes(), 0, 0);
+            }
 
-    const personId = people.find(p => p.name.toLowerCase() === (eventDetails.person?.toLowerCase() || ''))?.id || people[0].id;
-    
-    const conflict = events.some(e => e.personId === personId && new Date(e.start).getTime() === newStart.getTime());
-    if (conflict) {
-        toast({ title: "Konflikt!", description: `Det finns redan en händelse för ${eventDetails.person || personId} vid denna tid.`, variant: "destructive" });
+            const personId = people.find(p => p.name.toLowerCase() === (eventDetails.person?.toLowerCase() || ''))?.id || orderedShowFor[0] || people[0].id;
+            
+            const conflict = events.some(e => e.personId === personId && new Date(e.start).getTime() === newStart.getTime());
+            if (conflict) {
+                toast({ title: "Konflikt!", description: `Det finns redan en händelse för ${eventDetails.person || personId} vid denna tid.`, variant: "destructive" });
+                return null;
+            }
+            
+            try {
+              const title = eventDetails.title || 'AI Händelse';
+              const start = newStart.toISOString();
+              const end = new Date(newStart.getTime() + INCR * 60 * 1000).toISOString();
+              
+              let imageUrl: string | undefined = undefined;
+              if (title) {
+                try {
+                  const imageResult = await generateEventImage({ eventTitle: title, imageHint });
+                  imageUrl = imageResult.imageUrl;
+                } catch (err) { console.error("Image generation failed", err) }
+              }
+
+              const newEvent: Event = {
+                id: uid(),
+                title,
+                personId,
+                start,
+                end,
+                imageUrl,
+                challenge: eventDetails.description,
+                meta: { source: 'assistant' }
+              };
+              
+              setEvents(prev => [...prev, newEvent].sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime()));
+              return newEvent;
+
+            } catch (e) {
+              console.error("[AI Create] Error:", e);
+              toast({ title: "Internt Fel", description: "Kunde inte skapa händelse från AI instruktion.", variant: "destructive" });
+              return null;
+            }
+        }
+        // Lägg till MODIFY och DELETE här senare
         return null;
-    }
-    
-    try {
-      const title = eventDetails.title || 'AI Händelse';
-      const start = newStart.toISOString();
-      const end = new Date(newStart.getTime() + INCR * 60 * 1000).toISOString();
-      
-      let imageUrl: string | undefined = undefined;
-      if (title) {
-        try {
-          const imageResult = await generateEventImage({ eventTitle: title, imageHint });
-          imageUrl = imageResult.imageUrl;
-        } catch (err) { console.error("Image generation failed", err) }
-      }
-
-      const newEvent: Event = {
-        id: uid(),
-        title,
-        personId,
-        start,
-        end,
-        imageUrl,
-        challenge: eventDetails.description,
-        meta: { source: 'assistant' }
-      };
-      
-      setEvents(prev => [...prev, newEvent].sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime()));
-      return newEvent;
-
-    } catch (e) {
-      console.error("[AI Create] Error:", e);
-      toast({ title: "Internt Fel", description: "Kunde inte skapa händelse från AI instruktion.", variant: "destructive" });
-      return null;
-    }
   };
 
   const handleGenerateImage = async (event: Event) => {
@@ -338,7 +347,7 @@ export default function NPFScheduleApp() {
       <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         
-        <div className={`grid gap-4 mt-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-${orderedShowFor.length > 2 ? 3 : orderedShowFor.length}`}>
+        <div className={`grid gap-4 mt-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-${orderedShowFor.length > 3 ? 3 : orderedShowFor.length}`}>
           {columnsData.map(({ person, eventGrid }) => (
             <div key={person.id} className={`rounded-2xl p-1 md:p-2 border-t border-neutral-800 ${person.bg}`}>
               <div className="flex items-center gap-2 mb-2 select-none sticky top-[70px] bg-neutral-950/80 backdrop-blur-sm p-2 rounded-lg z-10" onPointerDown={()=>longPressFilter(person.id)}>
@@ -375,7 +384,7 @@ export default function NPFScheduleApp() {
           )}
         </div>
       </main>
-      <AssistantPanel open={assistantOpen} onClose={() => setAssistantOpen(false)} events={events} onAiCreateEvent={handleCreateEvent} />
+      <AssistantPanel open={assistantOpen} onClose={() => setAssistantOpen(false)} events={events} onAiAction={handleEventOperation} />
     </div>
   );
 }
@@ -453,8 +462,16 @@ function EventCard({ person, ev, onDelete, onComplete, onPickTimer, onGenerate, 
           <div className="absolute inset-0 w-full h-full bg-neutral-800">
             {ev.imageUrl ? <img src={ev.imageUrl} alt={ev.title} className="w-full h-full object-cover" /> :
               <div className="w-full h-full flex items-center justify-center">
-                {ev.meta?.synthetic ? <div className="text-neutral-500 text-sm">(Assistentfyllt)</div> : <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={(e) => { e.stopPropagation(); onGenerate(ev); }}>Skapa bild</Button>}
-              </div>}
+                {ev.meta?.synthetic ? (
+                  <div className="text-neutral-500 text-sm">(Assistentfyllt)</div>
+                ) : (
+                  <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={(e) => { e.stopPropagation(); onGenerate(ev); }}>
+                    <ImageIcon className="mr-2 h-4 w-4" />
+                    Skapa bild
+                  </Button>
+                )}
+              </div>
+            }
           </div>
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 flex flex-col justify-end">
             <div className={`font-semibold text-white ${showSimple ? 'text-base' : 'text-xl'}`} style={{textShadow: '2px 2px 4px rgba(0,0,0,0.8)'}}>
@@ -490,7 +507,7 @@ function EventCard({ person, ev, onDelete, onComplete, onPickTimer, onGenerate, 
 }
 
 const AI_PROCESS_TIMEOUT = 30000;
-const AssistantPanel: FC<{ open: boolean; onClose: () => void; events: Event[]; onAiCreateEvent: (eventDetails: any, imageHint?: string) => Promise<Event | null>; }> = ({ open, onClose, events, onAiCreateEvent }) => {
+const AssistantPanel: FC<{ open: boolean; onClose: () => void; events: Event[]; onAiAction: (op: SingleCalendarOperationType, imageHint?: string) => Promise<Event | null>; }> = ({ open, onClose, events, onAiAction }) => {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -536,12 +553,14 @@ const AssistantPanel: FC<{ open: boolean; onClose: () => void; events: Event[]; 
         setMessages(prev => prev.filter(m => m.sender !== 'planStep'));
 
         if (formatterResponse.operations && formatterResponse.operations.length > 0) {
-          addMessage('systemInfo', "Startar exekvering av plan...");
-          for (const op of formatterResponse.operations) { // Allow multiple operations
-            if (op.commandType.toUpperCase() === 'CREATE' && op.eventDetails) {
-              const created = await onAiCreateEvent(op.eventDetails, tolkResponse.imageHint);
-              if (created) { addMessage('systemInfo', `✅ Händelse "${created.title}" skapad.`); boom(); }
-              else { addMessage('systemInfo', `⚠️ Misslyckades skapa händelse.`, {isError: true}); }
+          addMessage('systemInfo', `Startar exekvering av ${formatterResponse.operations.length} åtgärd(er)...`);
+          for (const op of formatterResponse.operations) {
+            const created = await onAiAction(op, tolkResponse.imageHint);
+            if (created) { 
+              addMessage('systemInfo', `✅ Händelse "${created.title}" skapad.`);
+              boom();
+            } else { 
+              addMessage('systemInfo', `⚠️ Misslyckades med åtgärd: ${op.commandType}`, {isError: true});
             }
           }
         } else {
@@ -558,7 +577,7 @@ const AssistantPanel: FC<{ open: boolean; onClose: () => void; events: Event[]; 
   return (
     <AnimatePresence>
       {open && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} transition={{ ease: "easeInOut", duration: 0.3 }} className="fixed bottom-0 left-0 right-0 z-50 md:bottom-4 md:right-4 md:left-auto md:w-[380px] md:max-w-[92vw]">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} transition={{ ease: "easeInOut", duration: 0.3 }} className="fixed bottom-0 left-0 right-0 z-50 md:bottom-4 md:right-4 md:left-auto w-full md:w-[380px] md:max-w-[92vw]">
           <Card className="bg-neutral-900/90 backdrop-blur-lg border-neutral-800 shadow-xl flex flex-col h-[85vh] md:h-[60vh] rounded-b-none md:rounded-b-lg">
             <CardHeader className="pb-2 flex-shrink-0"><CardTitle className="text-sm tracking-tight flex items-center gap-2"><Bot className="w-5 h-5" /> Assistent</CardTitle></CardHeader>
             <ScrollArea className="flex-grow p-4" ref={scrollAreaRef}>
@@ -576,7 +595,7 @@ const AssistantPanel: FC<{ open: boolean; onClose: () => void; events: Event[]; 
             </ScrollArea>
             <div className="p-4 border-t border-neutral-800 flex-shrink-0">
               <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="flex w-full items-center space-x-2">
-                <Input type="text" placeholder="Skriv till assistenten..." value={input} onChange={(e) => setInput(e.target.value)} disabled={isProcessing} className="flex-1 bg-neutral-800 border-neutral-700 text-sm md:text-base" />
+                <Textarea placeholder="Skriv till assistenten..." value={input} onChange={(e) => setInput(e.target.value)} disabled={isProcessing} className="flex-1 bg-neutral-800 border-neutral-700 text-sm md:text-base min-h-0" rows={1} />
                 <Button type="submit" size="icon" disabled={isProcessing || input.trim() === ''}><Send className="h-4 w-4" /></Button>
               </form>
             </div>
@@ -587,12 +606,11 @@ const AssistantPanel: FC<{ open: boolean; onClose: () => void; events: Event[]; 
   );
 }
 
+
 function MoonToggle({ dark, setDark }: any) { return (<label className="flex items-center gap-2 text-sm cursor-pointer"><span className="opacity-70">Mörkt läge</span><Switch checked={dark} onCheckedChange={setDark} /></label>); }
 function fmtTime(iso: string | number | undefined) { if (!iso) return ""; try { const d = new Date(iso); return d.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } }
 function isNowWithin(ev: Event, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); return nowTs >= s && nowTs <= e; }
 function progressForEvent(ev: Event, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); if (!isFinite(s) || !isFinite(e) || e <= s) return 0; const p = (nowTs - s) / (e - s); return Math.max(0, Math.min(1, p)); }
 function remainingTime(ev: Event, nowTs: number) { const e = new Date(ev.end).getTime(); const diff = Math.max(0, e - nowTs); const m = Math.floor(diff / 60000); const s = Math.floor((diff % 60000) / 1000); return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; }
-
-    
 
     
