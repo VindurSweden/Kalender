@@ -25,14 +25,13 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { format as formatDateFns } from 'date-fns';
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
 import type { EventItem, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput, AiEvent } from '@/types/event';
-import { parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, formatInputDate, formatInputTime, isSameDay } from '@/lib/date-utils';
+import { parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, isSameDay } from '@/lib/date-utils';
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -135,8 +134,8 @@ export default function NPFScheduleApp() {
       if (identifier.timeQuery) {
           const refTime = parseFlexibleSwedishTimeString(identifier.timeQuery, new Date());
           if(refTime) {
-            const timeStr = formatInputTime(refTime);
-            potentialEvents = potentialEvents.filter(e => formatInputTime(new Date(e.start)) === timeStr);
+            const timeStr = new Date(refTime).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+            potentialEvents = potentialEvents.filter(e => new Date(e.start).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' }) === timeStr);
           }
       }
       if (potentialEvents.length > 1) {
@@ -186,7 +185,7 @@ export default function NPFScheduleApp() {
         challenge: eventDetails.description,
       };
       
-      setEvents(prev => [...prev, newEvent]);
+      setEvents(prev => [...prev, newEvent].sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime()));
       return newEvent;
 
     } catch (e) {
@@ -215,7 +214,7 @@ export default function NPFScheduleApp() {
       if(parsed) newDate = parsed;
     }
     if (eventDetails.timeQuery) {
-      const parsed = parseFlexibleSwedishTimeString(eventDetails.timeQuery, newDate);
+      const parsed = parseFlexibleSwedishTimeString(eventDetails.timeQuery, new Date(newDate));
       if (parsed) newDate = parsed;
     }
 
@@ -233,7 +232,7 @@ export default function NPFScheduleApp() {
         } catch (err) { console.error("Image regeneration failed", err) }
     }
 
-    setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
+    setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e).sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime()));
     return updatedEvent;
   };
   
@@ -282,20 +281,14 @@ export default function NPFScheduleApp() {
     }
   }, [dark]);
 
-  // Block-based time synchronization
   const timeSlots = useMemo(() => {
-      // 1. Get all events for the selected people on the current date
-      const todaysEvents = events.filter(ev => 
-          (orderedShowFor.includes(ev.personId) || (ev.isFamily && orderedShowFor.length > 0)) && 
-          inView(ev, date, 'day')
-      );
-      
-      // 2. Sort them by start time
-      todaysEvents.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
-
-      // 3. Get the first 5 unique start times
-      const uniqueStartTimes = [...new Set(todaysEvents.map(e => e.start))];
-      return uniqueStartTimes.slice(0, 5);
+    const todaysEvents = events.filter(ev =>
+      (orderedShowFor.includes(ev.personId) || (ev.isFamily && orderedShowFor.length > 0)) &&
+      isSameDay(new Date(ev.start), date)
+    );
+    todaysEvents.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+    const uniqueStartTimes = [...new Set(todaysEvents.map(e => e.start))];
+    return uniqueStartTimes.slice(0, 5);
   }, [events, date, orderedShowFor]);
 
 
@@ -310,7 +303,7 @@ export default function NPFScheduleApp() {
       <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         
-        <div className="grid gap-4 mt-3" style={{ gridTemplateColumns: `repeat(${orderedShowFor.length > 2 ? 2 : orderedShowFor.length > 0 ? orderedShowFor.length : 1}, minmax(0, 1fr))` }}>
+        <div className={`grid gap-4 mt-3 grid-cols-1 ${orderedShowFor.length > 1 ? 'md:grid-cols-2' : ''} ${orderedShowFor.length > 2 ? 'lg:grid-cols-2' : ''}`}>
           {orderedShowFor.map(pid => {
             const person = people.find(p => p.id === pid);
             if (!person) return null;
@@ -355,7 +348,6 @@ export default function NPFScheduleApp() {
     </div>
   );
 }
-
 
 function Header({ date, shift, dark, setDark, assistantOpen, setAssistantOpen }: any) {
   const dstr = date.toLocaleDateString("sv-SE", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
@@ -420,8 +412,14 @@ function Column({ person, events, onGenerate, onDelete, onComplete, onPickTimer,
   const cancelLP = () => { if(downRef.current) clearTimeout(downRef.current); };
   
   const personEventsForDay = useMemo(() => {
-    return events.filter((ev: EventItem) => (ev.personId === person.id || (ev.isFamily && person.id !== 'family')) && inView(ev, currentDate, "day"));
+    return events.filter((ev: EventItem) => (ev.personId === person.id || (ev.isFamily && person.id !== 'family')) && isSameDay(new Date(ev.start), currentDate));
   }, [events, person.id, currentDate]);
+
+  const eventMap = useMemo(() => {
+    const map = new Map<string, EventItem>();
+    personEventsForDay.forEach(ev => map.set(ev.start, ev));
+    return map;
+  }, [personEventsForDay]);
 
   return (
     <div className={`rounded-2xl p-1 md:p-2 border-t border-neutral-800 ${person.bg}`}>
@@ -430,43 +428,37 @@ function Column({ person, events, onGenerate, onDelete, onComplete, onPickTimer,
         <div className="font-semibold">{person.name}</div>
       </div>
         <div className="space-y-3 relative">
-            {timeSlots.length > 0 ? (
-                timeSlots.map((slotTime: string) => {
-                    const eventInSlot = personEventsForDay.find(ev => ev.start === slotTime);
-                    
-                    if (eventInSlot) {
-                        return (
-                            <EventCard 
-                                key={eventInSlot.id}
-                                person={person} 
-                                ev={eventInSlot} 
-                                {...{ onGenerate, onDelete, onComplete, onPickTimer, selectedEventId, setSelectedEventId, runningId, now, showSimple }}
-                            />
-                        );
-                    }
-                    // Render an empty placeholder block
-                    return <div key={`${person.id}-${slotTime}-empty`} className="h-40 rounded-xl bg-neutral-900/10" />;
-                })
-            ) : (
-                <div className="text-center p-10 text-neutral-500 text-sm">
-                    Inga händelser planerade idag.
-                </div>
-            )}
+            {timeSlots.map((slotTime: string, index: number) => {
+              const eventInSlot = eventMap.get(slotTime);
+              if (eventInSlot) {
+                return (
+                  <EventCard 
+                      key={eventInSlot.id}
+                      person={person} 
+                      ev={eventInSlot} 
+                      {...{ onGenerate, onDelete, onComplete, onPickTimer, selectedEventId, setSelectedEventId, runningId, now, showSimple }}
+                  />
+                );
+              }
+              return <div key={`${person.id}-${slotTime}-empty`} className="h-40 rounded-xl bg-neutral-900/10" />;
+            })}
+            {(timeSlots.length < 5) && Array.from({ length: 5 - timeSlots.length }).map((_, i) => (
+              <div key={`placeholder-${i}`} className="h-40 rounded-xl bg-neutral-900/10" />
+            ))}
         </div>
-      <Button size="sm" variant="secondary" className="bg-neutral-900/60 hover:bg-neutral-800 w-full mt-3">
-        <Plus className="w-4 h-4 mr-2" />Lägg till (TBD)
-      </Button>
     </div>
   );
 }
 
 
-function EventCard({ person, ev, onGenerate, onDelete, onComplete, onPickTimer, selected, onSelect, running, now, showSimple }: any) {
+function EventCard({ person, ev, onGenerate, onDelete, onComplete, onPickTimer, runningId, now, showSimple }: any) {
   const from = fmtTime(ev.start);
   const to = fmtTime(ev.end);
   const activeNow = isNowWithin(ev, now);
   const p = progressForEvent(ev, now);
   const remaining = remainingTime(ev, now);
+
+  const isTimerRunning = runningId === ev.id;
 
   return (
     <motion.div 
@@ -476,7 +468,7 @@ function EventCard({ person, ev, onGenerate, onDelete, onComplete, onPickTimer, 
       exit={{ opacity: 0, y: -6 }}
       className="h-full"
       >
-      <div onClick={onSelect} className={`group rounded-xl overflow-hidden border bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-white/20 h-full flex flex-col ${selected ? "ring-2 ring-white/30" : ""} ${activeNow ? "border-amber-500/70" : "border-neutral-800"}`}>
+      <div className={`group rounded-xl overflow-hidden border bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-white/20 h-full flex flex-col ${activeNow ? "border-amber-500/70" : "border-neutral-800"}`}>
         <div className="relative flex-grow h-40">
           <div className="absolute inset-0 w-full h-full bg-neutral-800">
             {ev.imageUrl ? <img src={ev.imageUrl} alt={ev.title} className="w-full h-full object-cover" /> :
@@ -485,11 +477,9 @@ function EventCard({ person, ev, onGenerate, onDelete, onComplete, onPickTimer, 
               </div>}
           </div>
            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 flex flex-col justify-end">
-               <div className="flex items-start gap-2">
-                 <div className="font-semibold text-xl text-white" style={{textShadow: '2px 2px 4px rgba(0,0,0,0.8)'}}>{ev.title}</div>
-               </div>
+               <div className="font-semibold text-xl text-white" style={{textShadow: '2px 2px 4px rgba(0,0,0,0.8)'}}>{ev.title}</div>
            </div>
-           {(running || activeNow) && (
+           {(isTimerRunning || activeNow) && (
               <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                 <div className="rounded-full bg-black/40 p-3 backdrop-blur">
                   <svg width="84" height="84" viewBox="0 0 100 100" className="block"><circle cx="50" cy="50" r="42" stroke="rgba(255,255,255,0.2)" strokeWidth="8" fill="none" /><circle cx="50" cy="50" r="42" stroke="white" strokeWidth="8" fill="none" strokeDasharray={2 * Math.PI * 42} strokeDashoffset={(1 - p) * (2 * Math.PI * 42)} strokeLinecap="round" /></svg>
@@ -508,7 +498,7 @@ function EventCard({ person, ev, onGenerate, onDelete, onComplete, onPickTimer, 
           
           {(!showSimple || showSimple.length <= 1) && (
             <div className="flex items-center gap-2 mt-3">
-              <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={(e) => { e.stopPropagation(); onPickTimer(ev.id); }}><TimerIcon className="w-4 h-4 mr-2" />Starta timer</Button>
+              <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={(e) => { e.stopPropagation(); onPickTimer(isTimerRunning ? null : ev.id); }}><TimerIcon className="w-4 h-4 mr-2" />{isTimerRunning ? "Stoppa" : "Starta"} timer</Button>
               <Button size="sm" className="bg-green-700 hover:bg-green-600" onClick={(e) => { e.stopPropagation(); onComplete(ev.id); }}><Play className="w-4 h-4 mr-2" />Markera klart</Button>
             </div>
           )}
@@ -530,7 +520,7 @@ const AssistantPanel: FC<{
   onAiCreateEvent: (eventDetails: any, imageHint?: string) => Promise<EventItem | null>;
   onAiModifyEvent: (eventIdentifier: any, eventDetails: any, imageHint?: string) => Promise<EventItem | null>;
   onAiDeleteEvent: (eventIdentifier: any) => Promise<string | null>;
-}> = ({ open, onClose, people, events, onAiCreateEvent, onAiModifyEvent, onAiDeleteEvent }) => {
+}> = ({ open, onClose, events, onAiCreateEvent, onAiModifyEvent, onAiDeleteEvent }) => {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [input, setInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -589,14 +579,17 @@ const AssistantPanel: FC<{
           addMessage('ai', tolkResponse.clarificationQuestion, { isError: true });
         }
       } else if (tolkResponse.planDescription) {
-        addMessage('planStep', `Bearbetar plan...`, { isProcessing: true });
+        const planMessageId = uid();
+        addMessage('planStep', `Bearbetar plan...`, { id: planMessageId, isProcessing: true });
         
         const formatterResponse: FormatPlanOutput = await formatPlan({ planDescription: tolkResponse.planDescription, currentDate: formatDateFns(new Date(), 'yyyy-MM-dd') });
-        setMessages(prev => prev.filter(msg => !(msg.sender === 'planStep' && msg.isProcessing)));
+        setMessages(prev => prev.filter(msg => msg.id !== planMessageId));
 
         if (formatterResponse.operations && formatterResponse.operations.length > 0) {
-          addMessage('systemInfo', "Startar exekvering av plan...");
+          const execMessageId = uid();
+          addMessage('systemInfo', "Startar exekvering av plan...", { id: execMessageId });
           
+          let outcomes = [];
           for (const operation of formatterResponse.operations.slice(0, 1)) {
             let outcomeMessage = "";
             let success = false;
@@ -631,10 +624,13 @@ const AssistantPanel: FC<{
                   outcomeMessage = `⚠️ Okänd åtgärd från AI: ${operation.commandType}`;
                   break;
             }
-            if(outcomeMessage) addMessage('systemInfo', outcomeMessage, { isError: !success });
-             if (formatterResponse.operations.length > 1) {
-              addMessage('systemInfo', `ℹ️ Notis: AI:n föreslog ${formatterResponse.operations.length} åtgärder. Jag utförde endast den första.`);
-            }
+            if(outcomeMessage) outcomes.push({text: outcomeMessage, success});
+          }
+          setMessages(prev => prev.filter(msg => msg.id !== execMessageId));
+          outcomes.forEach(o => addMessage('systemInfo', o.text, {isError: !o.success}));
+
+          if (formatterResponse.operations.length > 1) {
+            addMessage('systemInfo', `ℹ️ Notis: AI:n föreslog ${formatterResponse.operations.length} åtgärder. Jag utförde endast den första.`);
           }
         } else {
             addMessage('systemInfo', "⚠️ AI:n kunde inte skapa några åtgärder från planen.", {isError: true});
@@ -714,7 +710,6 @@ const AssistantPanel: FC<{
 function MoonToggle({ dark, setDark }: any) { return (<label className="flex items-center gap-2 text-sm cursor-pointer"><span className="opacity-70">Mörkt läge</span><Switch checked={dark} onCheckedChange={setDark} /></label>); }
 
 function fmtTime(iso: string | number | undefined) { if (!iso) return ""; try { const d = new Date(iso); return d.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } }
-function inView(ev: EventItem, currentDate: Date, view: 'day' | 'week' | 'all') { if (view === 'all') return true; const d = new Date(ev.start || Date.now()); return isSameDay(d, currentDate); }
 function isNowWithin(ev: EventItem, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); return nowTs >= s && nowTs <= e; }
 function progressForEvent(ev: EventItem, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); if (!isFinite(s) || !isFinite(e) || e <= s) return 0; const p = (nowTs - s) / (e - s); return Math.max(0, Math.min(1, p)); }
 function remainingTime(ev: EventItem, nowTs: number) { const e = new Date(ev.end).getTime(); const diff = Math.max(0, e - nowTs); const m = Math.floor(diff / 60000); const s = Math.floor((diff % 60000) / 1000); return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; }
