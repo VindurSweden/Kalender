@@ -314,7 +314,7 @@ export default function NPFScheduleApp() {
       <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         
-        <div className={`grid gap-4 mt-3 grid-cols-1 ${orderedShowFor.length > 1 ? 'md:grid-cols-2' : ''}`}>
+        <div className={`grid gap-4 mt-3 grid-cols-${orderedShowFor.length}`}>
           {columnsData.map(({ person, eventGrid }) => (
             <div key={person.id} className={`rounded-2xl p-1 md:p-2 border-t border-neutral-800 ${person.bg}`}>
               <div className="flex items-center gap-2 mb-2 select-none sticky top-[70px] bg-neutral-950/80 backdrop-blur-sm p-2 rounded-lg z-10" onPointerDown={()=>longPressFilter(person.id)}>
@@ -432,9 +432,9 @@ function EventCard({ person, ev, onDelete, onComplete, onPickTimer, runningId, n
               </div>}
           </div>
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 flex flex-col justify-end">
-            <div className="font-semibold text-xl text-white flex items-center gap-2" style={{textShadow: '2px 2px 4px rgba(0,0,0,0.8)'}}>
+            <div className={`font-semibold text-white ${showSimple ? 'text-base' : 'text-xl'}`} style={{textShadow: '2px 2px 4px rgba(0,0,0,0.8)'}}>
               {displayTitle}
-              {ev.meta?.isContinuation && <Repeat className="w-4 h-4 text-white/70" title="Pågående aktivitet" />}
+              {ev.meta?.isContinuation && <Repeat className="w-4 h-4 text-white/70 inline-block ml-1" title="Pågående aktivitet" />}
             </div>
           </div>
           {(isTimerRunning || activeNow) && (
@@ -451,7 +451,7 @@ function EventCard({ person, ev, onDelete, onComplete, onPickTimer, runningId, n
           </div>
           {ev.challenge && <div className="text-sm mt-1 opacity-80 px-2 py-0.5 rounded-full bg-neutral-800 border border-neutral-700 inline-block">Utmaning: {ev.challenge}</div>}
           
-          {(!showSimple || !ev.meta?.synthetic) && (
+          {!showSimple && (
             <div className="flex items-center gap-2 mt-3">
               <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={(e) => { e.stopPropagation(); onPickTimer(isTimerRunning ? null : ev.id); }}><TimerIcon className="w-4 h-4 mr-2" />{isTimerRunning ? "Stoppa" : "Starta"} timer</Button>
               <Button size="sm" className="bg-green-700 hover:bg-green-600" onClick={(e) => { e.stopPropagation(); onComplete(ev.id); }}><Play className="w-4 h-4 mr-2" />Markera klart</Button>
@@ -567,3 +567,5 @@ function fmtTime(iso: string | number | undefined) { if (!iso) return ""; try { 
 function isNowWithin(ev: Event, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); return nowTs >= s && nowTs <= e; }
 function progressForEvent(ev: Event, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); if (!isFinite(s) || !isFinite(e) || e <= s) return 0; const p = (nowTs - s) / (e - s); return Math.max(0, Math.min(1, p)); }
 function remainingTime(ev: Event, nowTs: number) { const e = new Date(ev.end).getTime(); const diff = Math.max(0, e - nowTs); const m = Math.floor(diff / 60000); const s = Math.floor((diff % 60000) / 1000); return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; }
+
+    
