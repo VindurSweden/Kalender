@@ -10,11 +10,19 @@ export const DISPLAY_MONTH_YEAR_FORMAT = 'MMMM yyyy';
 export const formatInputDate = (date: Date): string => format(date, DATE_FORMAT);
 export const formatInputTime = (date: Date): string => format(date, TIME_FORMAT);
 
-export const parseInputDate = (dateString: string): Date => parse(dateString, DATE_FORMAT, new Date());
+export const parseInputDate = (dateString: string): Date => {
+    // Handles both 'YYYY-MM-DD' and full ISO 'YYYY-MM-DDTHH:mm:ss'
+    const d = new Date(dateString);
+    if (!isNaN(d.getTime())) {
+        return d;
+    }
+    return parse(dateString, DATE_FORMAT, new Date());
+};
+
 export const parseInputTime = (timeString: string, referenceDate: Date = new Date()): Date => {
   const [hours, minutes] = timeString.split(':').map(Number);
   if (isNaN(hours) || isNaN(minutes)) {
-    // Fallback for invalid time string, maybe default to noon or handle error
+    // Fallback for invalid time string
     return setMinutes(setHours(referenceDate, 12), 0);
   }
   return setMinutes(setHours(referenceDate, hours), minutes);
@@ -67,19 +75,16 @@ export const parseFlexibleSwedishDateString = (dateString: string, referenceDate
   if (lowerDateString === 'imorgon' || lowerDateString === 'i morgon') return addDays(now, 1);
   if (lowerDateString === 'i övermorgon' || lowerDateString === 'övermorgon') return addDays(now, 2);
 
-  // Try YYYY-MM-DD
   try {
     const parsedDate = parse(lowerDateString, 'yyyy-MM-dd', now);
     if (!isNaN(parsedDate.getTime())) return parsedDate;
   } catch (e) {/* ignore */}
 
-  // Try "nästa [veckodag]"
   let match = lowerDateString.match(/^nästa\s+(.+)$/);
   if (match && swedishWeekdays.hasOwnProperty(match[1])) {
     return nextDay(now, swedishWeekdays[match[1]]);
   }
 
-  // Try "[dag] [månad]" (e.g., "15 augusti") - assumes current year
   match = lowerDateString.match(/^(\d{1,2})\s+(.+)$/);
   if (match) {
     const day = parseInt(match[1]);
@@ -88,11 +93,10 @@ export const parseFlexibleSwedishDateString = (dateString: string, referenceDate
       const month = swedishMonths[monthName];
       try {
         return set(now, { month, date: day });
-      } catch (e) { /* ignore invalid date like 31 feb */ }
+      } catch (e) { /* ignore invalid date */ }
     }
   }
   
-  // Try "om X dagar/veckor/månader"
   match = lowerDateString.match(/^om\s+(\d+)\s+(dag|dagar|vecka|veckor|månad|månader)$/);
   if (match) {
     const amount = parseInt(match[1]);
@@ -102,21 +106,19 @@ export const parseFlexibleSwedishDateString = (dateString: string, referenceDate
     if (unit.startsWith('månad')) return addMonths(now, amount);
   }
 
-  // Fallback: try parsing with date-fns, might catch some "dd.MM.yyyy" or "dd/MM/yyyy" if locale supports it
   try {
-    const parsedDate = parse(dateString, 'P', new Date(), { locale: sv }); // 'P' is flexible date format
-     if (!isNaN(parsedDate.getTime()) && parsedDate.getFullYear() > 1970) return parsedDate; // basic sanity check
+    const parsedDate = parse(dateString, 'P', new Date(), { locale: sv });
+     if (!isNaN(parsedDate.getTime()) && parsedDate.getFullYear() > 1970) return parsedDate;
   } catch (e) { /* ignore */ }
   
   console.warn(`Could not parse flexible date string: "${dateString}"`);
-  return null; // Could not parse
+  return null;
 };
 
 
 export const parseFlexibleSwedishTimeString = (timeString: string, referenceDate: Date = new Date()): Date | null => {
   const lowerTimeString = timeString.toLowerCase().trim();
 
-  // Try HH:MM
   let match = lowerTimeString.match(/^(\d{1,2}):(\d{2})$/);
   if (match) {
     const hours = parseInt(match[1]);
@@ -126,7 +128,6 @@ export const parseFlexibleSwedishTimeString = (timeString: string, referenceDate
     }
   }
 
-  // Try "kl HH" or "klockan HH"
   match = lowerTimeString.match(/^(?:kl|klockan)\s*(\d{1,2})$/);
   if (match) {
     const hours = parseInt(match[1]);
@@ -135,22 +136,18 @@ export const parseFlexibleSwedishTimeString = (timeString: string, referenceDate
     }
   }
   
-  // Try "HH" (just a number, assume hour)
   match = lowerTimeString.match(/^(\d{1,2})$/);
    if (match) {
     const hours = parseInt(match[1]);
     if (hours >= 0 && hours < 24) {
-      // If only hour is given, check if it's already past and if so, assume next day's hour? Or just set it.
-      // For now, just set it on the referenceDate.
       return setMinutes(setHours(referenceDate, hours), 0);
     }
   }
 
-  // Simple keywords
-  if (lowerTimeString.includes('morgon') || lowerTimeString.includes('förmiddag')) return setMinutes(setHours(referenceDate, 9), 0); // Default 9 AM
-  if (lowerTimeString.includes('lunch')) return setMinutes(setHours(referenceDate, 12), 0); // Default 12 PM
-  if (lowerTimeString.includes('eftermiddag')) return setMinutes(setHours(referenceDate, 15), 0); // Default 3 PM
-  if (lowerTimeString.includes('kväll')) return setMinutes(setHours(referenceDate, 19), 0); // Default 7 PM
+  if (lowerTimeString.includes('morgon') || lowerTimeString.includes('förmiddag')) return setMinutes(setHours(referenceDate, 9), 0);
+  if (lowerTimeString.includes('lunch')) return setMinutes(setHours(referenceDate, 12), 0);
+  if (lowerTimeString.includes('eftermiddag')) return setMinutes(setHours(referenceDate, 15), 0);
+  if (lowerTimeString.includes('kväll')) return setMinutes(setHours(referenceDate, 19), 0);
 
   console.warn(`Could not parse flexible time string: "${timeString}"`);
   return null;
