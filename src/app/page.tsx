@@ -31,7 +31,7 @@ import { format as formatDateFns } from 'date-fns';
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
-import type { Event, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput, AiEvent } from '@/types/event';
+import type { Event, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, TolkAIInput, AiEventType as AiEvent } from '@/types/event';
 import { parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, isSameDay } from '@/lib/date-utils';
 
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -71,11 +71,25 @@ const DEFAULT_PEOPLE: Person[] = [
 ];
 
 const DEFAULT_EVENTS: Event[] = [
-  { id: uid(), title: "Skola", personId: "gabriel", start: `${todayISO()}T08:00:00`, end: `${todayISO()}T13:30:00`, imageUrl: "", recurrence: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR" },
-  { id: uid(), title: "Borsta tänderna", personId: "gabriel", start: `${todayISO()}T07:30:00`, end: `${todayISO()}T07:45:00`, challenge: "Klar innan timern tar slut" },
-  { id: uid(), title: "Åka till träning", personId: "leia", start: `${todayISO()}T16:00:00`, end: `${todayISO()}T17:30:00` },
-  { id: uid(), title: "Middag", personId: "family", start: `${todayISO()}T17:30:00`, end: `${todayISO()}T18:00:00`, isFamily: true, recurrence: "FREQ=DAILY" },
+    // Gabriel
+    { id: uid(), title: "Skola", personId: "gabriel", start: `${todayISO()}T08:00:00`, end: `${todayISO()}T13:30:00`, recurrence: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR" },
+    { id: uid(), title: "Borsta tänderna", personId: "gabriel", start: `${todayISO()}T07:30:00`, end: `${todayISO()}T07:45:00`, challenge: "Klar innan timern tar slut" },
+    
+    // Leia's detailed morning
+    { id: uid(), title: "Vakna", personId: "leia", start: `${todayISO()}T07:00:00`, end: `${todayISO()}T07:05:00` },
+    { id: uid(), title: "Gå på toa", personId: "leia", start: `${todayISO()}T07:05:00`, end: `${todayISO()}T07:10:00` },
+    { id: uid(), title: "Klä på dig", personId: "leia", start: `${todayISO()}T07:10:00`, end: `${todayISO()}T07:20:00` },
+    { id: uid(), title: "Äta frukost", personId: "leia", start: `${todayISO()}T07:20:00`, end: `${todayISO()}T07:40:00` },
+    { id: uid(), title: "Borsta tänderna", personId: "leia", start: `${todayISO()}T07:40:00`, end: `${todayISO()}T07:45:00` },
+    { id: uid(), title: "Ta på skor & jacka", personId: "leia", start: `${todayISO()}T07:45:00`, end: `${todayISO()}T07:50:00` },
+    { id: uid(), title: "Gå till skolan", personId: "leia", start: `${todayISO()}T07:50:00`, end: `${todayISO()}T08:00:00` },
+    { id: uid(), title: "I skolan", personId: "leia", start: `${todayISO()}T08:00:00`, end: `${todayISO()}T13:30:00` },
+    { id: uid(), title: "Åka till träning", personId: "leia", start: `${todayISO()}T16:00:00`, end: `${todayISO()}T17:30:00` },
+    
+    // Family
+    { id: uid(), title: "Middag", personId: "family", start: `${todayISO()}T17:30:00`, end: `${todayISO()}T18:00:00`, isFamily: true, recurrence: "FREQ=DAILY" },
 ];
+
 
 // --- Spec Implementation ---
 const toOngoingTitle = (base: string): string => {
@@ -199,29 +213,23 @@ export default function NPFScheduleApp() {
   }, [runningId, events]);
 
   // --- View Logic ---
-  const timeSlots = useMemo(() => {
-    const dayEvents = events.filter(e => isSameDay(new Date(e.start), date) && (orderedShowFor.includes(e.personId) || e.isFamily));
-    const uniqueStartTimes = [...new Set(dayEvents.map(e => e.start))].sort();
-    return uniqueStartTimes.slice(0, viewConfig.SLOTS);
-  }, [events, date, orderedShowFor, viewConfig.SLOTS]);
-
   const columnsData = useMemo(() => {
-    let allDayEvents: Event[] = [];
+    const dayEvents = events.filter(e => isSameDay(new Date(e.start), date) && (orderedShowFor.includes(e.personId) || e.isFamily));
     
-    orderedShowFor.forEach(personId => {
-      let personEvents = events.filter(e => isSameDay(new Date(e.start), date) && (e.personId === personId || (e.isFamily && e.personId === 'family')));
-      if (viewConfig.assistant.enableDayFill) {
-          personEvents = synthesizeDayFill(personEvents, personId, date, viewConfig);
-      }
-      allDayEvents.push(...personEvents);
-    });
-
-    const uniqueTimeKeys = [...new Set(allDayEvents.map(e => new Date(e.start).getTime()))].sort().slice(0, viewConfig.SLOTS);
+    // Create a set of all unique start times from all visible events
+    const allStartTimes = [...new Set(dayEvents.map(e => new Date(e.start).getTime()))].sort();
+    
+    // Take the first 5 unique start times to define the rows
+    const uniqueTimeKeys = allStartTimes.slice(0, viewConfig.SLOTS);
     
     return orderedShowFor.map(personId => {
       const person = people.find(p => p.id === personId)!;
-      const personEventsToday = allDayEvents.filter(e => e.personId === personId || (e.isFamily && e.personId === 'family'));
+      let personEventsToday = events.filter(e => isSameDay(new Date(e.start), date) && (e.personId === personId || (e.isFamily && e.personId === 'family')));
 
+      if (viewConfig.assistant.enableDayFill) {
+          personEventsToday = synthesizeDayFill(personEventsToday, personId, date, viewConfig);
+      }
+      
       const eventGrid: (Event | null)[] = [];
       let lastRealEvent: Event | null = null;
       
@@ -231,7 +239,6 @@ export default function NPFScheduleApp() {
             eventGrid.push(eventInSlot);
             lastRealEvent = eventInSlot;
         } else {
-            // Fill policy
             const isSpannedByLastEvent = lastRealEvent && timeKey > new Date(lastRealEvent.start).getTime() && timeKey < new Date(lastRealEvent.end).getTime();
             if (viewConfig.fillPolicy === 'repeat' && isSpannedByLastEvent) {
                 eventGrid.push({ ...lastRealEvent, meta: { ...lastRealEvent.meta, isContinuation: true } });
@@ -241,9 +248,8 @@ export default function NPFScheduleApp() {
         }
       }
       
-      // Ensure always 5 slots
       while(eventGrid.length < viewConfig.SLOTS) {
-        if(viewConfig.fillPolicy === 'repeat' && lastRealEvent) {
+        if(viewConfig.fillPolicy === 'repeat' && lastRealEvent && new Date(lastRealEvent.end) > new Date(uniqueTimeKeys[uniqueTimeKeys.length - 1] || 0)) {
              eventGrid.push({ ...lastRealEvent, meta: { ...lastRealEvent.meta, isContinuation: true } });
         } else {
              eventGrid.push(null);
@@ -256,13 +262,14 @@ export default function NPFScheduleApp() {
   
   // --- Event Handlers ---
   const handleCreateEvent = async (eventDetails: any, imageHint?: string): Promise<Event | null> => {
-    // Conflict prevention
     const newStart = new Date(parseFlexibleSwedishDateString(eventDetails.dateQuery, new Date()) || date);
     const newTime = parseFlexibleSwedishTimeString(eventDetails.timeQuery, newStart);
     if(newTime) {
       newStart.setHours(newTime.getHours(), newTime.getMinutes());
     }
+
     const personId = people.find(p => p.name.toLowerCase() === (eventDetails.person?.toLowerCase() || ''))?.id || people[0].id;
+    
     const conflict = events.some(e => e.personId === personId && new Date(e.start).getTime() === newStart.getTime());
     if (conflict) {
         toast({ title: "Konflikt!", description: `Det finns redan en händelse för ${eventDetails.person || personId} vid denna tid.`, variant: "destructive" });
@@ -302,6 +309,23 @@ export default function NPFScheduleApp() {
       return null;
     }
   };
+
+  const handleGenerateImage = async (event: Event) => {
+    if (!event) return;
+    toast({ title: 'Bildgenerering', description: 'AI:n skapar en bild för din händelse...' });
+    try {
+      const result = await generateEventImage({ eventTitle: event.title, imageHint: '' });
+      if (result.imageUrl) {
+        setEvents(prev => prev.map(e => e.id === event.id ? { ...e, imageUrl: result.imageUrl } : e));
+        toast({ title: 'Bild genererad!', description: 'Bilden har lagts till på din händelse.' });
+      } else {
+        throw new Error('Image URL was empty.');
+      }
+    } catch (error) {
+      console.error("Image generation failed:", error);
+      toast({ variant: 'destructive', title: 'Fel vid bildgenerering', description: 'Kunde inte skapa bilden.' });
+    }
+  };
   
   function deleteEvent(id: string) { setEvents(prev => prev.filter(ev => ev.id !== id)); }
   function toggleComplete(id: string) { setEvents(prev => prev.map(ev => (ev.id === id ? { ...ev, completed: !ev.completed } : ev))); boom(); }
@@ -314,7 +338,7 @@ export default function NPFScheduleApp() {
       <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         
-        <div className={`grid gap-4 mt-3 grid-cols-${orderedShowFor.length}`}>
+        <div className={`grid gap-4 mt-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-${orderedShowFor.length > 2 ? 3 : orderedShowFor.length}`}>
           {columnsData.map(({ person, eventGrid }) => (
             <div key={person.id} className={`rounded-2xl p-1 md:p-2 border-t border-neutral-800 ${person.bg}`}>
               <div className="flex items-center gap-2 mb-2 select-none sticky top-[70px] bg-neutral-950/80 backdrop-blur-sm p-2 rounded-lg z-10" onPointerDown={()=>longPressFilter(person.id)}>
@@ -331,6 +355,7 @@ export default function NPFScheduleApp() {
                       onDelete={deleteEvent}
                       onComplete={toggleComplete}
                       onPickTimer={setRunningId}
+                      onGenerate={handleGenerateImage}
                       runningId={runningId}
                       now={now}
                       showSimple={orderedShowFor.length > 1}
@@ -412,7 +437,7 @@ function Toolbar({ people, showFor, setShowFor }: any) {
   );
 }
 
-function EventCard({ person, ev, onDelete, onComplete, onPickTimer, runningId, now, showSimple, viewConfig }: any) {
+function EventCard({ person, ev, onDelete, onComplete, onPickTimer, onGenerate, runningId, now, showSimple, viewConfig }: any) {
   const from = fmtTime(ev.start);
   const to = fmtTime(ev.end);
   const activeNow = isNowWithin(ev, now);
@@ -428,7 +453,7 @@ function EventCard({ person, ev, onDelete, onComplete, onPickTimer, runningId, n
           <div className="absolute inset-0 w-full h-full bg-neutral-800">
             {ev.imageUrl ? <img src={ev.imageUrl} alt={ev.title} className="w-full h-full object-cover" /> :
               <div className="w-full h-full flex items-center justify-center">
-                {ev.meta?.synthetic ? <div className="text-neutral-500 text-sm">(Assistentfyllt)</div> : <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={async (e) => { e.stopPropagation(); /* await onGenerate(ev); */ }}>Skapa bild</Button>}
+                {ev.meta?.synthetic ? <div className="text-neutral-500 text-sm">(Assistentfyllt)</div> : <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={(e) => { e.stopPropagation(); onGenerate(ev); }}>Skapa bild</Button>}
               </div>}
           </div>
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 flex flex-col justify-end">
@@ -512,7 +537,7 @@ const AssistantPanel: FC<{ open: boolean; onClose: () => void; events: Event[]; 
 
         if (formatterResponse.operations && formatterResponse.operations.length > 0) {
           addMessage('systemInfo', "Startar exekvering av plan...");
-          for (const op of formatterResponse.operations.slice(0, 1)) { // Only one for now
+          for (const op of formatterResponse.operations) { // Allow multiple operations
             if (op.commandType.toUpperCase() === 'CREATE' && op.eventDetails) {
               const created = await onAiCreateEvent(op.eventDetails, tolkResponse.imageHint);
               if (created) { addMessage('systemInfo', `✅ Händelse "${created.title}" skapad.`); boom(); }
@@ -567,5 +592,7 @@ function fmtTime(iso: string | number | undefined) { if (!iso) return ""; try { 
 function isNowWithin(ev: Event, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); return nowTs >= s && nowTs <= e; }
 function progressForEvent(ev: Event, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); if (!isFinite(s) || !isFinite(e) || e <= s) return 0; const p = (nowTs - s) / (e - s); return Math.max(0, Math.min(1, p)); }
 function remainingTime(ev: Event, nowTs: number) { const e = new Date(ev.end).getTime(); const diff = Math.max(0, e - nowTs); const m = Math.floor(diff / 60000); const s = Math.floor((diff % 60000) / 1000); return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; }
+
+    
 
     
