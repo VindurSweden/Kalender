@@ -8,18 +8,30 @@ export interface Person {
   speak?: boolean;
 }
 
-export interface EventItem {
+// Updated Event type based on the new specification
+export interface Event {
   id: string;
-  title: string;
   personId: string;
-  start: string; // ISO format
-  end: string;   // ISO format
-  isFamily?: boolean;
+  start: string; // ISO8601, mandatory
+  end: string;   // ISO8601, now mandatory
+  title: string;
+  topic?: string;
+  timeKey?: string; // default = start; used for "same-time" bucket
+  isFamily?: boolean; // Kept for compatibility, can be merged into logic later
   imageUrl?: string;
   recurrence?: string;
   completed?: boolean;
   challenge?: string;
+  presentation?: {
+    displayTitle?: string;
+  };
+  meta?: {
+    synthetic?: boolean; // true if created by the assistant
+    source?: "user" | "assistant" | "system";
+    isContinuation?: boolean; // True if this is a repeated block of a longer event
+  };
 }
+
 
 // For AI interaction
 export interface AiEvent {
