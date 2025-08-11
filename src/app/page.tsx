@@ -169,12 +169,17 @@ const synthesizeDayFill = (personEvents: Event[], personId: string, day: Date, c
 
 
 // --- Main Component ---
-export default function NPFScheduleApp() {
+type NPFScheduleAppProps = {
+  params: {};
+  searchParams: { [key: string]: string | string[] | undefined };
+};
+
+export default function NPFScheduleApp({ params, searchParams }: NPFScheduleAppProps) {
   const [isClient, setIsClient] = useState(false);
   const [people, setPeople] = useState<Person[]>(DEFAULT_PEOPLE);
   const [events, setEvents] = useState<Event[]>(DEFAULT_EVENTS);
   const [date, setDate] = useState(() => new Date());
-  const [showFor, setShowFor] = useState<string[]>(DEFAULT_PEOPLE.slice(0, 2).map(p => p.id));
+  const [showFor, setShowFor] = useState<string[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [dark, setDark] = useState(true);
   const [assistantOpen, setAssistantOpen] = useState(false);
@@ -633,9 +638,5 @@ function fmtTime(iso: string | number | undefined) { if (!iso) return ""; try { 
 function isNowWithin(ev: Event, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); return nowTs >= s && nowTs <= e; }
 function progressForEvent(ev: Event, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); if (!isFinite(s) || !isFinite(e) || e <= s) return 0; const p = (nowTs - s) / (e - s); return Math.max(0, Math.min(1, p)); }
 function remainingTime(ev: Event, nowTs: number) { const e = new Date(ev.end).getTime(); const diff = Math.max(0, e - nowTs); const m = Math.floor(diff / 60000); const s = Math.floor((diff % 60000) / 1000); return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; }
-
     
-
-    
-
     
