@@ -332,7 +332,12 @@ export default function NPFScheduleApp() {
       <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         <NowIndicator now={now} />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-3">
+        <div 
+          className="grid gap-4 mt-3"
+          style={{
+              gridTemplateColumns: `repeat(${orderedShowFor.length > 0 ? orderedShowFor.length : 1}, minmax(0, 1fr))`
+          }}
+        >
           {orderedShowFor.map(pid => {
             const person = people.find(p => p.id === pid);
             if (!person) return null;
@@ -753,5 +758,7 @@ function isNowWithin(ev: EventItem, nowTs: number) { const s = new Date(ev.start
 function progressForEvent(ev: EventItem, nowTs: number) { const s = new Date(ev.start).getTime(); const e = new Date(ev.end).getTime(); if (!isFinite(s) || !isFinite(e) || e <= s) return 0; const p = (nowTs - s) / (e - s); return Math.max(0, Math.min(1, p)); }
 function remainingTime(ev: EventItem, nowTs: number) { const e = new Date(ev.end).getTime(); const diff = Math.max(0, e - nowTs); const m = Math.floor(diff / 60000); const s = Math.floor((diff % 60000) / 1000); return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`; }
 
+
+    
 
     
