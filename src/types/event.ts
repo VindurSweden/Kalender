@@ -1,4 +1,7 @@
 
+import { type TolkAIInput as GenkitTolkAIInput, type TolkAIOutput as GenkitTolkAIOutput } from '@/ai/schemas';
+import { type FormatPlanOutput as GenkitFormatPlanOutput, SingleCalendarOperationSchema as GenkitSingleCalendarOperationSchema } from '@/ai/schemas';
+import { z } from 'zod';
 
 export interface Person {
   id: string;
@@ -16,8 +19,7 @@ export interface Event {
   end: string;   // ISO8601, now mandatory
   title: string;
   topic?: string;
-  timeKey?: string; // default = start; used for "same-time" bucket
-  isFamily?: boolean; // Kept for compatibility, can be merged into logic later
+  isFamily?: boolean; 
   imageUrl?: string;
   recurrence?: string;
   completed?: boolean;
@@ -49,9 +51,8 @@ export interface ConversationMessage {
 }
 
 // Schemas for AI flows (from schemas.ts)
-import { type TolkAIInput as GenkitTolkAIInput, type TolkAIOutput as GenkitTolkAIOutput } from '@/ai/schemas';
-import { type FormatPlanOutput as GenkitFormatPlanOutput } from '@/ai/schemas';
 
 export type TolkAIInput = GenkitTolkAIInput;
 export type TolkAIOutput = GenkitTolkAIOutput;
 export type FormatPlanOutput = GenkitFormatPlanOutput;
+export type SingleCalendarOperationType = z.infer<typeof GenkitSingleCalendarOperationSchema>;

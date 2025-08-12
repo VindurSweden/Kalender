@@ -25,7 +25,8 @@ export const EventDetailsSchema = z.object({
   dateQuery: z.string().optional().describe("The new date query in natural language. Example: 'nästa fredag', '15 augusti', 'om en vecka'."),
   timeQuery: z.string().optional().describe("The new time query in natural language. Example: 'kl 14', 'på eftermiddagen', '10:30'."),
   description: z.string().optional().describe("The new description for the event."),
-  color: z.string().optional().describe("A hex color code for the event, if specified or inferred.")
+  color: z.string().optional().describe("A hex color code for the event, if specified or inferred."),
+  person: z.string().optional().describe("The name of the person the event is for, if specified."),
 });
 
 export const SingleCalendarOperationSchema = z.object({
