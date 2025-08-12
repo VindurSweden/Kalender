@@ -3,7 +3,6 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { format as formatDateFns } from 'date-fns';
 
 import { Header } from '@/components/calendar/Header';
 import { Toolbar } from '@/components/calendar/Toolbar';
@@ -230,9 +229,25 @@ export default function NPFScheduleApp() {
   };
   
   function deleteEvent(id: string) { setEvents(prev => prev.filter(ev => ev.id !== id)); }
+  
   function onEventUpdate(updatedEvent: Event) {
     setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
   }
+
+  function handleKlar(eventId: string | null) {
+      if (!eventId) return;
+      // In a real app, you might want to mark the event as completed
+      // For now, we just show a confetti effect.
+      boom();
+  }
+  
+  function handleKlarSent(eventId: string | null) {
+      if (!eventId) return;
+      // In a real app, this would trigger the replanning logic
+      // For now, we just show a confetti effect.
+      boom();
+  }
+
 
   if (!isClient) {
     return <div className="min-h-screen w-full bg-neutral-950 text-neutral-100 flex items-center justify-center">Laddar...</div>;
@@ -260,6 +275,8 @@ export default function NPFScheduleApp() {
                     onEventUpdate={onEventUpdate}
                     onEventDelete={deleteEvent}
                     onGenerateImage={handleGenerateImage}
+                    onKlar={handleKlar}
+                    onKlarSent={handleKlarSent}
                 />
             ) : (
                 <div className="col-span-full text-center p-10 bg-neutral-900/50 rounded-2xl">

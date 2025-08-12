@@ -8,11 +8,6 @@ import type { Event, Person, Row } from "@/types/event";
 import { plannedEndMsForEvent, getSourceEventForCell, presentTitleForCell, whyBlocked } from '@/lib/grid-utils';
 import ProgressTrackRtl from '../ProgressTrackRtl';
 
-const HHMM = (msOrDate: number | Date) => {
-    const d = typeof msOrDate === "number" ? new Date(msOrDate) : msOrDate;
-    return d.toLocaleTimeString("sv-SE", { hour: '2-digit', minute: '2-digit' });
-};
-
 const iconFor = (title: string) => {
     const activityIcon: Array<[RegExp, string]> = [
       [/\bSover\b/i, "😴"],
@@ -78,11 +73,11 @@ export function GridCell({
     
     const { title, repeat, sourceEventId } = presentTitleForCell(person.id, row, allEvents, isPastRow, completedUpTo, blockedReason);
 
-    const timeLabel = row.cells.has(person.id) ? HHMM(row.time) : `(${HHMM(row.time)})`;
+    const timeLabel = row.cells.has(person.id) ? new Date(row.time).toLocaleTimeString("sv-SE", { hour: '2-digit', minute: '2-digit' }) : `(${new Date(row.time).toLocaleTimeString("sv-SE", { hour: '2-digit', minute: '2-digit' })})`;
     const ico = iconFor(title);
 
     const metaBadges: string[] = [];
-    if (sourceEv) {
+    if (showMeta && sourceEv) {
         if (sourceEv.fixedStart) metaBadges.push("FixStart");
         if (typeof sourceEv.minDurationMin === "number") metaBadges.push(`min:${sourceEv.minDurationMin}m`);
         if (sourceEv.dependsOn?.length) metaBadges.push(`dep:${sourceEv.dependsOn.length}`);
@@ -133,7 +128,7 @@ export function GridCell({
             </div>
 
             {/* Button container - high z-index to be clickable */}
-            {sourceEv && !sourceEv.imageUrl && !sourceEv.meta?.synthetic && (
+            {sourceEv && !sourceEv.imageUrl && (
                 <div className="absolute inset-0 z-30 flex items-center justify-center">
                     <button onClick={() => onGenerateImage(sourceEv)} className="flex items-center justify-center text-white bg-black/40 hover:bg-black/60 p-2 rounded-md transition-colors text-sm">
                         <ImageIcon size={16} /> <span className="ml-2">Skapa bild</span>
@@ -179,7 +174,7 @@ export function GridCell({
                         </span>
                     )}
 
-                    {sourceEventId && isCenterRow && !sourceEv?.meta?.synthetic && (
+                    {sourceEventId && isCenterRow && (
                         <div className="flex gap-2 mt-2">
                             <button
                                 className="px-2.5 py-1 rounded-md text-xs border border-white/20 bg-black/30 backdrop-blur-sm hover:bg-white/20 flex items-center gap-1.5"
@@ -201,7 +196,7 @@ export function GridCell({
                 </div>
             </div>
 
-            {sourceEventId && !sourceEv?.meta?.synthetic && <button onClick={() => onDelete(sourceEventId)} className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-red-800/80 z-30"><Trash2 size={14}/></button>}
+            {sourceEventId && <button onClick={() => onDelete(sourceEventId)} className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-red-800/80 z-30"><Trash2 size={14}/></button>}
         </div>
     );
 }

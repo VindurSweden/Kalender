@@ -4,13 +4,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { Event, Person, Row, Override } from "@/types/event";
-import { buildRows, applyOverrides, synthesizeDayFill, RESOURCES, whyBlocked, plannedEndMsForEvent, previewReplanProportional } from "@/lib/grid-utils";
+import { buildRows, applyOverrides, synthesizeDayFill, previewReplanProportional } from "@/lib/grid-utils";
 import { GridCell } from './GridCell';
 
-const HHMM = (msOrDate: number | Date) => {
-  const d = typeof msOrDate === "number" ? new Date(msOrDate) : msOrDate;
-  return d.toLocaleTimeString("sv-SE", { hour: '2-digit', minute: '2-digit' });
-};
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 
 const SLOTS = 5;
@@ -21,9 +17,11 @@ interface CalendarGridProps {
     onEventUpdate: (event: Event) => void;
     onEventDelete: (id: string) => void;
     onGenerateImage: (event: Event) => void;
+    onKlar: (id: string | null) => void;
+    onKlarSent: (id: string | null) => void;
 }
 
-export function CalendarGrid({ people, events, onEventUpdate, onEventDelete, onGenerateImage }: CalendarGridProps) {
+export function CalendarGrid({ people, events, onEventUpdate, onEventDelete, onGenerateImage, onKlar, onKlarSent }: CalendarGridProps) {
     const [nowMs, setNowMs] = useState<number>(() => Date.now());
     const [overrides, setOverrides] = useState<Map<string, Override>>(new Map());
     const [completedUpTo, setCompletedUpTo] = useState<Map<string, number>>(new Map());
@@ -37,15 +35,35 @@ export function CalendarGrid({ people, events, onEventUpdate, onEventDelete, onG
         return () => clearInterval(timerId);
     }, []);
 
+    const imageMap = useMemo(() => {
+        const map = new Map<string, string>();
+        for(const event of events) {
+            if(event.imageUrl && !map.has(event.title)) {
+                map.set(event.title, event.imageUrl);
+            }
+        }
+        return map;
+    }, [events]);
+
+    const eventsWithReusedImages = useMemo(() => {
+        return events.map(event => {
+            if (event.imageUrl) return event;
+            if (imageMap.has(event.title)) {
+                return { ...event, imageUrl: imageMap.get(event.title) };
+            }
+            return event;
+        });
+    }, [events, imageMap]);
+
     const filledEvents = useMemo(() => {
         let allFilled: Event[] = [];
         for (const p of people) {
-            const personEvents = events.filter(e => e.personId === p.id);
+            const personEvents = eventsWithReusedImages.filter(e => e.personId === p.id);
             const filled = synthesizeDayFill(personEvents, p.id, new Date(nowMs));
             allFilled.push(...filled);
         }
         return allFilled;
-    }, [events, people, nowMs]);
+    }, [eventsWithReusedImages, people, nowMs]);
     
     const visEvents = useMemo(() => applyOverrides(filledEvents, overrides), [filledEvents, overrides]);
     const rows = useMemo(() => buildRows(visEvents, people), [visEvents, people]);
@@ -68,18 +86,18 @@ export function CalendarGrid({ people, events, onEventUpdate, onEventDelete, onG
         });
     }
 
-    function handleKlar(eventId: string | null) {
-      if (!eventId) return;
-      const ev = visEvents.find(e => e.id === eventId);
-      if (!ev) return;
-      setPersonCompleted(ev.personId, nowMs);
-      setFlash({ kind: "klar", at: Date.now() });
-      setTimeout(() => setFlash(null), 800);
+    function handleLocalKlar(eventId: string | null) {
+        if (!eventId) return;
+        const ev = visEvents.find(e => e.id === eventId);
+        if (!ev) return;
+        setPersonCompleted(ev.personId, nowMs);
+        setFlash({ kind: "klar", at: Date.now() });
+        setTimeout(() => setFlash(null), 800);
+        onKlar(eventId);
     }
   
-    function handleKlarSent(eventId: string | null) {
+    function handleLocalKlarSent(eventId: string | null) {
       if (!eventId) return;
-  
       const preview = previewReplanProportional(eventId, nowMs, visEvents);
   
       if ("patches" in preview) {
@@ -105,6 +123,7 @@ export function CalendarGrid({ people, events, onEventUpdate, onEventDelete, onG
       }
       setFlash({ kind: "late", at: Date.now() });
       setTimeout(() => setFlash(null), 1200);
+      onKlarSent(eventId);
     }
 
     return (
@@ -132,7 +151,9 @@ export function CalendarGrid({ people, events, onEventUpdate, onEventDelete, onG
                 <div className="relative grid" style={{ gridTemplateColumns: `repeat(${people.length}, minmax(0, 1fr))`, gridAutoRows: 'min-content' }}>
                     <div className="pointer-events-none absolute z-10 top-1/2 -translate-y-1/2 inset-x-0 h-[1px]">
                         <div className="h-full border-t border-fuchsia-500/40 bg-fuchsia-500/5 flex items-center justify-center">
-                            <div className="text-[10px] -translate-y-1/2 px-2 py-0.5 rounded-full bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-300">NU {HHMM(nowMs)}</div>
+                            <div className="text-[10px] -translate-y-1/2 px-2 py-0.5 rounded-full bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-300">
+                                NU {new Date(nowMs).toLocaleTimeString("sv-SE", {hour: '2-digit', minute: '2-digit'})}
+                            </div>
                         </div>
                     </div>
 
@@ -151,8 +172,8 @@ export function CalendarGrid({ people, events, onEventUpdate, onEventDelete, onG
                                     allEvents={visEvents}
                                     completedUpTo={completedUpTo.get(p.id)}
                                     showMeta={showMeta}
-                                    onKlar={handleKlar}
-                                    onKlarSent={handleKlarSent}
+                                    onKlar={handleLocalKlar}
+                                    onKlarSent={handleLocalKlarSent}
                                     onDelete={onEventDelete}
                                     onGenerateImage={onGenerateImage}
                                 />
