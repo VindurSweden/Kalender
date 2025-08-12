@@ -58,25 +58,72 @@ const activityIcon: Array<[RegExp, string]> = [
   [/\bHämtar|Blir hämtad/i, "🚗"],
   [/\bMiddag/i, "🍽️"],
   [/\bKvällsrutin/i, "🌙"],
+  [/\bTillgänglig/i, "✅"]
 ];
 const iconFor = (title: string) => {
   for (const [re, ico] of activityIcon) if (re.test(title)) return ico;
   return "📌";
 };
 
+
+// ========= Syntetisk fyllnad =========
+const makeSyntheticEvent = (start: Date, end: Date, personId: string, mode: "sleep_idle" | "unknown" = "sleep_idle"): Event => {
+    const isNightTime = start.getHours() >= 20 || start.getHours() < 6;
+    const title = (mode === "sleep_idle" && isNightTime) ? "Sover" : (mode === "sleep_idle" ? "Tillgänglig" : "Okänt");
+    return {
+        id: `syn-${personId}-${start.toISOString()}`,
+        personId,
+        start: start.toISOString(),
+        end: end.toISOString(),
+        title,
+        meta: { synthetic: true }
+    };
+};
+
+const synthesizeDayFill = (personEvents: Event[], personId: string, day: Date): Event[] => {
+    const dayStart = new Date(day);
+    dayStart.setHours(0, 0, 0, 0);
+
+    const dayEnd = new Date(day);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    dayEnd.setHours(0,0,0,0);
+    
+    const out: Event[] = [];
+    const sorted = [...personEvents].sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
+    let cursor = dayStart.getTime();
+
+    for (const ev of sorted) {
+        const startTs = new Date(ev.start).getTime();
+        const endTs = new Date(ev.end).getTime();
+
+        if (cursor < startTs) {
+            out.push(makeSyntheticEvent(new Date(cursor), new Date(startTs), personId));
+        }
+        out.push(ev);
+        cursor = Math.max(cursor, endTs);
+    }
+
+    if (cursor < dayEnd.getTime()) {
+        out.push(makeSyntheticEvent(new Date(cursor), dayEnd, personId));
+    }
+
+    return out;
+};
+
+
 // ========= Testevents =========
-// 07–08: Maria=1, Leia=7, Gabriel=3 (dina regler)
-const mariaEvents: Event[] = [
+const baseMaria: Event[] = [
   { id: "maria-06-07", personId: "maria", start: t(6), end: t(7), title: "Vaknar & kaffe", minDurationMin: 10 },
   { id: "maria-07-08", personId: "maria", start: t(7), end: t(8), title: "Morgonrutin", minDurationMin: 15 },
   { id: "maria-08-12", personId: "maria", start: t(8), end: t(12), title: "Jobb (förmiddag)" },
   { id: "maria-12-13", personId: "maria", start: t(12), end: t(13), title: "Lunch", minDurationMin: 20 },
   { id: "maria-13-16", personId: "maria", start: t(13), end: t(16), title: "Jobb (eftermiddag)" },
-  { id: "maria-16-17", personId: "maria", start: `${day}T16:30:00`, end: t(17), title: "Hämtar Leia (fritids)" },
+  { id: "maria-1630-17", personId: "maria", start: `${day}T16:30:00`, end: t(17), title: "Hämtar Leia (fritids)" },
   { id: "maria-18-19", personId: "maria", start: t(18), end: t(19), title: "Middag", minDurationMin: 20 },
 ];
 
-const leia07_08: Event[] = [
+const baseLeia: Event[] = [
   { id: "leia-07-00", personId: "leia", start: t(7, 0), end: t(7, 8), title: "Vakna", minDurationMin: 2 },
   { id: "leia-07-08", personId: "leia", start: t(7, 8), end: t(7, 16), title: "Borsta tänder", minDurationMin: 2 },
   { id: "leia-07-16", personId: "leia", start: t(7, 16), end: t(7, 24), title: "Äta frukost", minDurationMin: 5 },
@@ -84,34 +131,27 @@ const leia07_08: Event[] = [
   { id: "leia-07-32", personId: "leia", start: t(7, 32), end: t(7, 40), title: "Borsta hår", minDurationMin: 2 },
   { id: "leia-07-40", personId: "leia", start: t(7, 40), end: t(7, 48), title: "Klä på sig", minDurationMin: 4 },
   { id: "leia-07-48", personId: "leia", start: t(7, 48), end: t(8, 0), title: "Packa väska & skor", minDurationMin: 4 },
-];
-
-const leiaEvents: Event[] = [
-  { id: "leia-00-07", personId: "leia", start: t(0), end: t(7), title: "Sover" },
-  ...leia07_08,
   { id: "leia-08-13", personId: "leia", start: t(8), end: t(13), title: "Skola" },
   { id: "leia-13-1630", personId: "leia", start: t(13), end: `${day}T16:30:00`, title: "Fritids" },
   { id: "leia-1630-17", personId: "leia", start: `${day}T16:30:00`, end: t(17), title: "Blir hämtad (fritids)", minDurationMin: 5 },
   { id: "leia-18-19", personId: "leia", start: t(18), end: t(19), title: "Middag", minDurationMin: 20 },
-  { id: "leia-20-24", personId: "leia", start: t(20), end: t(24), title: "Sover" },
 ];
 
-const gabriel07_08: Event[] = [
+const baseGabriel: Event[] = [
   { id: "gab-07-00", personId: "gabriel", start: t(7, 0), end: t(7, 20), title: "Vakna & påklädning", minDurationMin: 6 },
   { id: "gab-07-20", personId: "gabriel", start: t(7, 20), end: t(7, 40), title: "Frukost", minDurationMin: 8 },
   { id: "gab-07-40", personId: "gabriel", start: t(7, 40), end: t(8, 0), title: "Tänder & skor", minDurationMin: 4 },
-];
-
-const gabrielEvents: Event[] = [
-  { id: "gab-00-07", personId: "gabriel", start: t(0), end: t(7), title: "Sover" },
-  ...gabriel07_08,
   { id: "gab-08-13", personId: "gabriel", start: t(8), end: t(13), title: "Förskola" },
   { id: "gab-13-16", personId: "gabriel", start: t(13), end: t(16), title: "Lek & mellis" },
   { id: "gab-18-19", personId: "gabriel", start: t(18), end: t(19), title: "Middag", minDurationMin: 15 },
-  { id: "gab-20-24", personId: "gabriel", start: t(20), end: t(24), title: "Sover" },
 ];
 
+const mariaEvents = synthesizeDayFill(baseMaria, 'maria', new Date(day));
+const leiaEvents = synthesizeDayFill(baseLeia, 'leia', new Date(day));
+const gabrielEvents = synthesizeDayFill(baseGabriel, 'gabriel', new Date(day));
+
 const baseEvents: Event[] = [...mariaEvents, ...leiaEvents, ...gabrielEvents];
+
 
 // ========= Gridlogik (event-buckets) =========
 const SLOTS = 5; // visar alltid 5 rader (händelsebaserat, ej varaktighet)
@@ -182,11 +222,23 @@ function currentAndNextForPerson(personId: string, nowMs: number) {
     const e = +new Date(ev.end);
     if (s <= nowMs && nowMs < e) {
       current = ev;
-      next = allPersonEvents[i+1] ?? null;
+      // Find the next *non-synthetic* event
+      next = allPersonEvents.find((nextEv, nextIdx) => nextIdx > i && !nextEv.meta?.synthetic) ?? null;
+      if (!next) {
+         // If no more real events today, find the first real one tomorrow
+         const firstRealEventTomorrow = allPersonEvents.find(e => !e.meta?.synthetic);
+         if (firstRealEventTomorrow) {
+            const nextDayEvent = { ...firstRealEventTomorrow };
+            const nextStart = new Date(nextDayEvent.start);
+            nextStart.setDate(nextStart.getDate() + 1);
+            nextDayEvent.start = nextStart.toISOString();
+            next = nextDayEvent;
+         }
+      }
       break;
     }
     if (nowMs < s) {
-      next = ev;
+      next = allPersonEvents.find((nextEv, nextIdx) => nextIdx >= i && !nextEv.meta?.synthetic) ?? null;
       break;
     }
   }
@@ -195,21 +247,16 @@ function currentAndNextForPerson(personId: string, nowMs: number) {
   if (!current && !next) {
     current = allPersonEvents[allPersonEvents.length - 1];
   }
-  if (current && !next) {
-    const nextDayFirstEvent = { ...allPersonEvents[0] };
-    const currentEnd = new Date(current.end);
-    const nextStart = new Date(nextDayFirstEvent.start);
-    nextStart.setDate(nextStart.getDate() + 1);
-    
-    // Check if the current event already spans across midnight. If so, don't advance the next event.
-    if (currentEnd.getDate() === nextStart.getDate() && currentEnd.getHours() > nextStart.getHours()) {
-        // This case is tricky, for now we just use the next day's event as is.
-    } else {
-        nextDayFirstEvent.start = nextStart.toISOString();
+   if (current && !next) {
+        const firstRealEventTomorrow = allPersonEvents.find(e => !e.meta?.synthetic);
+        if (firstRealEventTomorrow) {
+            const nextDayEvent = { ...firstRealEventTomorrow };
+            const nextStart = new Date(nextDayEvent.start);
+            nextStart.setDate(nextStart.getDate() + 1);
+            nextDayEvent.start = nextStart.toISOString();
+            next = nextDayEvent;
+        }
     }
-    
-    next = nextDayFirstEvent;
-  }
   
   return { current, next };
 }
@@ -262,7 +309,7 @@ export default function LabSimPage() {
 
   // Härleda rader
   const selected = useMemo(() => persons.filter(p => selectedIds.includes(p.id)), [selectedIds]);
-  const rows = useMemo(() => buildRows(baseEvents, selected.length ? selected : persons), [selected]);
+  const rows = useMemo(() => buildRows(baseEvents, selected.length ? selected : persons), [selected, baseEvents]);
 
   // Centrera NU (slot 3 av 5)
   const S = SLOTS;
@@ -287,14 +334,19 @@ export default function LabSimPage() {
   const tillMiddag = nextDinner ? humanDelta(+new Date(nextDinner.start) - nowMs) : null;
 
   // Cellhelpers (titel & tid enligt din regel)
-  function presentTitle(pId: string, row: Row): { title: string; repeat: boolean } {
+  function presentTitle(pId: string, row: Row): { title: string; repeat: boolean, isSynthetic: boolean } {
     const ev = row.cells.get(pId) || null;
-    if (ev) return { title: ev.title, repeat: false };
+    if (ev) return { title: ev.title, repeat: false, isSynthetic: !!ev.meta?.synthetic };
+
     const list = baseEvents.filter(e => e.personId === pId).sort((a,b) => +new Date(a.start) - +new Date(b.start));
     const idx = list.findIndex(e => +new Date(e.start) > row.time);
     const prev = idx === -1 ? list[list.length-1] : list[Math.max(0, idx-1)];
-    if (prev && isOngoing(prev, row.time)) return { title: toOngoingTitle(prev.title), repeat: true };
-    return { title: "—", repeat: false };
+    
+    if (prev && isOngoing(prev, row.time)) {
+        return { title: toOngoingTitle(prev.title), repeat: true, isSynthetic: !!prev.meta?.synthetic };
+    }
+    
+    return { title: "—", repeat: false, isSynthetic: false };
   }
   function cellTimeLabel(pId: string, row: Row): string {
     const ev = row.cells.get(pId) || null;
@@ -305,31 +357,25 @@ export default function LabSimPage() {
   // ========= Progress-spår (höger→vänster) =========
   function ProgressTicker({ personId }: { personId: string }) {
     const { current, next } = currentAndNextForPerson(personId, nowMs);
+
     if (!current || !next) return null;
     
     const start = +new Date(current.start);
     let target = +new Date(next.start);
 
     // If next event is on a different day, adjust its timestamp for this view
-    if (new Date(next.start).getDate() !== new Date(current.start).getDate()) {
+    if (new Date(next.start).getDate() !== new Date(nowMs).getDate()) {
         const tempTarget = new Date(target);
-        // This is a simplification; a full solution would handle multi-day views
-        // For this lab, we assume next day means +24h from its original time for calculation
         const nowDay = new Date(nowMs).setHours(0,0,0,0);
         const nextDay = new Date(next.start).setHours(0,0,0,0);
-        if(nextDay > nowDay){
-            // It's a future day, that's fine
-        } else {
+        if(nextDay <= nowDay){
              target = +new Date(new Date(next.start).getTime() + 24 * 60 * 60 * 1000);
         }
     }
-
-    // Don't show progress if we are outside the current event's bounds
-    if (!(start <= nowMs && nowMs <= target)) {
-      if(nowMs > target) {
-        // We have passed the event, find the next one
+    
+    // Don't show progress if we are outside the current event's bounds in relation to its target
+    if (nowMs < start || nowMs >= target) {
         return null;
-      }
     }
 
 
@@ -430,12 +476,12 @@ export default function LabSimPage() {
           {visibleRows.map((row, rIdx) => (
             <React.Fragment key={row.time+"-"+rIdx}>
               {(selected.length ? selected : persons).map((p) => {
-                const { title, repeat } = presentTitle(p.id, row);
+                const { title, repeat, isSynthetic } = presentTitle(p.id, row);
                 const timeLabel = cellTimeLabel(p.id, row);
                 const ico = iconFor(title.replace(/\s*\(pågår\)$/i, ""));
                 const isCenterRow = rIdx === centerIndex;
                 return (
-                  <div key={p.id+"-"+rIdx} className={`px-2 py-2 flex flex-col justify-center gap-2 border-b border-neutral-800 border-r last:border-r-0 ${isCenterRow?"bg-neutral-900/40":"bg-neutral-950"}`}>
+                  <div key={p.id+"-"+rIdx} className={`px-2 py-2 flex flex-col justify-center gap-2 border-b border-neutral-800 border-r last:border-r-0 ${isCenterRow?"bg-neutral-900/40":"bg-neutral-950"} ${isSynthetic ? 'border-dashed' : ''}`}>
                     <div className="flex items-center gap-3">
                       {/* Bildruta */}
                       <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-neutral-800 to-neutral-900 grid place-items-center shrink-0">
