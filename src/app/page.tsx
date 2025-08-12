@@ -442,9 +442,16 @@ function Header({ date, shift, dark, setDark, assistantOpen, setAssistantOpen }:
             <Dialog>
               <DialogTrigger asChild><Button size="icon" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700"><Settings className="w-4 h-4" /></Button></DialogTrigger>
               <DialogContent className="bg-neutral-900 text-neutral-100 border-neutral-700">
-                <DialogHeader><DialogTitle>Inställningar</DialogTitle></DialogHeader>
-                <div className="space-y-3 text-sm opacity-80">
-                  <p>Här kommer inställningar för Kalenderassistenten.</p>
+                <DialogHeader><DialogTitle>Inställningar & Labb</DialogTitle></DialogHeader>
+                <div className="space-y-3 text-sm">
+                  <p className="text-neutral-400">Här kommer inställningar för Kalenderassistenten.</p>
+                  <div className="pt-4 border-t border-neutral-800 mt-4">
+                    <h4 className="font-semibold text-neutral-200 mb-2">Länkar till labbsidor</h4>
+                    <ul className="list-disc list-inside space-y-1 text-neutral-300">
+                      <li><a href="/lab/sim" className="underline text-primary/90 hover:text-primary">Labbsida: Simulerad Tid + Grid</a></li>
+                      <li><a href="/lab/rtl-progress" className="underline text-primary/90 hover:text-primary">Labbsida: RTL Progress-test</a></li>
+                    </ul>
+                  </div>
                 </div>
               </DialogContent>
             </Dialog>
