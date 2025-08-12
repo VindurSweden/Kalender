@@ -434,6 +434,131 @@ function nextStartForPerson(all: Event[], personId: string, evIndex: number): nu
   return next ? toMs(next.start) : null;
 }
 
+function SettingsDrawer({
+  open,
+  onClose,
+  event,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  event: Event | null;
+  onSave: (patch: Partial<Event>) => void;
+}) {
+  const [form, setForm] = React.useState<Partial<Event>>({});
+
+  useEffect(() => {
+    if (!event) { setForm({}); return; }
+    setForm({
+      title: event.title,
+      location: event.location,
+      resource: event.resource,
+      minDurationMin: event.minDurationMin,
+      fixedStart: !!event.fixedStart,
+      // enkla CSV för dependsOn och involved
+      dependsOn: event.dependsOn,
+    });
+  }, [event]);
+
+  if (!open) return null;
+
+  // Enkel CSV-input för dependsOn (event-id:n)
+  const dependsCsv = (form.dependsOn ?? []).join(",");
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="absolute right-0 top-0 h-full w-[360px] bg-neutral-950 border-l border-neutral-800 p-4 overflow-auto">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-medium">Inställningar</div>
+          <button className="text-neutral-400" onClick={onClose}>✕</button>
+        </div>
+
+        {event ? (
+          <>
+            <div className="text-xs text-neutral-400 mb-2">Event ID: {event.id}</div>
+
+            <label className="block text-sm mb-1">Titel</label>
+            <input
+              className="w-full mb-3 px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+              value={form.title ?? ""}
+              onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+            />
+
+            <label className="block text-sm mb-1">Minsta tid (min)</label>
+            <input
+              type="number"
+              className="w-full mb-3 px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+              value={form.minDurationMin ?? 0}
+              onChange={e => setForm(f => ({ ...f, minDurationMin: Number(e.target.value || 0) }))}
+            />
+
+            <div className="flex items-center gap-2 mb-3">
+              <input
+                id="fixedStart"
+                type="checkbox"
+                checked={!!form.fixedStart}
+                onChange={e => setForm(f => ({ ...f, fixedStart: e.target.checked }))}
+              />
+              <label htmlFor="fixedStart" className="text-sm">Fixed start</label>
+            </div>
+
+            <label className="block text-sm mb-1">Resurs</label>
+            <select
+              className="w-full mb-3 px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+              value={form.resource ?? ""}
+              onChange={e => setForm(f => ({ ...f, resource: e.target.value || undefined }))}
+            >
+              <option value="">—</option>
+              <option value="bathroom">bathroom</option>
+              <option value="car">car</option>
+            </select>
+
+            <label className="block text-sm mb-1">Plats</label>
+            <select
+              className="w-full mb-3 px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+              value={form.location ?? ""}
+              onChange={e => setForm(f => ({ ...f, location: e.target.value || undefined }))}
+            >
+              <option value="">—</option>
+              <option value="home">home</option>
+              <option value="school">school</option>
+              <option value="work">work</option>
+            </select>
+
+            <label className="block text-sm mb-1">dependsOn (CSV med event-ID)</label>
+            <input
+              className="w-full mb-3 px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+              value={dependsCsv}
+              onChange={e => setForm(f => ({ ...f, dependsOn: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }))}
+              placeholder="ex: maria-06-07,ant-foo-01"
+            />
+
+            {/* TODO: involved-editor (required/helper) – kan läggas till nästa steg */}
+
+            <div className="mt-4 flex gap-2">
+              <button
+                className="px-3 py-1 rounded-md border border-neutral-700 bg-neutral-900"
+                onClick={() => { onSave(form); onClose(); }}
+              >
+                Spara
+              </button>
+              <button className="px-3 py-1 rounded-md border border-neutral-800 bg-neutral-900/40" onClick={onClose}>
+                Avbryt
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="text-neutral-400 text-sm">
+            Ingen specifik händelse vald. Klicka ✎ på en cell för att redigera ett event,
+            eller stäng och välj ett event i griden.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 
 // ========= Komponent =========
 import { GridCell } from "@/components/calendar/GridCell";
@@ -454,6 +579,21 @@ export default function LabSimPage() {
   const lastTs = useRef<number | null>(null);
 
   const [flash, setFlash] = useState<null | { kind: "klar" | "late"; at: number }>(null);
+
+  // Inställningspanel
+  const [showSettings, setShowSettings] = useState(false);
+  const [editEventId, setEditEventId] = useState<string | null>(null);
+
+  // "Ej klar" ack per event (UI-status, ingen planeringspåverkan)
+  const [lateAck, setLateAck] = useState<Set<string>>(new Set());
+
+  function handleEjKlar(eventId: string) {
+    setLateAck(prev => {
+      const next = new Set(prev);
+      next.add(eventId);
+      return next;
+    });
+  }
 
   useEffect(() => {
     function step(ts: number) {
@@ -555,12 +695,19 @@ export default function LabSimPage() {
             Visa metadata
           </label>
           <button onClick={() => jumpTo(7,0)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">07:00</button>
+          <button
+            onClick={() => { setEditEventId(null); setShowSettings(true); }}
+            className="px-2 py-1 rounded-2xl border bg-neutral-900 border-neutral-800"
+            title="Inställningar"
+          >
+            ⚙️
+          </button>
         </div>
       </div>
 
       {/* Nu-info */}
       <div className="mb-3 text-xs text-neutral-300 flex items-center gap-3">
-        <div className="px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800">Nu (sim): {HHMM(nowMs)}</div>
+        <div className="px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800">Nu (sim): {new Date(nowMs).toLocaleTimeString("sv-SE", {hour: '2-digit', minute: '2-digit'})}</div>
       </div>
 
       {/* GRID 5 rader med NU i mitten */}
@@ -579,38 +726,124 @@ export default function LabSimPage() {
         <div className="relative grid" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))`, gridAutoRows: 'min-content' }}>
           <div className="pointer-events-none absolute z-20 top-1/2 -translate-y-1/2 inset-x-0 h-[1px]">
              <div className="h-full border-t border-fuchsia-500/40 bg-fuchsia-500/5 flex items-center justify-center">
-                 <div className="text-[10px] -translate-y-1/2 px-2 py-0.5 rounded-full bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-300">NU {HHMM(nowMs)}</div>
+                 <div className="text-[10px] -translate-y-1/2 px-2 py-0.5 rounded-full bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-300">NU {new Date(nowMs).toLocaleTimeString("sv-SE", {hour: '2-digit', minute: '2-digit'})}</div>
              </div>
           </div>
           
           {visibleRows.map((row, rIdx) => (
             <React.Fragment key={row.time+"-"+rIdx}>
-              {(selected.length ? selected : persons).map((p) => (
-                <GridCell 
-                    key={p.id + "-" + row.time}
-                    person={p}
-                    row={row}
-                    rIdx={rIdx}
-                    nowMs={nowMs}
-                    centerIndex={centerIndex}
-                    currentRowIndex={currentRowIndex}
-                    startIndex={startIndex}
-                    allEvents={visEvents}
-                    completedUpTo={completedUpTo.get(p.id)}
-                    showMeta={showMeta}
-                    onKlar={handleKlar}
-                    onKlarSent={handleKlarSent}
-                    onDelete={(id) => console.log("Radera (labb):", id)}
-                    onGenerateImage={(ev) => console.log("Generera bild (labb):", ev.title)}
-                />
-              ))}
+              {(selected.length ? selected : persons).map((p) => {
+                const isCenterRow = (startIndex + rIdx) === currentRowIndex;
+                const isPastRow = (startIndex + rIdx) < currentRowIndex;
+                
+                const sourceEvent = visEvents.find(e => e.personId === p.id && Math.abs(+new Date(e.start) - row.time) < EPSILON_MS);
+                const sourceEventId = sourceEvent?.id ?? null;
+
+                const src = sourceEventId ? visEvents.find(e => e.id === sourceEventId) : null;
+                const plannedEnd = src ? plannedEndMsForEvent(src, visEvents) : null;
+                const isOverdue = !!(src && plannedEnd && nowMs > plannedEnd); 
+
+                return (
+                    <GridCell 
+                        key={p.id + "-" + row.time}
+                        person={p}
+                        row={row}
+                        rIdx={rIdx}
+                        nowMs={nowMs}
+                        centerIndex={centerIndex}
+                        currentRowIndex={currentRowIndex}
+                        startIndex={startIndex}
+                        allEvents={visEvents}
+                        completedUpTo={completedUpTo.get(p.id)}
+                        showMeta={showMeta}
+                        onKlar={handleKlar}
+                        onKlarSent={handleKlarSent}
+                        onEdit={(ev) => { setEditEventId(ev.id); setShowSettings(true);}}
+                        onGenerateImage={(ev) => console.log("Generera bild (labb):", ev.title)}
+                    >
+                        {/* Custom children for buttons */}
+                        {isPastRow && src && isOverdue && (
+                            <span className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded-md border border-amber-600 bg-amber-900/30 text-amber-200">
+                                Ej klar ännu
+                            </span>
+                        )}
+
+                        {sourceEventId && isCenterRow && (
+                        <div className="flex gap-2 mt-1">
+                            <button
+                            className="px-2 py-0.5 rounded-md text-xs border border-neutral-700 bg-neutral-900"
+                            onClick={() => handleKlar(sourceEventId)}
+                            >
+                            Klar
+                            </button>
+                            <button
+                            className="px-2 py-0.5 rounded-md text-xs border border-neutral-800 bg-neutral-900/40 text-neutral-500 cursor-not-allowed"
+                            disabled
+                            title="Klar sent visas bara för rader ovanför NU"
+                            >
+                            Klar sent
+                            </button>
+                            <button
+                            className="px-2 py-0.5 rounded-md text-xs border border-neutral-800 bg-neutral-900/40 text-neutral-500 cursor-not-allowed"
+                            disabled
+                            title="Ej klar visas bara för rader ovanför NU"
+                            >
+                            Ej klar
+                            </button>
+                        </div>
+                        )}
+                        {sourceEventId && isPastRow && (
+                        <div className="flex gap-2 mt-1">
+                            <button
+                            className="px-2 py-0.5 rounded-md text-xs border border-neutral-700 bg-neutral-900"
+                            onClick={() => handleEjKlar(sourceEventId)}
+                            >
+                            Ej klar
+                            </button>
+                            <button
+                            className={`px-2 py-0.5 rounded-md text-xs border ${isOverdue ? 'border-rose-700 bg-rose-900/30' : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 cursor-not-allowed'}`}
+                            onClick={() => isOverdue && handleKlarSent(sourceEventId)}
+                            disabled={!isOverdue}
+                            aria-disabled={!isOverdue}
+                            title={isOverdue ? 'Markera som sent och krymp framåt' : 'Kan bara användas när planerat slut passerats'}
+                            >
+                            Klar sent
+                            </button>
+                            <button
+                            className="ml-auto px-2 py-0.5 rounded-md text-xs border border-neutral-700 bg-neutral-900"
+                            onClick={() => { setEditEventId(sourceEventId); setShowSettings(true); }}
+                            title="Redigera detta event"
+                            >
+                            ✎
+                            </button>
+                        </div>
+                        )}
+                    </GridCell>
+                )
+              })}
             </React.Fragment>
           ))}
         </div>
       </div>
+
+       <SettingsDrawer
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        event={(editEventId ? visEvents.find(e => e.id === editEventId) : null)}
+        onSave={(patch) => {
+          if (!editEventId) return;
+          // I labb: patcha visningen via overrides, eller uppdatera källdata temporärt:
+          setOverrides?.(prev => {
+            const next = new Map(prev ?? new Map());
+            const cur = next.get(editEventId) ?? {};
+            // start/slut låter vi vara (denna drawer rör meta)
+            // men vi kan spara meta via en side-map om du vill. Tills vidare: uppdatera base array om den är i lokal fil.
+            // Här gör vi ingenting destruktivt förutom att logga:
+            console.log("SAVE meta patch for", editEventId, patch);
+            return next;
+          });
+        }}
+      />
     </div>
   );
 }
-
-
-    

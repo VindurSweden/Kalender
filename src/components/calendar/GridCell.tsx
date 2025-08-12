@@ -47,6 +47,7 @@ interface GridCellProps {
     onKlarSent: (id: string | null) => void;
     onEdit: (event: Event) => void;
     onGenerateImage: (event: Event) => void;
+    children?: React.ReactNode;
 }
 
 export function GridCell({
@@ -63,9 +64,10 @@ export function GridCell({
     onKlar,
     onKlarSent,
     onEdit,
-    onGenerateImage
+    onGenerateImage,
+    children
 }: GridCellProps) {
-    const isCenterRow = rIdx === centerIndex;
+    const isCenterRow = (startIndex + rIdx) === currentRowIndex;
     const isPastRow = (startIndex + rIdx) < currentRowIndex;
     const sourceEv = getSourceEventForCell(person.id, row, allEvents);
     
@@ -128,7 +130,7 @@ export function GridCell({
             </div>
 
             {/* Button container - high z-index to be clickable */}
-            {sourceEv && !sourceEv.imageUrl && (
+            {sourceEv && !sourceEv.imageUrl && !sourceEv.meta?.synthetic && (
                 <div className="absolute inset-0 z-30 flex items-center justify-center">
                     <button onClick={() => onGenerateImage(sourceEv)} className="flex items-center justify-center text-white bg-black/40 hover:bg-black/60 p-2 rounded-md transition-colors text-sm">
                         <ImageIcon size={16} /> <span className="ml-2">Skapa bild</span>
@@ -155,7 +157,7 @@ export function GridCell({
                         <div className="mb-2">
                             <ProgressTrackRtl
                                 startMs={+new Date(current.start)}
-                                targetMs={+new Date(next.start)}
+                                targetMs={next ? +new Date(next.start) : +new Date(current.end)}
                                 nowMs={nowMs}
                                 minDurationMs={(current.minDurationMin ?? 0) * 60000}
                             />
@@ -168,13 +170,15 @@ export function GridCell({
                         {title}
                         {repeat && <span className="ml-1.5 text-[10px] text-white/70 align-middle">↻</span>}
                     </div>
-                     {isOverdue && (
+                     {isOverdue && !children && (
                         <span className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded-full border border-amber-500 bg-amber-900/60 text-amber-200 font-medium">
                            ! Ej klar
                         </span>
                     )}
 
-                    {sourceEventId && isCenterRow && (
+                    {children}
+
+                    {sourceEventId && isCenterRow && !children && (
                         <div className="flex gap-2 mt-2">
                             <button
                                 className="px-2.5 py-1 rounded-md text-xs border border-white/20 bg-black/30 backdrop-blur-sm hover:bg-white/20 flex items-center gap-1.5"
@@ -196,7 +200,15 @@ export function GridCell({
                 </div>
             </div>
 
-            {sourceEv && <button onClick={() => onEdit(sourceEv)} className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-white/20 hover:text-black z-30"><Settings size={14}/></button>}
+            {sourceEv && !sourceEv.meta?.synthetic && (
+                <button 
+                    onClick={() => onEdit(sourceEv)} 
+                    className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-white/20 hover:text-white z-30"
+                    title="Redigera händelse"
+                >
+                    <Settings size={14}/>
+                </button>
+            )}
         </div>
     );
 }
