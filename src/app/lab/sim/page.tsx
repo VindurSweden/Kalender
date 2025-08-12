@@ -279,6 +279,15 @@ function nextStartForPerson(all: Event[], personId: string, evIndex: number): nu
   return next ? toMs(next.start) : null;
 }
 
+function plannedEndMsForEvent(ev: Event, all: Event[]): number {
+    const tl = all
+      .filter(e => e.personId === ev.personId)
+      .sort((a,b) => +new Date(a.start) - +new Date(b.start));
+    const i = tl.findIndex(e => e.id === ev.id);
+    const next = tl[i+1];
+    return next ? +new Date(next.start) : +new Date(ev.end);
+}
+
 function personTimeline(all: Event[], personId: string) {
   return all.filter(e => e.personId === personId).sort((a,b)=>toMs(a.start)-toMs(b.start));
 }
@@ -391,6 +400,15 @@ export default function LabSimPage() {
   const [showMeta, setShowMeta] = useState(false);
   type Override = { startMs?: number; plannedMs?: number };
   const [overrides, setOverrides] = useState<Map<string, Override>>(new Map());
+  const [completedUpTo, setCompletedUpTo] = useState<Map<string, number>>(new Map());
+
+  function setPersonCompleted(pId: string, upToMs: number) {
+    setCompletedUpTo(prev => {
+      const m = new Map(prev);
+      m.set(pId, Math.max(upToMs, m.get(pId) ?? 0));
+      return m;
+    });
+  }
 
   const [speed, setSpeed] = useState<number>(5);     // 1h = 5s IRL
   const [playing, setPlaying] = useState<boolean>(true);
@@ -461,14 +479,23 @@ export default function LabSimPage() {
   }
 
   // Cellhelpers (titel & tid enligt din regel)
-  function presentTitle(pId: string, row: Row, isPastRow: boolean): { title: string; repeat: boolean; sourceEventId: string | null } {
+  function presentTitle(pId: string, row: Row, isPastRow: boolean, completedCut?: number): { title: string; repeat: boolean; sourceEventId: string | null } {
     const ev = row.cells.get(pId) || null;
+
+    if (completedCut && row.time < completedCut) {
+        return { title: '✓ Klar', repeat: false, sourceEventId: null };
+    }
+
     if (ev) return { title: ev.title, repeat: false, sourceEventId: ev.id };
+
     const list = visEvents.filter(e => e.personId === pId).sort((a,b) => +new Date(a.start) - +new Date(b.start));
     const idx = list.findIndex(e => +new Date(e.start) > row.time);
     const prev = idx === -1 ? list[list.length-1] : list[Math.max(0, idx-1)];
     
     if (prev && isOngoing(prev, row.time)) {
+        if (completedCut && prev.start < completedCut) {
+             return { title: '✓ Klar', repeat: false, sourceEventId: null };
+        }
         return { title: toOngoingTitle(prev.title, isPastRow), repeat: true, sourceEventId: prev.id };
     }
     
@@ -543,15 +570,9 @@ export default function LabSimPage() {
 
   function handleKlar(eventId: string | null) {
     if (!eventId) return;
-    // Inga overrides. Vi hoppar bara NU till nästa start för samma person.
-    const seed = visEvents.find(e => e.id === eventId);
-    if (!seed) return;
-    const tl = visEvents
-      .filter(e => e.personId === seed.personId)
-      .sort((a,b)=>+new Date(a.start)-+new Date(b.start));
-    const idx = tl.findIndex(e => e.id === eventId);
-    const nextEv = tl[idx + 1];
-    if (nextEv) setNowMs(+new Date(nextEv.start));
+    const ev = visEvents.find(e => e.id === eventId);
+    if (!ev) return;
+    setPersonCompleted(ev.personId, nowMs);
     setFlash({ kind: "klar", at: Date.now() });
     setTimeout(() => setFlash(null), 800);
   }
@@ -559,49 +580,31 @@ export default function LabSimPage() {
   function handleKlarSent(eventId: string | null) {
     if (!eventId) return;
 
-    // 1) Kör proportionell preview mot VISNINGsdata (innan overrides uppdateras)
     const preview = previewReplanProportional(eventId, nowMs, visEvents);
 
-    // 2) Applicera patchar som overrides (även om flex är otillräcklig – vi visar ändå “bästa möjliga”)
-    if ("patches" in preview && preview.patches.length) {
+    if ("patches" in preview) {
       setOverrides(prev => {
-        const next = new Map(prev);
+        const map = new Map(prev);
         for (const p of preview.patches) {
-          const o = next.get(p.eventId) ?? {};
+          const o = map.get(p.eventId) ?? {};
           o.startMs = p.newStartMs;
           if (p.newPlannedMs != null) o.plannedMs = p.newPlannedMs;
-          next.set(p.eventId, o);
+          map.set(p.eventId, o);
         }
-        return next;
+        return map;
       });
     }
 
-    // 3) Hitta “nästa steg” för samma person efter NU i den NYA visningen och lägg NU där
-    //    (gör nästa render först, sedan hoppa tiden — liten delay för att visEvents ska hinna uppdateras)
-    setTimeout(() => {
-      const seed = visEvents.find(e => e.id === eventId);
-      if (!seed) return;
-      const tl = visEvents
-        .filter(e => e.personId === seed.personId)
-        .sort((a,b)=>+new Date(a.start)-+new Date(b.start));
-      const idx = tl.findIndex(e => e.id === eventId);
-      const nextEv = tl[idx + 1];
-      if (nextEv) {
-        setNowMs(+new Date(nextEv.start)); // NU hamnar i mitten vid nästa steg
-      }
-    }, 0);
+    const seed = visEvents.find(e => e.id === eventId);
+    if (seed) setPersonCompleted(seed.personId, nowMs);
 
-    // 4) Flagga (konfetti / feedback) – valfritt
+    if (preview.status === "insufficientFlex") {
+      console.warn("Insufficient flex", {
+        missingMin: Math.round((preview as any).missingMs/60000),
+      });
+    }
     setFlash({ kind: "late", at: Date.now() });
     setTimeout(() => setFlash(null), 1200);
-
-    // 5) Konsol-info kvar för debug
-    console.log("=== Replan applied (demo) ===", {
-      status: (preview as any).status,
-      requiredSavingMin: Math.round(preview.requiredSavingMs/60000),
-      totalFlexMin: Math.round(preview.totalFlexMs/60000),
-      horizon: new Date(preview.horizonMs).toLocaleTimeString(),
-    });
   }
 
   return (
@@ -686,8 +689,9 @@ export default function LabSimPage() {
             <React.Fragment key={row.time+"-"+rIdx}>
               {(selected.length ? selected : persons).map((p) => {
                 const isCenterRow = rIdx === centerIndex;
-                const isPastRow   = rIdx < centerIndex;
-                const { title, repeat, sourceEventId } = presentTitle(p.id, row, isPastRow);
+                const isPastRow = (startIndex + rIdx) < currentRowIndex;
+                const completedCut = completedUpTo.get(p.id);
+                const { title, repeat, sourceEventId } = presentTitle(p.id, row, isPastRow, completedCut);
                 const timeLabel = cellTimeLabel(p.id, row, isPastRow);
                 const ico = iconFor(title.replace(/\s*\((pågår|pågick)\)$/i, ""));
                 
@@ -708,6 +712,10 @@ export default function LabSimPage() {
                   if (sourceEv.location) metaBadges.push(`loc:${sourceEv.location}`);
                   if (sourceEv.cluster) metaBadges.push(`cluster:${sourceEv.cluster}`);
                 }
+                
+                const seed = sourceEventId ? visEvents.find(e => e.id === sourceEventId) : null;
+                const plannedEnd = seed ? plannedEndMsForEvent(seed, visEvents) : null;
+                const isOverdue = !!(seed && plannedEnd && nowMs > plannedEnd && (!completedCut || completedCut < plannedEnd));
 
                 return (
                   <div key={p.id+"-"+rIdx} className={`px-2 py-2 flex flex-col justify-center gap-1 border-b border-neutral-800 border-r last:border-r-0 ${isCenterRow?"bg-neutral-900/40":"bg-neutral-950"} ${p.id.startsWith('syn-') ? 'border-dashed' : ''} relative`}>
@@ -726,6 +734,11 @@ export default function LabSimPage() {
                           {title}
                           {repeat && <span className="ml-1 text-[10px] text-neutral-400 align-middle">↻</span>}
                         </div>
+                         {isOverdue && (
+                            <span className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded-md border border-amber-600 bg-amber-900/30 text-amber-200">
+                                Ej klar ännu
+                            </span>
+                        )}
                       </div>
                     </div>
                     
@@ -746,14 +759,26 @@ export default function LabSimPage() {
                     {/* Progress-linje */}
                     {(isCenterRow || showAllProgress) && <ProgressTicker personId={p.id} />}
                     {/* Actions */}
-                    <div className="mt-1">
-                      {isCenterRow && (
-                        <button onClick={() => handleKlar(sourceEventId)} className="px-2 py-1 text-xs rounded-md border bg-neutral-900 border-neutral-800">Klar</button>
-                      )}
-                      {isPastRow && (
-                        <button onClick={() => handleKlarSent(sourceEventId)} className="px-2 py-1 text-xs rounded-md border bg-neutral-900 border-neutral-800">Klar sent</button>
-                      )}
-                    </div>
+                    {sourceEventId && isCenterRow && (
+                        <div className="flex gap-2 mt-1">
+                            <button
+                                className="px-2 py-0.5 rounded-md text-xs border border-neutral-700 bg-neutral-900"
+                                onClick={() => handleKlar(sourceEventId)}
+                            >
+                                Klar
+                            </button>
+
+                            <button
+                                className={`px-2 py-0.5 rounded-md text-xs border ${isOverdue ? 'border-rose-700 bg-rose-900/30' : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 cursor-not-allowed'}`}
+                                onClick={() => isOverdue && handleKlarSent(sourceEventId)}
+                                disabled={!isOverdue}
+                                aria-disabled={!isOverdue}
+                                title={isOverdue ? 'Markera som sent och krymp framåt' : 'Kan bara användas när planerat slut har passerats'}
+                            >
+                                Klar sent
+                            </button>
+                        </div>
+                    )}
                   </div>
                 );
               })}
@@ -771,3 +796,5 @@ export default function LabSimPage() {
     </div>
   );
 }
+
+    
