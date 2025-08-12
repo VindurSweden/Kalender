@@ -10,13 +10,27 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 // ========= Typer =========
 type Person = { id: string; name: string; color: string; emoji: string };
+type Role = "required" | "helper";
+type Involved = { personId: string; role: Role };
+
 type Event = {
   id: string;
-  personId: string;
-  start: string; // ISO start
-  end: string;   // ISO slut (används bara som fallback)
+  personId: string; // ägare/huvudansvarig för raden
+  start: string;    // ISO start
+  end: string;      // ISO slut (fallback, segment slutar egentligen vid nästa start)
   title: string;
-  minDurationMin?: number; // röd zon-demonstration (frivillig)
+
+  // --- Planeringsvariabler (nödvändiga för "Klar sent"/assistent) ---
+  minDurationMin?: number;     // minsta möjliga tid (röd zon)
+  fixedStart?: boolean;        // start är en hålltid (t.ex. Skola 08:00)
+  fixedEnd?: boolean;          // slut är en hålltid (mer ovanligt, men stöd finns)
+  involved?: Involved[];       // andra personer som ingår (och deras roll: required/helper)
+  dependsOn?: string[];        // event-ID:n som måste vara klara före start
+  location?: string;           // platsnyckel (home, school, work, etc.)
+  cluster?: string;            // rutin-kluster (t.ex. "morning")
+  allowAlone?: boolean;        // om ägaren kan fortsätta utan helper
+  resource?: string;           // resursnyckel (t.ex. car, kitchen)
+
   meta?: { synthetic?: boolean };
 };
 type Row = { time: number; cells: Map<string, Event> };
@@ -296,6 +310,7 @@ export default function LabSimPage() {
   // Val och simtid
   const [selectedIds, setSelectedIds] = useState<string[]>(persons.map(p=>p.id));
   const [showAllProgress, setShowAllProgress] = useState(false);
+  const [showMeta, setShowMeta] = useState(false);
 
   const [speed, setSpeed] = useState<number>(5);     // 1h = 5s IRL
   const [playing, setPlaying] = useState<boolean>(true);
@@ -366,6 +381,22 @@ export default function LabSimPage() {
     const ev = row.cells.get(pId) || null;
     const label = ev ? HHMM(new Date(ev.start)) : HHMM(row.time);
     return label;
+  }
+  function sourceEventForCell(pId: string, row: Row): Event | null {
+    // 1) Finns ett event som startar exakt på radens tid?
+    const direct = row.cells.get(pId) || null;
+    if (direct) return direct;
+  
+    // 2) Annars: vilket var föregående event för personen, och är det pågående vid radens tid?
+    const list = baseEvents
+      .filter(e => e.personId === pId)
+      .sort((a,b) => +new Date(a.start) - +new Date(b.start));
+  
+    const idx = list.findIndex(e => +new Date(e.start) >= row.time);
+    const prev = idx === -1 ? list[list.length - 1] : list[Math.max(0, idx - 1)];
+    if (prev && isOngoing(prev, row.time)) return prev;
+  
+    return null;
   }
 
   // ========= Progress-spår (höger→vänster) =========
@@ -468,6 +499,14 @@ export default function LabSimPage() {
             <input type="checkbox" checked={showAllProgress} onChange={(e)=> setShowAllProgress(e.target.checked)} />
             Progress på alla rader
           </label>
+           <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={showMeta}
+              onChange={(e) => setShowMeta(e.target.checked)}
+            />
+            Visa metadata
+          </label>
           <button onClick={() => jumpTo(7,0)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">07:00</button>
           <button onClick={() => jumpTo(12,0)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">12:00</button>
           <button onClick={() => jumpTo(18,0)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">18:00</button>
@@ -504,7 +543,7 @@ export default function LabSimPage() {
         </div>
 
         {/* Rader */}
-        <div className="relative grid" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${S}, 112px)` }}>
+        <div className="relative grid" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${S}, auto)` }}>
           {/* NU-markering över mittenraden */}
           <div className="pointer-events-none absolute inset-x-0" style={{ top: `calc(${centerIndex} * 112px)` }}>
             <div className="h-[112px] border-y border-fuchsia-500/40 bg-fuchsia-500/5 grid place-items-center">
@@ -520,8 +559,27 @@ export default function LabSimPage() {
                 const { title, repeat, sourceEventId } = presentTitle(p.id, row, isPastRow);
                 const timeLabel = cellTimeLabel(p.id, row, isPastRow);
                 const ico = iconFor(title.replace(/\s*\((pågår|pågick)\)$/i, ""));
+                
+                const sourceEv = sourceEventForCell(p.id, row);
+                const metaBadges: string[] = [];
+                if (sourceEv) {
+                  if (sourceEv.fixedStart) metaBadges.push("FixStart");
+                  if (sourceEv.fixedEnd) metaBadges.push("FixEnd");
+                  if (typeof sourceEv.minDurationMin === "number") metaBadges.push(`min:${sourceEv.minDurationMin}m`);
+                  if (sourceEv.dependsOn?.length) metaBadges.push(`dep:${sourceEv.dependsOn.length}`);
+                  if (sourceEv.involved?.length) {
+                    const req = sourceEv.involved.filter(i => i.role === "required").length;
+                    const hlp = sourceEv.involved.length - req;
+                    metaBadges.push(`inv:${req}${hlp ? `+${hlp}h` : ""}`);
+                  }
+                  if (sourceEv.allowAlone === true) metaBadges.push("självOK");
+                  if (sourceEv.resource) metaBadges.push(`res:${sourceEv.resource}`);
+                  if (sourceEv.location) metaBadges.push(`loc:${sourceEv.location}`);
+                  if (sourceEv.cluster) metaBadges.push(`cluster:${sourceEv.cluster}`);
+                }
+
                 return (
-                  <div key={p.id+"-"+rIdx} className={`px-2 py-2 flex flex-col justify-center gap-2 border-b border-neutral-800 border-r last:border-r-0 ${isCenterRow?"bg-neutral-900/40":"bg-neutral-950"} ${p.id.startsWith('syn-') ? 'border-dashed' : ''}`}>
+                  <div key={p.id+"-"+rIdx} className={`px-2 py-2 flex flex-col justify-center gap-1 border-b border-neutral-800 border-r last:border-r-0 ${isCenterRow?"bg-neutral-900/40":"bg-neutral-950"} ${p.id.startsWith('syn-') ? 'border-dashed' : ''}`}>
                     <div className="flex items-center gap-3">
                       {/* Bildruta */}
                       <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-neutral-800 to-neutral-900 grid place-items-center shrink-0">
@@ -536,6 +594,20 @@ export default function LabSimPage() {
                         </div>
                       </div>
                     </div>
+                    
+                    {/* Meta badges */}
+                    {showMeta && sourceEv && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {metaBadges.map((b, i) => (
+                          <span
+                            key={i}
+                            className="text-[10px] px-1.5 py-0.5 rounded-md border border-neutral-700 bg-neutral-900/60 text-neutral-300"
+                          >
+                            {b}
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Progress-linje */}
                     {(isCenterRow || showAllProgress) && <ProgressTicker personId={p.id} />}
@@ -565,5 +637,3 @@ export default function LabSimPage() {
     </div>
   );
 }
-
-    
