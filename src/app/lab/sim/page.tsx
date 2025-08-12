@@ -15,21 +15,21 @@ type Involved = { personId: string; role: Role };
 
 type Event = {
   id: string;
-  personId: string; // ägare/huvudansvarig för raden
-  start: string;    // ISO start
-  end: string;      // ISO slut (fallback, segment slutar egentligen vid nästa start)
+  personId: string;
+  start: string;
+  end: string;
   title: string;
 
-  // --- Planeringsvariabler (nödvändiga för "Klar sent"/assistent) ---
-  minDurationMin?: number;     // minsta möjliga tid (röd zon)
-  fixedStart?: boolean;        // start är en hålltid (t.ex. Skola 08:00)
-  fixedEnd?: boolean;          // slut är en hålltid (mer ovanligt, men stöd finns)
-  involved?: Involved[];       // andra personer som ingår (och deras roll: required/helper)
-  dependsOn?: string[];        // event-ID:n som måste vara klara före start
-  location?: string;           // platsnyckel (home, school, work, etc.)
-  cluster?: string;            // rutin-kluster (t.ex. "morning")
-  allowAlone?: boolean;        // om ägaren kan fortsätta utan helper
-  resource?: string;           // resursnyckel (t.ex. car, kitchen)
+  // === metadata för planering/visning (alla valfria) ===
+  minDurationMin?: number;  // minsta möjliga tid (visar röd zon)
+  fixedStart?: boolean;     // start är en hålltid (”fixed time”)
+  fixedEnd?: boolean;       // ev. fast slut (sällsynt)
+  dependsOn?: string[];     // eventIds som måste vara klara före detta
+  involved?: { personId: string; role: "required" | "helper" }[];
+  allowAlone?: boolean;     // om ägaren kan fortsätta utan hjälpare
+  resource?: string;        // t.ex. "car", "kitchen"
+  location?: string;        // t.ex. "home", "school", "work"
+  cluster?: string;         // t.ex. "morning", "evening"
 
   meta?: { synthetic?: boolean };
 };
@@ -128,56 +128,75 @@ const synthesizeDayFill = (personEvents: Event[], personId: string, day: Date): 
 
 
 // ========= Testevents =========
-const baseMaria: Event[] = [
-  { id: "maria-06-07", personId: "maria", start: t(6), end: t(7), title: "Vaknar & kaffe", minDurationMin: 10 },
-  { id: "maria-07-08", personId: "maria", start: t(7), end: t(8), title: "Morgonrutin", minDurationMin: 15 },
-  { id: "maria-08-12", personId: "maria", start: t(8), end: t(12), title: "Jobb (förmiddag)" },
-  { id: "maria-12-13", personId: "maria", start: t(12), end: t(13), title: "Lunch", minDurationMin: 20 },
-  { id: "maria-13-16", personId: "maria", start: t(13), end: t(16), title: "Jobb (eftermiddag)" },
-  { id: "maria-1630-17", personId: "maria", start: `${day}T16:30:00`, end: t(17), title: "Hämtar Leia (fritids)" },
-  { id: "maria-18-19", personId: "maria", start: t(18), end: t(19), title: "Middag", minDurationMin: 20 },
+const mariaEvents: Event[] = [
+  { id: "maria-sleep-00", personId: "maria", start: t(0), end: t(6), title: "Sover", meta: { synthetic: true }, location: "home" },
+  { id: "maria-06-07", personId: "maria", start: t(6), end: t(7), title: "Vaknar & kaffe", minDurationMin: 5, location: "home", cluster: "morning" },
+  { id: "maria-07-08", personId: "maria", start: t(7), end: t(8), title: "Morgonrutin", minDurationMin: 15, location: "home", cluster: "morning" },
+  { id: "maria-jobb-am", personId: "maria", start: t(8), end: t(12), title: "Jobb (förmiddag)", location: "work" },
+  { id: "maria-lunch-12", personId: "maria", start: t(12), end: t(13), title: "Lunch", minDurationMin: 15, location: "work" },
+  { id: "maria-jobb-em", personId: "maria", start: t(13), end: t(16), title: "Jobb (eftermiddag)", location: "work" },
+  { id: "maria-1630", personId: "maria", start: `${day}T16:30:00`, end: t(17), title: "Hämtar Leia (fritids)", fixedStart: true, involved: [{personId:"leia", role:"required"}], resource: "car", location: "city" },
+  { id: "maria-18", personId: "maria", start: t(18), end: t(19), title: "Middag", minDurationMin: 20, involved: [{personId:"antony", role:"required"}, {personId:"leia", role:"required"}, {personId:"gabriel", role:"required"}], location: "home", cluster: "evening" },
+  { id: "maria-21", personId: "maria", start: t(21), end: t(22), title: "Kvällsrutin", minDurationMin: 10, location: "home", cluster: "evening" },
+  { id: "maria-sleep-22", personId: "maria", start: t(22), end: t(24), title: "Sover", meta: { synthetic: true }, location: "home" },
 ];
 
-const baseLeia: Event[] = [
-  { id: "leia-07-00", personId: "leia", start: t(7, 0), end: t(7, 8), title: "Vakna", minDurationMin: 2 },
-  { id: "leia-07-08", personId: "leia", start: t(7, 8), end: t(7, 16), title: "Borsta tänder", minDurationMin: 2 },
-  { id: "leia-07-16", personId: "leia", start: t(7, 16), end: t(7, 24), title: "Äta frukost", minDurationMin: 5 },
-  { id: "leia-07-24", personId: "leia", start: t(7, 24), end: t(7, 32), title: "Ta vitaminer", minDurationMin: 1 },
-  { id: "leia-07-32", personId: "leia", start: t(7, 32), end: t(7, 40), title: "Borsta hår", minDurationMin: 2 },
-  { id: "leia-07-40", personId: "leia", start: t(7, 40), end: t(7, 48), title: "Klä på sig", minDurationMin: 4 },
-  { id: "leia-07-48", personId: "leia", start: t(7, 48), end: t(8, 0), title: "Packa väska & skor", minDurationMin: 4 },
-  { id: "leia-08-13", personId: "leia", start: t(8), end: t(13), title: "Skola" },
-  { id: "leia-13-1630", personId: "leia", start: t(13), end: `${day}T16:30:00`, title: "Fritids" },
-  { id: "leia-1630-17", personId: "leia", start: `${day}T16:30:00`, end: t(17), title: "Blir hämtad (fritids)", minDurationMin: 5 },
-  { id: "leia-18-19", personId: "leia", start: t(18), end: t(19), title: "Middag", minDurationMin: 20 },
+const leia07_08: Event[] = [
+  { id: "leia-07-00", personId: "leia", start: t(7, 0),  end: t(7, 8),  title: "Vakna",           minDurationMin: 3, location: "home", cluster: "morning" },
+  { id: "leia-07-08", personId: "leia", start: t(7, 8),  end: t(7, 16), title: "Borsta tänder",   minDurationMin: 2, location: "home", cluster: "morning" },
+  { id: "leia-07-16", personId: "leia", start: t(7, 16), end: t(7, 24), title: "Äta frukost",     minDurationMin: 10, dependsOn: ["ant-07-00-10"], involved: [{personId:"antony", role:"required"}], location: "home", cluster: "morning" },
+  { id: "leia-07-24", personId: "leia", start: t(7, 24), end: t(7, 32), title: "Ta vitaminer",    minDurationMin: 1, dependsOn: ["leia-07-16"], allowAlone: true, location: "home", cluster: "morning" },
+  { id: "leia-07-32", personId: "leia", start: t(7, 32), end: t(7, 40), title: "Borsta hår",      minDurationMin: 2, allowAlone: true, location: "home", cluster: "morning" },
+  { id: "leia-07-40", personId: "leia", start: t(7, 40), end: t(7, 48), title: "Klä på sig",      minDurationMin: 4, allowAlone: true, location: "home", cluster: "morning" },
+  { id: "leia-07-48", personId: "leia", start: t(7, 48), end: t(8, 0),  title: "Packa väska & skor", minDurationMin: 5, allowAlone: true, location: "home", cluster: "morning" },
 ];
 
-const baseGabriel: Event[] = [
-  { id: "gab-07-00", personId: "gabriel", start: t(7, 0), end: t(7, 20), title: "Vakna & påklädning", minDurationMin: 6 },
-  { id: "gab-07-20", personId: "gabriel", start: t(7, 20), end: t(7, 40), title: "Frukost", minDurationMin: 8 },
-  { id: "gab-07-40", personId: "gabriel", start: t(7, 40), end: t(8, 0), title: "Tänder & skor", minDurationMin: 4 },
-  { id: "gab-08-13", personId: "gabriel", start: t(8), end: t(13), title: "Förskola" },
-  { id: "gab-13-16", personId: "gabriel", start: t(13), end: t(16), title: "Lek & mellis" },
-  { id: "gab-18-19", personId: "gabriel", start: t(18), end: t(19), title: "Middag", minDurationMin: 15 },
+const leiaEvents: Event[] = [
+  { id: "leia-sleep-00", personId: "leia", start: t(0), end: t(6), title: "Sover", meta: { synthetic: true }, location: "home" },
+  { id: "leia-06-07", personId: "leia", start: t(6), end: t(7), title: "Vaknar långsamt", minDurationMin: 10, location: "home", cluster: "morning" },
+  ...leia07_08,
+  { id: "leia-skola-08", personId: "leia", start: t(8), end: t(13), title: "Skola", fixedStart: true, location: "school" },
+  { id: "leia-fritids-13", personId: "leia", start: t(13), end: `${day}T16:30:00`, title: "Fritids", location: "school" },
+  { id: "leia-1630", personId: "leia", start: `${day}T16:30:00`, end: t(17), title: "Blir hämtad (fritids)", dependsOn: ["maria-1630"], involved: [{personId:"maria", role:"required"}], location: "school", resource: "car" },
+  { id: "leia-18", personId: "leia", start: t(18), end: t(19), title: "Middag", minDurationMin: 20, involved: [{personId:"maria", role:"required"}, {personId:"antony", role:"required"}, {personId:"gabriel", role:"helper"}], location: "home", cluster: "evening" },
+  { id: "leia-19", personId: "leia", start: t(19), end: t(20), title: "Läxor", minDurationMin: 15, location: "home" },
+  { id: "leia-20", personId: "leia", start: t(20), end: t(21), title: "Spel / lugn", minDurationMin: 5, location: "home" },
+  { id: "leia-21", personId: "leia", start: t(21), end: t(22), title: "Kvällsrutin", minDurationMin: 10, location: "home", cluster: "evening" },
+  { id: "leia-sleep-22", personId: "leia", start: t(22), end: t(24), title: "Sover", meta: { synthetic: true }, location: "home" },
 ];
 
-const mariaEvents = synthesizeDayFill(baseMaria, 'maria', new Date(day));
-const leiaEvents = synthesizeDayFill(baseLeia, 'leia', new Date(day));
-const gabrielEvents = synthesizeDayFill(baseGabriel, 'gabriel', new Date(day));
+const gabriel07_08: Event[] = [
+  { id: "gab-07-00", personId: "gabriel", start: t(7, 0),  end: t(7, 20), title: "Vakna & påklädning", minDurationMin: 8, location: "home", cluster: "morning" },
+  { id: "gab-07-20", personId: "gabriel", start: t(7, 20), end: t(7, 40), title: "Frukost",         minDurationMin: 8, dependsOn: ["ant-07-00-10"], involved: [{personId:"antony", role:"required"}], location: "home", cluster: "morning" },
+  { id: "gab-07-40", personId: "gabriel", start: t(7, 40), end: t(8, 0),  title: "Tänder & skor",   minDurationMin: 4, allowAlone: false, location: "home", cluster: "morning" },
+];
 
-// Antony (pappa) 07:00–08:00 enligt ditt schema
+const gabrielEvents: Event[] = [
+  { id: "gab-sleep-00", personId: "gabriel", start: t(0), end: t(6), title: "Sover", meta: { synthetic: true }, location: "home" },
+  { id: "gab-06-07", personId: "gabriel", start: t(6), end: t(7), title: "Morgonmys", minDurationMin: 5, location: "home" },
+  ...gabriel07_08,
+  { id: "gab-08-13", personId: "gabriel", start: t(8), end: t(13), title: "Förskola", fixedStart: true, location: "school" },
+  { id: "gab-13-16", personId: "gabriel", start: t(13), end: t(16), title: "Lek & mellis", minDurationMin: 20, location: "home" },
+  { id: "gab-18", personId: "gabriel", start: t(18), end: t(19), title: "Middag", minDurationMin: 20, involved: [{personId:"maria", role:"required"}, {personId:"antony", role:"required"}, {personId:"leia", role:"helper"}], location: "home", cluster: "evening" },
+  { id: "gab-19-20", personId: "gabriel", start: t(19), end: t(20), title: "Lego", minDurationMin: 5, location: "home" },
+  { id: "gab-21-22", personId: "gabriel", start: t(21), end: t(22), title: "Kvällsrutin", minDurationMin: 10, location: "home", cluster: "evening" },
+  { id: "gab-sleep-22", personId: "gabriel", start: t(22), end: t(24), title: "Sover", meta: { synthetic: true }, location: "home" },
+];
+
+// Antony (pappa) 07:00–08:00 + jobb/lunch
 const antonyEvents: Event[] = [
-  { id: "ant-07-00-10", personId: "antony", start: t(7,0),  end: t(7,10), title: "Fixa frukost",                 minDurationMin: 6  },
-  { id: "ant-07-10-30", personId: "antony", start: t(7,10), end: t(7,30), title: "Äta frukost (med barnen)",     minDurationMin: 10 },
-  { id: "ant-07-30-40", personId: "antony", start: t(7,30), end: t(7,40), title: "Göra sig klar",                 minDurationMin: 6  },
-  { id: "ant-07-40-50", personId: "antony", start: t(7,40), end: t(7,50), title: "Hjälpa Leia bli klar",          minDurationMin: 8  },
-  { id: "ant-07-50-55", personId: "antony", start: t(7,50), end: t(7,55), title: "Hjälpa Gabriel med väskan",     minDurationMin: 3  },
-  { id: "ant-07-55-08", personId: "antony", start: t(7,55), end: t(8,0),  title: "Gå med Leia",                   minDurationMin: 5  },
-  { id: "ant-08-12",    personId: "antony", start: t(8),    end: t(12),   title: "Jobb (hemma)" },
-  { id: "ant-12-13",    personId: "antony", start: t(12),   end: t(13),   title: "Lunch" },
-  { id: "ant-13-16",    personId: "antony", start: t(13),   end: t(16),   title: "Jobb (hemma)" },
-  { id: "ant-18-19",    personId: "antony", start: t(18),   end: t(19),   title: "Middag",                         minDurationMin: 20 },
+  { id: "ant-07-00-10", personId: "antony", start: t(7,0),  end: t(7,10), title: "Fixa frukost", minDurationMin: 6, location: "home", resource: "kitchen", cluster: "morning" },
+  { id: "ant-07-10-30", personId: "antony", start: t(7,10), end: t(7,30), title: "Äta frukost (med barnen)", minDurationMin: 10, involved: [{personId:"leia", role:"required"}, {personId:"gabriel", role:"required"}], location: "home", cluster: "morning" },
+  { id: "ant-07-30-40", personId: "antony", start: t(7,30), end: t(7,40), title: "Göra sig klar", minDurationMin: 6, location: "home", cluster: "morning" },
+  { id: "ant-07-40-50", personId: "antony", start: t(7,40), end: t(7,50), title: "Hjälpa Leia bli klar", minDurationMin: 8, involved: [{personId:"leia", role:"required"}], location: "home", cluster: "morning" },
+  { id: "ant-07-50-55", personId: "antony", start: t(7,50), end: t(7,55), title: "Hjälpa Gabriel med väskan", minDurationMin: 3, involved: [{personId:"gabriel", role:"required"}], location: "home", cluster: "morning" },
+  { id: "ant-07-55-08", personId: "antony", start: t(7,55), end: t(8,0),  title: "Gå med Leia", minDurationMin: 5, involved: [{personId:"leia", role:"required"}], location: "street", cluster: "morning" },
+  { id: "ant-08-12",    personId: "antony", start: t(8),    end: t(12),   title: "Jobb (hemma)", location: "home" },
+  { id: "ant-12-13",    personId: "antony", start: t(12),   end: t(13),   title: "Lunch", minDurationMin: 15, location: "home" },
+  { id: "ant-13-16",    personId: "antony", start: t(13),   end: t(16),   title: "Jobb (hemma)", location: "home" },
+  { id: "ant-18-19",    personId: "antony", start: t(18),   end: t(19),   title: "Middag", minDurationMin: 20, involved: [{personId:"maria", role:"required"}, {personId:"leia", role:"required"}, {personId:"gabriel", role:"required"}], location: "home", cluster: "evening" },
 ];
+
 const baseEvents: Event[] = [...mariaEvents, ...leiaEvents, ...gabrielEvents, ...antonyEvents];
 
 
@@ -288,6 +307,104 @@ function currentAndNextForPerson(personId: string, nowMs: number) {
     }
   
   return { current, next };
+}
+
+function toMs(iso: string) { return +new Date(iso); }
+function ms(min: number) { return min * 60_000; }
+
+function nextStartForPerson(all: Event[], personId: string, evIndex: number): number | null {
+  const list = all.filter(e => e.personId === personId).sort((a,b)=>toMs(a.start)-toMs(b.start));
+  const next = list[evIndex+1];
+  return next ? toMs(next.start) : null;
+}
+
+function personTimeline(all: Event[], personId: string) {
+  return all.filter(e => e.personId === personId).sort((a,b)=>toMs(a.start)-toMs(b.start));
+}
+
+function findEventIndex(tl: Event[], id: string) {
+  return tl.findIndex(e => e.id === id);
+}
+
+function findHorizonNextFixed(all: Event[], nowMs: number): number {
+  const fixed = all.filter(e => e.fixedStart && toMs(e.start) >= nowMs).sort((a,b)=>toMs(a.start)-toMs(b.start));
+  return fixed.length ? toMs(fixed[0].start) : toMs(`${day}T24:00:00`);
+}
+
+type PreviewPatch = { eventId: string; newStartMs: number; minDurationMs?: number; plannedMs?: number; newPlannedMs?: number; };
+type PreviewResult =
+  | { status: "ok"; requiredSavingMs: number; totalFlexMs: number; lambda: number; horizonMs: number; patches: PreviewPatch[]; emojiHints: { eventId: string; totalMs: number }[]; }
+  | { status: "insufficientFlex"; requiredSavingMs: number; totalFlexMs: number; missingMs: number; horizonMs: number; patches: PreviewPatch[]; };
+
+function previewReplanProportional(seedEventId: string, nowMs: number, all: Event[]): PreviewResult {
+  // 1) seed & person
+  const seed = all.find(e => e.id === seedEventId);
+  if (!seed) throw new Error("seedEvent not found");
+  const tl = personTimeline(all, seed.personId);
+  const i = findEventIndex(tl, seed.id);
+  if (i === -1) throw new Error("seed event not found in timeline");
+
+  // 2) planned end (seed’s segment slutar vid nästa start för samma person)
+  const seedNextStart = nextStartForPerson(all, seed.personId, i);
+  const plannedEnd = seedNextStart ?? toMs(seed.end);
+  const requiredSaving = Math.max(0, nowMs - plannedEnd);
+
+  const horizon = findHorizonNextFixed(all, nowMs);
+
+  // 3) fönster: efterföljande events för samma person fram till horizon
+  const window: Event[] = [];
+  for (let k = i+1; k < tl.length; k++) {
+    const e = tl[k];
+    if (toMs(e.start) >= horizon) break;
+    window.push(e);
+  }
+
+  // 4) beräkna planerade tider & flex
+  let totalFlex = 0;
+  const planned: { e: Event; start: number; end: number; plannedMs: number; minMs: number; }[] = [];
+
+  for (let k = 0; k < window.length; k++) {
+    const e = window[k];
+    const start = toMs(e.start);
+    const next = (k < window.length-1) ? toMs(window[k+1].start) : Math.min(horizon, toMs(e.end)); // sista event i fönstret slutar senast vid horizon
+    const plannedMs = Math.max(1, next - start);
+    const minMs = ms(e.minDurationMin ?? 0);
+    totalFlex += Math.max(0, plannedMs - minMs);
+    planned.push({ e, start, end: next, plannedMs, minMs });
+  }
+
+  if (requiredSaving === 0 || window.length === 0) {
+    return { status: "ok", requiredSavingMs: requiredSaving, totalFlexMs: totalFlex, lambda: 0, horizonMs: horizon, patches: [], emojiHints: [] };
+  }
+
+  if (totalFlex <= 0) {
+    return { status: "insufficientFlex", requiredSavingMs: requiredSaving, totalFlexMs: 0, missingMs: requiredSaving, horizonMs: horizon, patches: [] };
+  }
+
+  // 5) lambda och nya varaktigheter
+  const lambda = Math.min(1, requiredSaving / totalFlex);
+  const patched: PreviewPatch[] = [];
+  const hints: { eventId: string; totalMs: number }[] = [];
+
+  // ny kedja startar vid nowMs
+  let cursor = nowMs;
+
+  for (const item of planned) {
+    const flex = Math.max(0, item.plannedMs - item.minMs);
+    const newMs = Math.max(item.minMs, Math.round(item.plannedMs - lambda * flex));
+    patched.push({ eventId: item.e.id, newStartMs: cursor, minDurationMs: item.minMs, plannedMs: item.plannedMs, newPlannedMs: newMs });
+    cursor += newMs;
+
+    // emoji-hint = totalMs för segmentet efter trim (för att byta djur)
+    hints.push({ eventId: item.e.id, totalMs: newMs });
+  }
+
+  if (cursor > horizon) {
+    const missing = cursor - horizon;
+    return { status: "insufficientFlex", requiredSavingMs: requiredSaving, totalFlexMs: totalFlex, missingMs: missing, horizonMs: horizon, patches: patched };
+  }
+
+  return { status: "ok", requiredSavingMs: requiredSaving, totalFlexMs: totalFlex, lambda, horizonMs: horizon, patches: patched, emojiHints: hints };
 }
 
 
@@ -469,8 +586,32 @@ export default function LabSimPage() {
   }
   function handleKlarSent(eventId: string | null) {
     if (!eventId) return;
-    const payload = { seedEventId: eventId, now: new Date(nowMs).toISOString(), horizonMode: "nextFixed" };
-    console.log("Klar sent (preview replan-jobb):", payload);
+    const preview = previewReplanProportional(eventId, nowMs, baseEvents);
+    console.log("=== Replan preview (demo) ===");
+    console.log({
+      status: (preview as any).status,
+      requiredSavingMin: Math.round(preview.requiredSavingMs/60000),
+      totalFlexMin: Math.round(preview.totalFlexMs/60000),
+      lambda: (preview as any).lambda ?? null,
+      horizon: new Date(preview.horizonMs).toLocaleTimeString(),
+    });
+    if (preview.status === "ok") {
+      console.table(preview.patches.map(p => ({
+        eventId: p.eventId,
+        newStart: new Date(p.newStartMs).toLocaleTimeString(),
+        plannedMin: Math.round((p.plannedMs ?? 0)/60000),
+        newPlannedMin: Math.round((p.newPlannedMs ?? 0)/60000),
+        minMin: Math.round((p.minDurationMs ?? 0)/60000),
+      })));
+    } else {
+      console.warn("Insufficient flex", {
+        missingMin: Math.round((preview as any).missingMs/60000),
+      });
+      console.table(preview.patches.map(p => ({
+        eventId: p.eventId,
+        newStart: new Date(p.newStartMs).toLocaleTimeString(),
+      })));
+    }
     setFlash({ kind: "late", at: Date.now() });
     setTimeout(() => setFlash(null), 1200);
   }
