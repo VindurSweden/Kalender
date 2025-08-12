@@ -114,6 +114,7 @@ export default function NPFScheduleApp() {
   const [showFor, setShowFor] = useState<string[]>([]);
   const [dark, setDark] = useState(true);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -236,16 +237,17 @@ export default function NPFScheduleApp() {
 
   function handleKlar(eventId: string | null) {
       if (!eventId) return;
-      // In a real app, you might want to mark the event as completed
-      // For now, we just show a confetti effect.
       boom();
   }
   
   function handleKlarSent(eventId: string | null) {
       if (!eventId) return;
-      // In a real app, this would trigger the replanning logic
-      // For now, we just show a confetti effect.
       boom();
+  }
+
+  function handleEditEvent(event: Event) {
+    console.log("Editing event:", event); // This will be replaced by opening the Edit Sheet
+    setEditingEvent(event);
   }
 
 
@@ -273,7 +275,7 @@ export default function NPFScheduleApp() {
                     people={people.filter(p => orderedShowFor.includes(p.id))}
                     events={dailyEvents}
                     onEventUpdate={onEventUpdate}
-                    onEventDelete={deleteEvent}
+                    onEdit={handleEditEvent}
                     onGenerateImage={handleGenerateImage}
                     onKlar={handleKlar}
                     onKlarSent={handleKlarSent}

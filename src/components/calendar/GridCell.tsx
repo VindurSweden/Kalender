@@ -2,7 +2,7 @@
 "use client";
 import React from 'react';
 import { motion } from "framer-motion";
-import { Image as ImageIcon, Trash2, CheckCircle, Clock } from "lucide-react";
+import { Image as ImageIcon, CheckCircle, Clock, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Event, Person, Row } from "@/types/event";
 import { plannedEndMsForEvent, getSourceEventForCell, presentTitleForCell, whyBlocked } from '@/lib/grid-utils';
@@ -45,7 +45,7 @@ interface GridCellProps {
     showMeta: boolean;
     onKlar: (id: string | null) => void;
     onKlarSent: (id: string | null) => void;
-    onDelete: (id: string) => void;
+    onEdit: (event: Event) => void;
     onGenerateImage: (event: Event) => void;
 }
 
@@ -62,7 +62,7 @@ export function GridCell({
     showMeta,
     onKlar,
     onKlarSent,
-    onDelete,
+    onEdit,
     onGenerateImage
 }: GridCellProps) {
     const isCenterRow = rIdx === centerIndex;
@@ -196,7 +196,7 @@ export function GridCell({
                 </div>
             </div>
 
-            {sourceEventId && <button onClick={() => onDelete(sourceEventId)} className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-red-800/80 z-30"><Trash2 size={14}/></button>}
+            {sourceEv && <button onClick={() => onEdit(sourceEv)} className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-white/20 hover:text-black z-30"><Settings size={14}/></button>}
         </div>
     );
 }
