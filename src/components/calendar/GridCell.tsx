@@ -74,10 +74,8 @@ export function GridCell({
     const isPastRow = (startIndex + rIdx) < currentRowIndex;
     const sourceEv = getSourceEventForCell(person.id, row, allEvents);
     
-    // We pass allEvents to whyBlocked because dependencies can cross persons
     const blockedReason = sourceEv ? whyBlocked(sourceEv, row.time, allEvents, []) : null;
-    const effectiveTitle = blockedReason ? toOngoingTitle(blockedReason, isPastRow) : sourceEv?.title || '—';
-
+    
     const { title, repeat, sourceEventId } = presentTitleForCell(person.id, row, allEvents, isPastRow, completedUpTo, blockedReason);
 
     const timeLabel = row.cells.has(person.id) ? HHMM(row.time) : `(${HHMM(row.time)})`;
@@ -102,7 +100,6 @@ export function GridCell({
     const plannedEnd = sourceEv ? plannedEndMsForEvent(sourceEv, allEvents) : null;
     const isOverdue = !!(sourceEv && plannedEnd && nowMs > plannedEnd && (!completedUpTo || completedUpTo < plannedEnd));
     
-    // Progress bar logic
     const { current, next } = (() => {
         let current: Event | null = null;
         let next: Event | null = null;
@@ -116,14 +113,6 @@ export function GridCell({
         return { current, next };
     })();
     const showProgress = isCenterRow && current && next;
-    
-    function toOngoingTitle(title: string, past: boolean) {
-      const suffix = past ? "(pågick)" : "(pågår)";
-      if (/^Hämtar/i.test(title)) return `${title} ${suffix}`;
-      if (/^Blir hämtad/i.test(title)) return past ? `Väntade ${suffix}` : `Väntar ${suffix}`;
-      if (/^Äta|Frukost/i.test(title)) return `${title} ${suffix}`;
-      return `${title} ${suffix}`;
-    }
 
     return (
         <div className={cn(
@@ -141,14 +130,16 @@ export function GridCell({
                 ) : (
                     <div className={cn("w-full h-full grid place-items-center text-5xl", person.bg.replace('bg-','bg-gradient-to-br from-').replace('/40', '/70 via-neutral-900 to-neutral-900'))}>{ico}</div>
                 )}
-                 {sourceEv && !sourceEv.imageUrl && !sourceEv.meta?.synthetic && (
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                        <button onClick={() => onGenerateImage(sourceEv)} className="flex items-center justify-center text-white bg-black/40 hover:bg-black/60 p-2 rounded-md transition-colors text-sm">
-                            <ImageIcon size={16} /> <span className="ml-2">Skapa bild</span>
-                        </button>
-                    </div>
-                )}
             </div>
+
+            {/* Button container - high z-index to be clickable */}
+            {sourceEv && !sourceEv.imageUrl && !sourceEv.meta?.synthetic && (
+                <div className="absolute inset-0 z-30 flex items-center justify-center">
+                    <button onClick={() => onGenerateImage(sourceEv)} className="flex items-center justify-center text-white bg-black/40 hover:bg-black/60 p-2 rounded-md transition-colors text-sm">
+                        <ImageIcon size={16} /> <span className="ml-2">Skapa bild</span>
+                    </button>
+                </div>
+            )}
             
             {/* Content Overlay */}
             <div className="relative z-20 flex flex-col justify-end h-full p-2 bg-gradient-to-t from-black/80 via-black/50 to-transparent">
@@ -214,5 +205,3 @@ export function GridCell({
         </div>
     );
 }
-
-    
