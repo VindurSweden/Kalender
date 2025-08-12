@@ -28,6 +28,7 @@ const generateEventImageFlow = ai.defineFlow(
     outputSchema: GenerateEventImageOutputSchema,
   },
   async (input: GenerateEventImageInput): Promise<GenerateEventImageOutput> => {
+    // This check is valid to prevent calls with no title.
     if (!input.eventTitle || input.eventTitle.trim() === '') {
       console.warn('Image generation skipped: Event title is empty.');
       return {imageUrl: ''};
