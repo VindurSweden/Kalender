@@ -136,15 +136,14 @@ const toOngoingTitle = (title: string, past: boolean) => {
     return `${title} ${suffix}`;
 };
 
-export function presentTitleForCell(pId: string, row: Row, allEvents: Event[], isPastRow: boolean, completedCut?: number): { title: string; repeat: boolean; sourceEventId: string | null } {
+export function presentTitleForCell(pId: string, row: Row, allEvents: Event[], isPastRow: boolean, completedCut?: number, blockedReason?: string | null): { title: string; repeat: boolean; sourceEventId: string | null } {
     if (completedCut && row.time < completedCut) {
         return { title: '✓ Klar', repeat: false, sourceEventId: null };
     }
   
     const ev = row.cells.get(pId) || null;
     if (ev) {
-        const reason = whyBlocked(ev, row.time, allEvents, []);
-        if (reason) return { title: toOngoingTitle(reason, isPastRow), repeat: true, sourceEventId: ev.id };
+        if (blockedReason) return { title: toOngoingTitle(blockedReason, isPastRow), repeat: true, sourceEventId: ev.id };
         return { title: ev.title, repeat: false, sourceEventId: ev.id };
     }
   
@@ -265,6 +264,7 @@ export function previewReplanProportional(seedEventId: string, nowMs: number, al
   for (let k = i+1; k < tl.length; k++) {
     const e = tl[k];
     if (toMs(e.start) >= horizon) break;
+    if(e.meta?.synthetic) continue; // Don't shrink synthetic events
     window.push(e);
   }
 
