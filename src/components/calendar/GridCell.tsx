@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { Image as ImageIcon, Trash2, CheckCircle, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Event, Person, Row } from "@/types/event";
-import { plannedEndMsForEvent, getSourceEventForCell, presentTitleForCell } from '@/lib/grid-utils';
+import { plannedEndMsForEvent, getSourceEventForCell, presentTitleForCell, whyBlocked } from '@/lib/grid-utils';
 import ProgressTrackRtl from '../ProgressTrackRtl';
 
 const HHMM = (msOrDate: number | Date) => {
@@ -72,9 +72,14 @@ export function GridCell({
 }: GridCellProps) {
     const isCenterRow = rIdx === centerIndex;
     const isPastRow = (startIndex + rIdx) < currentRowIndex;
-
-    const { title, repeat, sourceEventId } = presentTitleForCell(person.id, row, allEvents, isPastRow, completedUpTo);
     const sourceEv = getSourceEventForCell(person.id, row, allEvents);
+    
+    // We pass allEvents to whyBlocked because dependencies can cross persons
+    const blockedReason = sourceEv ? whyBlocked(sourceEv, row.time, allEvents, []) : null;
+    const effectiveTitle = blockedReason ? toOngoingTitle(blockedReason, isPastRow) : sourceEv?.title || '—';
+
+    const { title, repeat, sourceEventId } = presentTitleForCell(person.id, row, allEvents, isPastRow, completedUpTo, blockedReason);
+
     const timeLabel = row.cells.has(person.id) ? HHMM(row.time) : `(${HHMM(row.time)})`;
     const ico = iconFor(title);
 
@@ -106,15 +111,23 @@ export function GridCell({
           const s = +new Date(personEvents[i].start);
           const e = +new Date(personEvents[i].end);
           if (s <= nowMs && nowMs < e) { current = personEvents[i]; next = personEvents[i+1] ?? null; break; }
-          if (nowMs < s) { next = personEvents[i]; break; }
+          if (nowMs < s && !current) { next = personEvents[i]; break; }
         }
         return { current, next };
     })();
     const showProgress = isCenterRow && current && next;
+    
+    function toOngoingTitle(title: string, past: boolean) {
+      const suffix = past ? "(pågick)" : "(pågår)";
+      if (/^Hämtar/i.test(title)) return `${title} ${suffix}`;
+      if (/^Blir hämtad/i.test(title)) return past ? `Väntade ${suffix}` : `Väntar ${suffix}`;
+      if (/^Äta|Frukost/i.test(title)) return `${title} ${suffix}`;
+      return `${title} ${suffix}`;
+    }
 
     return (
         <div className={cn(
-            "relative flex flex-col justify-end min-h-[160px] p-2 text-white overflow-hidden",
+            "relative flex flex-col justify-end min-h-[160px] text-white overflow-hidden",
             "border-b border-r border-neutral-800 last:border-r-0 group/row",
             isCenterRow ? "bg-neutral-900/40" : "bg-neutral-950",
             sourceEv?.meta?.synthetic ? "border-dashed" : ""
@@ -128,13 +141,14 @@ export function GridCell({
                 ) : (
                     <div className={cn("w-full h-full grid place-items-center text-5xl", person.bg.replace('bg-','bg-gradient-to-br from-').replace('/40', '/70 via-neutral-900 to-neutral-900'))}>{ico}</div>
                 )}
+                 {sourceEv && !sourceEv.imageUrl && !sourceEv.meta?.synthetic && (
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                        <button onClick={() => onGenerateImage(sourceEv)} className="flex items-center justify-center text-white bg-black/40 hover:bg-black/60 p-2 rounded-md transition-colors text-sm">
+                            <ImageIcon size={16} /> <span className="ml-2">Skapa bild</span>
+                        </button>
+                    </div>
+                )}
             </div>
-             {/* Generate Image Button */}
-            {sourceEv && !sourceEv.imageUrl && !sourceEv.meta?.synthetic && (
-                <button onClick={() => onGenerateImage(sourceEv)} className="absolute inset-0 bg-black/50 rounded-none flex items-center justify-center text-white opacity-0 hover:opacity-100 transition-opacity z-10">
-                    <ImageIcon size={24} /> <span className="ml-2">Skapa bild</span>
-                </button>
-            )}
             
             {/* Content Overlay */}
             <div className="relative z-20 flex flex-col justify-end h-full p-2 bg-gradient-to-t from-black/80 via-black/50 to-transparent">
@@ -196,7 +210,9 @@ export function GridCell({
                 </div>
             </div>
 
-            {sourceEventId && !sourceEv?.meta?.synthetic && <button onClick={() => onDelete(sourceEventId)} className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-red-800/80 z-20"><Trash2 size={14}/></button>}
+            {sourceEventId && !sourceEv?.meta?.synthetic && <button onClick={() => onDelete(sourceEventId)} className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-red-800/80 z-30"><Trash2 size={14}/></button>}
         </div>
     );
 }
+
+    

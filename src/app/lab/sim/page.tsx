@@ -1,5 +1,8 @@
+
 "use client";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import ProgressTrackRtl from "@/components/ProgressTrackRtl";
+import { humanDelta, speedEmojiByTotal } from "@/lib/progress";
 
 // =====================================
 // Enkel labbsida du kan lägga i din repo
@@ -9,7 +12,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 // =====================================
 
 // ========= Typer =========
-type Person = { id: string; name: string; color: string; emoji: string };
+type Person = { id: string; name: string; color: string; emoji: string; bg: string; };
 type Role = "required" | "helper";
 
 type Event = {
@@ -28,6 +31,7 @@ type Event = {
   resource?: string;                         // t.ex. "car", "bathroom"
   location?: string;                         // t.ex. "home", "school", "work"
   cluster?: string;                          // "morning", "evening", ...
+  imageUrl?: string;
 
   meta?: { synthetic?: boolean };
 };
@@ -42,18 +46,13 @@ const HHMM = (msOrDate: number | Date) => {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
-const humanDelta = (ms: number) => {
-  const mins = Math.max(0, Math.round(ms / 60000));
-  const h = Math.floor(mins / 60), m = mins % 60;
-  return h > 0 ? `${h} h ${m} min` : `${m} min`;
-};
 
 // ========= Personer =========
 const persons: Person[] = [
-  { id: "maria", name: "Maria", color: "from-rose-500 to-rose-700", emoji: "👩" },
-  { id: "leia", name: "Leia", color: "from-emerald-500 to-teal-600", emoji: "👧" },
-  { id: "gabriel", name: "Gabriel", color: "from-amber-500 to-orange-600", emoji: "🧒" },
-  { id: "antony", name: "Antony", color: "from-sky-500 to-indigo-600", emoji: "👨‍🦱" },
+  { id: "maria", name: "Maria", color: "#C9A7FF", bg: "bg-purple-600/40", emoji: "👩" },
+  { id: "leia", name: "Leia", color: "#F28CB2", bg: "bg-pink-600/40", emoji: "👧" },
+  { id: "gabriel", name: "Gabriel", color: "#5B9BFF", bg: "bg-blue-600/40", emoji: "🧒" },
+  { id: "antony", name: "Antony", color: "#8AE68C", bg: "bg-green-600/40", emoji: "👨‍🦱" },
 ];
 
 // ========================= Resources (kapaciteter) =========================
@@ -61,11 +60,9 @@ type ResourceDef = { id: string; capacity: number };
 const RESOURCES: Record<string, ResourceDef> = {
   car: { id: "car", capacity: 1 },
   bathroom: { id: "bathroom", capacity: 1 },
-  // lägg till fler vid behov
 };
 
 // ========================= Blockering/beroenden =========================
-// A) tidsberoende: något i dependsOn pågår ännu?
 function unmetFinishToStart(e: Event, atMs: number, events: Event[]): string | null {
   if (!e.dependsOn?.length) return null;
   for (const id of e.dependsOn) {
@@ -80,7 +77,6 @@ function unmetFinishToStart(e: Event, atMs: number, events: Event[]): string | n
   return null;
 }
 
-// B) required presence: krävd person är upptagen?
 function unmetRequiredPresence(e: Event, atMs: number, events: Event[]): string | null {
   if (!e.involved?.length) return null;
   const required = e.involved.filter(i => i.role === "required");
@@ -98,7 +94,6 @@ function unmetRequiredPresence(e: Event, atMs: number, events: Event[]): string 
   return null;
 }
 
-// C) resurs: kräver resurs som är upptagen?
 function unmetResource(e: Event, atMs: number, events: Event[]): string | null {
   if (!e.resource) return null;
   const res = RESOURCES[e.resource];
@@ -115,7 +110,6 @@ function unmetResource(e: Event, atMs: number, events: Event[]): string | null {
   return null;
 }
 
-// D) co-location (enkel): required-person måste vara på samma plats
 function unmetCoLocation(e: Event, atMs: number, events: Event[]): string | null {
   if (!e.involved?.length || !e.location) return null;
   const required = e.involved.filter(i => i.role === "required");
@@ -132,7 +126,6 @@ function unmetCoLocation(e: Event, atMs: number, events: Event[]): string | null
   return null;
 }
 
-// Sammanfattning: första skäl till blockering
 function whyBlocked(e: Event, atMs: number, events: Event[]): string | null {
   return unmetFinishToStart(e, atMs, events)
       ?? unmetRequiredPresence(e, atMs, events)
@@ -141,33 +134,34 @@ function whyBlocked(e: Event, atMs: number, events: Event[]): string | null {
 }
 
 // ========= Ikoner (emoji) =========
-const activityIcon: Array<[RegExp, string]> = [
-  [/\bSover\b/i, "😴"],
-  [/\bMorgonrutin\b/i, "☀️"],
-  [/\bBorsta tänder\b/i, "🦷"],
-  [/\bBorsta hår\b/i, "💇"],
-  [/\bFrukost|Äta/i, "🥣"],
-  [/\bVitaminer/i, "💊"],
-  [/\bKlä på/i, "👕"],
-  [/\bPacka/i, "🎒"],
-  [/\bJobb|Arbete/i, "💻"],
-  [/\bSkola/i, "🏫"],
-  [/\bFritids/i, "🧩"],
-  [/\bHämtar|Blir hämtad/i, "🚗"],
-  [/\bMiddag/i, "🍽️"],
-  [/\bKvällsrutin/i, "🌙"],
-  [/\bTillgänglig/i, "✅"]
-];
 const iconFor = (title: string) => {
-  for (const [re, ico] of activityIcon) if (re.test(title)) return ico;
-  return "📌";
+    const activityIcon: Array<[RegExp, string]> = [
+      [/\bSover\b/i, "😴"],
+      [/\bMorgonrutin\b/i, "☀️"],
+      [/\bBorsta tänder\b/i, "🦷"],
+      [/\bBorsta hår\b/i, "💇"],
+      [/\bFrukost|Äta/i, "🥣"],
+      [/\bVitaminer/i, "💊"],
+      [/\bKlä på/i, "👕"],
+      [/\bPacka/i, "🎒"],
+      [/\bJobb|Arbete/i, "💻"],
+      [/\bSkola|Förskola/i, "🏫"],
+      [/\bFritids/i, "🧩"],
+      [/\bHämtar|Blir hämtad/i, "🚗"],
+      [/\bMiddag/i, "🍽️"],
+      [/\bKvällsrutin/i, "🌙"],
+      [/\bTillgänglig/i, "✅"],
+      [/\bLego|Spel|Lek/i, "🎲"]
+    ];
+    for (const [re, ico] of activityIcon) if (re.test(title)) return ico;
+    return "📌";
 };
 
 
 // ========= Syntetisk fyllnad =========
-const makeSyntheticEvent = (start: Date, end: Date, personId: string, mode: "sleep_idle" | "unknown" = "sleep_idle"): Event => {
-    const isNightTime = start.getHours() >= 20 || start.getHours() < 6;
-    const title = (mode === "sleep_idle" && isNightTime) ? "Sover" : (mode === "sleep_idle" ? "Tillgänglig" : "Okänt");
+const makeSyntheticEvent = (start: Date, end: Date, personId: string): Event => {
+    const isNightTime = start.getHours() >= 22 || start.getHours() < 6;
+    const title = isNightTime ? "Sover" : "Tillgänglig";
     return {
         id: `syn-${personId}-${start.toISOString()}`,
         personId,
@@ -179,12 +173,8 @@ const makeSyntheticEvent = (start: Date, end: Date, personId: string, mode: "sle
 };
 
 const synthesizeDayFill = (personEvents: Event[], personId: string, day: Date): Event[] => {
-    const dayStart = new Date(day);
-    dayStart.setHours(0, 0, 0, 0);
-
-    const dayEnd = new Date(day);
-    dayEnd.setDate(dayEnd.getDate() + 1);
-    dayEnd.setHours(0,0,0,0);
+    const dayStart = new Date(day); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(day); dayEnd.setDate(dayEnd.getDate() + 1); dayEnd.setHours(0,0,0,0);
     
     const out: Event[] = [];
     const sorted = [...personEvents].sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime());
@@ -266,7 +256,6 @@ const gabrielEvents: Event[] = [
   { id: "gab-sleep-22", personId: "gabriel", start: t(22), end: t(24), title: "Sover", meta: { synthetic: true }, location: "home" },
 ];
 
-// Antony (pappa) 07:00–08:00 + jobb/lunch
 const antonyEvents: Event[] = [
   { id: "ant-07-00-10", personId: "antony", start: t(7,0),  end: t(7,10), title: "Fixa frukost", minDurationMin: 6, location: "home", resource: "kitchen", cluster: "morning" },
   { id: "ant-07-10-30", personId: "antony", start: t(7,10), end: t(7,30), title: "Äta frukost (med barnen)", minDurationMin: 10, involved: [{personId:"leia", role:"required"}, {personId:"gabriel", role:"required"}], location: "home", cluster: "morning" },
@@ -280,12 +269,21 @@ const antonyEvents: Event[] = [
   { id: "ant-18-19",    personId: "antony", start: t(18),   end: t(19),   title: "Middag", minDurationMin: 20, involved: [{personId:"maria", role:"required"}, {personId:"leia", role:"required"}, {personId:"gabriel", role:"required"}], location: "home", cluster: "evening" },
 ];
 
-const baseEvents: Event[] = [...synthesizeDayFill(mariaEvents, "maria", new Date(day)), ...synthesizeDayFill(leiaEvents, "leia", new Date(day)), ...synthesizeDayFill(gabrielEvents, "gabriel", new Date(day)), ...synthesizeDayFill(antonyEvents, "antony", new Date(day))];
+const baseEvents: Event[] = [];
+for (const p of persons) {
+    const personEvents = {
+        "maria": mariaEvents,
+        "leia": leiaEvents,
+        "gabriel": gabrielEvents,
+        "antony": antonyEvents
+    }[p.id] || [];
+    baseEvents.push(...synthesizeDayFill(personEvents, p.id, new Date(day)))
+}
 
 
 // ========= Gridlogik (event-buckets) =========
-const SLOTS = 5; // visar alltid 5 rader (händelsebaserat, ej varaktighet)
-const EPSILON_MS = 0; // "samtidigt" = exakt samma start
+const SLOTS = 5;
+const EPSILON_MS = 1;
 
 const groupByPerson = (events: Event[]) => {
   const map = new Map<string, Event[]>();
@@ -295,33 +293,25 @@ const groupByPerson = (events: Event[]) => {
 };
 
 function buildRows(allEvents: Event[], selected: Person[]): Row[] {
-  const byP = groupByPerson(allEvents.filter(e => selected.some(p => p.id === e.personId)));
-  const cursors = new Map(selected.map(p => [p.id, 0] as const));
-  const rows: Row[] = [];
-  while (true) {
-    let next: { pid: string; ev: Event } | null = null;
-    for (const p of selected) {
-      const list = byP.get(p.id) || [];
-      const i = cursors.get(p.id)!;
-      if (i < list.length) {
-        const ev = list[i];
-        if (!next || +new Date(ev.start) < +new Date(next.ev.start)) next = { pid: p.id, ev };
-      }
+    const byP = groupByPerson(allEvents.filter(e => selected.some(p => p.id === e.personId)));
+    const allTimes = [...new Set(allEvents.map(e => +new Date(e.start)))].sort((a,b) => a-b);
+    const rows: Row[] = [];
+    
+    for (const t0 of allTimes) {
+        const row: Row = { time: t0, cells: new Map() };
+        let hasContent = false;
+        for (const p of selected) {
+            const list = byP.get(p.id) || [];
+            // Find an event starting at or just before t0
+            const event = list.find(ev => Math.abs(+new Date(ev.start) - t0) < EPSILON_MS);
+            if(event) {
+              row.cells.set(p.id, event);
+              hasContent = true;
+            }
+        }
+        if (hasContent) rows.push(row);
     }
-    if (!next) break;
-    const t0 = +new Date(next.ev.start);
-    const row: Row = { time: t0, cells: new Map() };
-    for (const p of selected) {
-      const list = byP.get(p.id) || [];
-      const i = cursors.get(p.id)!;
-      if (i < list.length) {
-        const ev = list[i];
-        if (Math.abs(+new Date(ev.start) - t0) <= EPSILON_MS) { row.cells.set(p.id, ev); cursors.set(p.id, i + 1); }
-      }
-    }
-    rows.push(row);
-  }
-  return rows;
+    return rows;
 }
 
 function isOngoing(ev: Event, atMs: number) {
@@ -329,26 +319,23 @@ function isOngoing(ev: Event, atMs: number) {
   return s <= atMs && atMs < e;
 }
 
-function toOngoingTitle(title: string, past: boolean) {
-  const suffix = past ? "(pågick)" : "(pågår)";
-  if (/^Hämtar/i.test(title)) return `${title} ${suffix}`;
-  if (/^Blir hämtad/i.test(title)) return past ? `Väntade ${suffix}` : `Väntar ${suffix}`;
-  if (/^Äta|Frukost/i.test(title)) return `${title} ${suffix}`;
-  return `${title} ${suffix}`;
-}
+const toOngoingTitle = (title: string, past: boolean) => {
+    const suffix = past ? "(pågick)" : "(pågår)";
+    if (/^Hämtar/i.test(title)) return `${title} ${suffix}`;
+    if (/^Blir hämtad/i.test(title)) return past ? `Väntade ${suffix}` : `Väntar ${suffix}`;
+    if (/^Äta|Frukost/i.test(title)) return `${title} ${suffix}`;
+    return `${title} ${suffix}`;
+};
+
+type Override = { startMs?: number; plannedMs?: number };
 
 function applyOverrides(all: Event[], ov: Map<string, Override>): Event[] {
-  // Kopiera (immutabelt) och ersätt start/end där override finns.
   return all.map(e => {
     const o = ov.get(e.id);
     if (!o) return e;
     const startMs = o.startMs ?? +new Date(e.start);
     const durMs = o.plannedMs ?? (+new Date(e.end) - +new Date(e.start));
-    return {
-      ...e,
-      start: new Date(startMs).toISOString(),
-      end: new Date(startMs + durMs).toISOString(),
-    };
+    return { ...e, start: new Date(startMs).toISOString(), end: new Date(startMs + durMs).toISOString() };
   });
 }
 
@@ -356,16 +343,8 @@ function applyOverrides(all: Event[], ov: Map<string, Override>): Event[] {
 function toMs(iso: string) { return +new Date(iso); }
 function ms(min: number) { return min * 60_000; }
 
-function nextStartForPerson(all: Event[], personId: string, evIndex: number): number | null {
-  const list = all.filter(e => e.personId === personId).sort((a,b)=>toMs(a.start)-toMs(b.start));
-  const next = list[evIndex+1];
-  return next ? toMs(next.start) : null;
-}
-
 function plannedEndMsForEvent(ev: Event, all: Event[]): number {
-    const tl = all
-      .filter(e => e.personId === ev.personId)
-      .sort((a,b) => +new Date(a.start) - +new Date(b.start));
+    const tl = all.filter(e => e.personId === ev.personId).sort((a,b) => +new Date(a.start) - +new Date(b.start));
     const i = tl.findIndex(e => e.id === ev.id);
     const next = tl[i+1];
     return next ? +new Date(next.start) : +new Date(ev.end);
@@ -386,25 +365,22 @@ function findHorizonNextFixed(all: Event[], nowMs: number): number {
 
 type PreviewPatch = { eventId: string; newStartMs: number; minDurationMs?: number; plannedMs?: number; newPlannedMs?: number; };
 type PreviewResult =
-  | { status: "ok"; requiredSavingMs: number; totalFlexMs: number; lambda: number; horizonMs: number; patches: PreviewPatch[]; emojiHints: { eventId: string; totalMs: number }[]; }
+  | { status: "ok"; requiredSavingMs: number; totalFlexMs: number; lambda: number; horizonMs: number; patches: PreviewPatch[]; }
   | { status: "insufficientFlex"; requiredSavingMs: number; totalFlexMs: number; missingMs: number; horizonMs: number; patches: PreviewPatch[]; };
 
 function previewReplanProportional(seedEventId: string, nowMs: number, all: Event[]): PreviewResult {
-  // 1) seed & person
   const seed = all.find(e => e.id === seedEventId);
   if (!seed) throw new Error("seedEvent not found");
   const tl = personTimeline(all, seed.personId);
   const i = findEventIndex(tl, seed.id);
   if (i === -1) throw new Error("seed event not found in timeline");
 
-  // 2) planned end (seed’s segment slutar vid nästa start för samma person)
   const seedNextStart = nextStartForPerson(all, seed.personId, i);
   const plannedEnd = seedNextStart ?? toMs(seed.end);
   const requiredSaving = Math.max(0, nowMs - plannedEnd);
 
   const horizon = findHorizonNextFixed(all, nowMs);
 
-  // 3) fönster: efterföljande events för samma person fram till horizon
   const window: Event[] = [];
   for (let k = i+1; k < tl.length; k++) {
     const e = tl[k];
@@ -412,14 +388,13 @@ function previewReplanProportional(seedEventId: string, nowMs: number, all: Even
     window.push(e);
   }
 
-  // 4) beräkna planerade tider & flex
   let totalFlex = 0;
   const planned: { e: Event; start: number; end: number; plannedMs: number; minMs: number; }[] = [];
 
   for (let k = 0; k < window.length; k++) {
     const e = window[k];
     const start = toMs(e.start);
-    const next = (k < window.length-1) ? toMs(window[k+1].start) : Math.min(horizon, toMs(e.end)); // sista event i fönstret slutar senast vid horizon
+    const next = (k < window.length-1) ? toMs(window[k+1].start) : Math.min(horizon, toMs(e.end));
     const plannedMs = Math.max(1, next - start);
     const minMs = ms(e.minDurationMin ?? 0);
     totalFlex += Math.max(0, plannedMs - minMs);
@@ -427,89 +402,67 @@ function previewReplanProportional(seedEventId: string, nowMs: number, all: Even
   }
 
   if (requiredSaving === 0 || window.length === 0) {
-    return { status: "ok", requiredSavingMs: requiredSaving, totalFlexMs: totalFlex, lambda: 0, horizonMs: horizon, patches: [], emojiHints: [] };
+    return { status: "ok", requiredSavingMs: requiredSaving, totalFlexMs: totalFlex, lambda: 0, horizonMs: horizon, patches: [] };
   }
 
   if (totalFlex <= 0) {
     return { status: "insufficientFlex", requiredSavingMs: requiredSaving, totalFlexMs: 0, missingMs: requiredSaving, horizonMs: horizon, patches: [] };
   }
 
-  // 5) lambda och nya varaktigheter
   const lambda = Math.min(1, requiredSaving / totalFlex);
-  const patched: PreviewPatch[] = [];
-  const hints: { eventId: string; totalMs: number }[] = [];
-
-  // ny kedja startar vid nowMs
+  const patches: PreviewPatch[] = [];
   let cursor = nowMs;
 
   for (const item of planned) {
     const flex = Math.max(0, item.plannedMs - item.minMs);
     const newMs = Math.max(item.minMs, Math.round(item.plannedMs - lambda * flex));
-    patched.push({ eventId: item.e.id, newStartMs: cursor, minDurationMs: item.minMs, plannedMs: item.plannedMs, newPlannedMs: newMs });
+    patches.push({ eventId: item.e.id, newStartMs: cursor, minDurationMs: item.minMs, plannedMs: item.plannedMs, newPlannedMs: newMs });
     cursor += newMs;
-
-    // emoji-hint = totalMs för segmentet efter trim (för att byta djur)
-    hints.push({ eventId: item.e.id, totalMs: newMs });
   }
 
   if (cursor > horizon) {
     const missing = cursor - horizon;
-    return { status: "insufficientFlex", requiredSavingMs: requiredSaving, totalFlexMs: totalFlex, missingMs: missing, horizonMs: horizon, patches: patched };
+    return { status: "insufficientFlex", requiredSavingMs: requiredSaving, totalFlexMs: totalFlex, missingMs: missing, horizonMs: horizon, patches: patches };
   }
 
-  return { status: "ok", requiredSavingMs: requiredSaving, totalFlexMs: totalFlex, lambda, horizonMs: horizon, patches: patched, emojiHints: hints };
+  return { status: "ok", requiredSavingMs: requiredSaving, totalFlexMs: totalFlex, lambda, horizonMs: horizon, patches: patches };
 }
 
-
-// ========= Hastighets-emoji =========
-function speedEmojiByTotal(totalMs: number): string {
-  const mins = totalMs / 60000;
-  if (mins < 2) return "🏎️";
-  if (mins < 5) return "🐆";
-  if (mins < 10) return "🐎";
-  if (mins < 20) return "🦏";
-  if (mins < 40) return "🐖";
-  if (mins < 90) return "🚶‍♂️";
-  if (mins < 180) return "🐢";
-  if (mins < 300) return "🦀";
-  return "🐌";
+function nextStartForPerson(all: Event[], personId: string, evIndex: number): number | null {
+  const list = all.filter(e => e.personId === personId).sort((a,b)=>toMs(a.start)-toMs(b.start));
+  const next = list[evIndex+1];
+  return next ? toMs(next.start) : null;
 }
+
 
 // ========= Komponent =========
+import { GridCell } from "@/components/calendar/GridCell";
+import { cn } from "@/lib/utils";
+
 export default function LabSimPage() {
-  // Val och simtid
   const [selectedIds, setSelectedIds] = useState<string[]>(persons.map(p=>p.id));
-  const [showAllProgress, setShowAllProgress] = useState(false);
   const [showMeta, setShowMeta] = useState(false);
-  type Override = { startMs?: number; plannedMs?: number };
   const [overrides, setOverrides] = useState<Map<string, Override>>(new Map());
   const [completedUpTo, setCompletedUpTo] = useState<Map<string, number>>(new Map());
 
-  function setPersonCompleted(pId: string, upToMs: number) {
-    setCompletedUpTo(prev => {
-      const m = new Map(prev);
-      m.set(pId, Math.max(upToMs, m.get(pId) ?? 0));
-      return m;
-    });
-  }
-
-  const [speed, setSpeed] = useState<number>(5);     // 1h = 5s IRL
+  const [speed, setSpeed] = useState<number>(5);
   const [playing, setPlaying] = useState<boolean>(true);
-  const [nowMs, setNowMs] = useState<number>(+new Date(t(6, 0))); // start 06:00
+  const [nowMs, setNowMs] = useState<number>(+new Date(t(6, 0)));
   const startOfDay = +new Date(t(0,0));
   const endOfDay = +new Date(t(24,0));
   const rafId = useRef<number | null>(null);
   const lastTs = useRef<number | null>(null);
+
+  const [flash, setFlash] = useState<null | { kind: "klar" | "late"; at: number }>(null);
 
   useEffect(() => {
     function step(ts: number) {
       const prev = lastTs.current ?? ts;
       const dt = ts - prev;
       lastTs.current = ts;
-      const factor = 3600000 / (speed * 1000); // kalender-ms per IRL-ms
+      const factor = 3600000 / (speed * 1000);
       setNowMs(v => {
         const nv = v + dt * factor;
-        // Reset to the start of the *same* day if it loops
         return nv >= endOfDay ? startOfDay : nv;
       });
       rafId.current = requestAnimationFrame(step);
@@ -519,142 +472,26 @@ export default function LabSimPage() {
   }, [playing, speed]);
 
   const visEvents = useMemo(() => applyOverrides(baseEvents, overrides), [overrides]);
-
-  // Härleda rader
   const selected = useMemo(() => persons.filter(p => selectedIds.includes(p.id)), [selectedIds]);
   const rows = useMemo(() => buildRows(visEvents, selected.length ? selected : persons), [visEvents, selected]);
 
-  // Centrera NU (slot 3 av 5)
-  const S = SLOTS;
-  const centerIndex = Math.floor(S / 2);
   const currentRowIndex = useMemo(() => {
-    // Find the last event that has started
     const idx = rows.findIndex(r => r.time > nowMs);
-    if (idx === -1) return rows.length - 1; // After last event
-    return Math.max(0, idx - 1);
+    return Math.max(0, idx === -1 ? rows.length -1 : idx - 1);
   }, [rows, nowMs]);
-  const startIndex = clamp(currentRowIndex - centerIndex, 0, Math.max(0, rows.length - S));
-  const visibleRows = rows.slice(startIndex, startIndex + S);
-
-  // Till middag (demo)
-  const nextDinner = useMemo(() => {
-    const ids = new Set(selected.map(p => p.id));
-    const upcoming = visEvents
-      .filter(e => ids.has(e.personId) && /\bMiddag\b/i.test(e.title) && +new Date(e.start) >= nowMs)
-      .sort((a,b) => +new Date(a.start) - +new Date(b.start))[0];
-    return upcoming || null;
-  }, [selected, nowMs, visEvents]);
-  const tillMiddag = nextDinner ? humanDelta(+new Date(nextDinner.start) - nowMs) : null;
-
-  function currentAndNextForPerson(personId: string, nowMs: number) {
-    const list = visEvents
-      .filter(e => e.personId === personId)
-      .sort((a,b) => +new Date(a.start) - +new Date(b.start));
-    let current: Event | null = null;
-    let next: Event | null = null;
-    for (let i = 0; i < list.length; i++) {
-      const s = +new Date(list[i].start);
-      const e = +new Date(list[i].end);
-      if (s <= nowMs && nowMs < e) { current = list[i]; next = list[i+1] ?? null; break; }
-      if (nowMs < s) { next = list[i]; break; }
-    }
-    return { current, next };
-  }
-
-  // Cellhelpers (titel & tid enligt din regel)
-  function presentTitle(pId: string, row: Row, isPastRow: boolean, completedCut?: number): { title: string; repeat: boolean; sourceEventId: string | null } {
-    
-    if (completedCut && row.time < completedCut) {
-        return { title: '✓ Klar', repeat: false, sourceEventId: null };
-    }
   
-    const ev = row.cells.get(pId) || null;
-    if (ev) {
-        const reason = whyBlocked(ev, row.time, visEvents);
-        if (reason) return { title: isPastRow ? `${reason} (pågick)` : `${reason} (pågår)`, repeat: true, sourceEventId: ev.id };
-        return { title: ev.title, repeat: false, sourceEventId: ev.id };
-    }
-  
-    const list = visEvents.filter(e => e.personId === pId).sort((a,b) => +new Date(a.start) - +new Date(b.start));
-    const idx = list.findIndex(e => +new Date(e.start) > row.time);
-    const prev = idx === -1 ? list[list.length-1] : list[Math.max(0, idx-1)];
-    
-    if (prev && isOngoing(prev, row.time)) {
-        if (completedCut && +new Date(prev.start) < completedCut) {
-             return { title: '✓ Klar', repeat: false, sourceEventId: null };
-        }
-        return { title: toOngoingTitle(prev.title, isPastRow), repeat: true, sourceEventId: prev.id };
-    }
-    
-    return { title: "—", repeat: false, sourceEventId: null };
+  const centerIndex = Math.floor(SLOTS / 2);
+  const startIndex = clamp(currentRowIndex - centerIndex, 0, Math.max(0, rows.length - SLOTS));
+  const visibleRows = rows.slice(startIndex, startIndex + SLOTS);
+
+  function setPersonCompleted(pId: string, upToMs: number) {
+    setCompletedUpTo(prev => {
+      const m = new Map(prev);
+      m.set(pId, Math.max(upToMs, m.get(pId) ?? 0));
+      return m;
+    });
   }
-  function cellTimeLabel(pId: string, row: Row, _isPastRow: boolean): string {
-    const ev = row.cells.get(pId) || null;
-    const label = ev ? HHMM(new Date(ev.start)) : HHMM(row.time);
-    return label;
-  }
-  function sourceEventForCell(pId: string, row: Row): Event | null {
-    // 1) Finns ett event som startar exakt på radens tid?
-    const direct = row.cells.get(pId) || null;
-    if (direct) return direct;
   
-    // 2) Annars: vilket var föregående event för personen, och är det pågående vid radens tid?
-    const list = visEvents
-      .filter(e => e.personId === pId)
-      .sort((a,b) => +new Date(a.start) - +new Date(b.start));
-  
-    const idx = list.findIndex(e => +new Date(e.start) > row.time);
-    const prev = idx === -1 ? list[list.length - 1] : list[Math.max(0, idx - 1)];
-    if (prev && isOngoing(prev, row.time)) return prev;
-  
-    return null;
-  }
-
-  // ========= Progress-spår (höger→vänster) =========
-  function ProgressTicker({ personId }: { personId: string }) {
-    const { current, next } = currentAndNextForPerson(personId, nowMs);
-    if (!current || !next) return null;
-    const start = +new Date(current.start);
-    const target = +new Date(next.start);
-    if (!(start <= nowMs && nowMs <= target)) return null;
-
-    const total = Math.max(1, target - start);
-    const remaining = Math.max(0, target - nowMs);
-    const progress = clamp((nowMs - start) / total, 0, 1);
-    const runner = speedEmojiByTotal(total);
-
-    const minMs = (current.minDurationMin ?? 0) * 60000;
-    const redPct = clamp(minMs / total, 0, 1) * 100;
-
-    const posStyle = { right: `calc(${progress * 100}% - 10px)` }; // RTL: löparen går höger→vänster
-
-    return (
-      <div className="mt-2 w-full">
-        <div className="relative h-6">
-          <div className="absolute inset-0 rounded-full bg-neutral-800/60 overflow-hidden">
-            {/* Fylld del */}
-            <div className={`absolute inset-y-0 right-0 bg-neutral-700/40`} style={{ width: `${progress*100}%` }} />
-            {/* Röd zon (sista minDuration fram till hålet) */}
-            <div className="absolute inset-y-0 left-0 bg-red-500/25" style={{ width: `${redPct}%` }} />
-          </div>
-          {/* Hål (mål) */}
-          <div className="absolute inset-y-0 left-0 w-4 grid place-items-center">
-            <div className="text-lg" aria-hidden="true">🕳️</div>
-          </div>
-          {/* Emoji-löpare */}
-          <div className="absolute -top-1 text-lg select-none" style={posStyle} aria-label="progress-emoji">{runner}</div>
-          {/* Återstående */}
-          <div className="absolute -bottom-4 text-[10px] text-neutral-300" style={{ right: `calc(${progress*100}% - 14px)` }}>{humanDelta(remaining)}</div>
-        </div>
-      </div>
-    );
-  }
-
-  // Hoppa i tiden (demo-knappar)
-  const jumpTo = (h: number, m: number = 0) => setNowMs(+new Date(t(h, m)));
-
-  const [flash, setFlash] = useState<null | { kind: "klar" | "late"; at: number }>(null);
-
   function handleKlar(eventId: string | null) {
     if (!eventId) return;
     const ev = visEvents.find(e => e.id === eventId);
@@ -693,61 +530,37 @@ export default function LabSimPage() {
     setFlash({ kind: "late", at: Date.now() });
     setTimeout(() => setFlash(null), 1200);
   }
+  
+  const jumpTo = (h: number, m: number = 0) => setNowMs(+new Date(t(h, m)));
 
   return (
     <div className="w-full min-h-screen bg-neutral-950 text-neutral-50 p-3">
       {/* Kontroller */}
       <div className="mb-3 flex flex-wrap gap-2 items-center">
         {persons.map((p) => (
-          <button key={p.id} onClick={() => setSelectedIds(prev => prev.includes(p.id)? prev.filter(x=>x!==p.id): [...prev, p.id])} className={`px-3 py-1 rounded-2xl text-sm border ${selectedIds.includes(p.id)?"bg-neutral-800 border-neutral-700":"bg-neutral-900 border-neutral-800"}`}>
-            <span className="mr-1">{p.emoji}</span>{p.name}
+          <button key={p.id} onClick={() => setSelectedIds(prev => prev.includes(p.id)? prev.filter(x=>x!==p.id): [...prev, p.id])} className={`px-3 py-1 rounded-full text-sm border transition-colors ${selectedIds.includes(p.id)?`border-white/60`:`border-white/10`}`} style={{backgroundColor: selectedIds.includes(p.id) ? `${p.color}33`: 'transparent'}}>
+            <span className="mr-1.5">{p.emoji}</span>{p.name}
           </button>
         ))}
         <div className="ml-auto flex items-center gap-2 text-sm">
           <button onClick={() => setPlaying(p => !p)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">{playing?"Paus":"Spela"}</button>
+          <select value={speed} onChange={(e)=> setSpeed(Number(e.target.value))} className="bg-neutral-900 border border-neutral-800 rounded-md px-2 py-1">
+            <option value={2}>2 s/timme</option>
+            <option value={5}>5 s/timme</option>
+            <option value={10}>10 s/timme</option>
+            <option value={60}>60 s/timme</option>
+          </select>
           <label className="flex items-center gap-2">
-            Hastighet
-            <select value={speed} onChange={(e)=> setSpeed(Number(e.target.value))} className="bg-neutral-900 border border-neutral-800 rounded-md px-2 py-1">
-              <option value={2}>2 s/timme</option>
-              <option value={5}>5 s/timme</option>
-              <option value={10}>10 s/timme</option>
-              <option value={60}>60 s/timme</option>
-              <option value={180}>180 sekunder/timma</option>
-            </select>
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={showAllProgress} onChange={(e)=> setShowAllProgress(e.target.checked)} />
-            Progress på alla rader
-          </label>
-           <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={showMeta}
-              onChange={(e) => setShowMeta(e.target.checked)}
-            />
+            <input type="checkbox" checked={showMeta} onChange={(e) => setShowMeta(e.target.checked)} />
             Visa metadata
           </label>
           <button onClick={() => jumpTo(7,0)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">07:00</button>
-          <button onClick={() => jumpTo(12,0)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">12:00</button>
-          <button onClick={() => jumpTo(18,0)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">18:00</button>
         </div>
       </div>
-
-      {/* Flash (enkel demo) */}
-      {flash && (
-        <div className="fixed right-4 bottom-4 z-50">
-          <div className={`px-3 py-2 rounded-lg border ${flash.kind === "klar" ? "border-emerald-400/40 bg-emerald-600/15" : "border-amber-400/40 bg-amber-600/15"}`}>
-            {flash.kind === "klar" ? "✔️ Klart (demo)" : "⏱️ Klar sent – skulle trigga replan (demo)"}
-          </div>
-        </div>
-      )}
 
       {/* Nu-info */}
       <div className="mb-3 text-xs text-neutral-300 flex items-center gap-3">
         <div className="px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800">Nu (sim): {HHMM(nowMs)}</div>
-        {tillMiddag && (
-          <div className="px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800">Till Middag: {tillMiddag}</div>
-        )}
       </div>
 
       {/* GRID 5 rader med NU i mitten */}
@@ -755,8 +568,8 @@ export default function LabSimPage() {
         {/* Kolumnhuvuden */}
         <div className="grid" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))` }}>
           {(selected.length ? selected : persons).map((p) => (
-            <div key={p.id} className="flex items-center gap-2 px-3 py-2 bg-neutral-900 border-b border-neutral-800">
-              <div className={`w-7 h-7 rounded-xl bg-gradient-to-br ${p.color} grid place-items-center text-sm`}>{p.emoji}</div>
+            <div key={p.id} className="flex items-center gap-2 px-3 py-2 bg-neutral-900 border-b border-neutral-800 border-r last:border-r-0">
+               <div className={cn("w-7 h-7 rounded-xl grid place-items-center text-sm", p.bg.replace('bg-','bg-gradient-to-br from-').replace('/40','/80'))}>{p.emoji}</div>
               <div className="text-sm font-medium truncate">{p.name}</div>
             </div>
           ))}
@@ -764,121 +577,40 @@ export default function LabSimPage() {
 
         {/* Rader */}
         <div className="relative grid" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))`, gridAutoRows: 'min-content' }}>
-          {/* NU-markering över mittenraden */}
-          <div className="pointer-events-none absolute z-10 top-1/2 -translate-y-1/2 inset-x-0 h-[1px]">
+          <div className="pointer-events-none absolute z-20 top-1/2 -translate-y-1/2 inset-x-0 h-[1px]">
              <div className="h-full border-t border-fuchsia-500/40 bg-fuchsia-500/5 flex items-center justify-center">
                  <div className="text-[10px] -translate-y-1/2 px-2 py-0.5 rounded-full bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-300">NU {HHMM(nowMs)}</div>
              </div>
           </div>
           
-
           {visibleRows.map((row, rIdx) => (
             <React.Fragment key={row.time+"-"+rIdx}>
-              {(selected.length ? selected : persons).map((p) => {
-                const isCenterRow = rIdx === centerIndex;
-                const isPastRow = (startIndex + rIdx) < currentRowIndex;
-                const completedCut = completedUpTo.get(p.id);
-                const { title, repeat, sourceEventId } = presentTitle(p.id, row, isPastRow, completedCut);
-                const timeLabel = cellTimeLabel(p.id, row, isPastRow);
-                const ico = iconFor(title.replace(/\s*\((pågår|pågick)\)$/i, ""));
-                
-                const sourceEv = sourceEventForCell(p.id, row);
-                const metaBadges: string[] = [];
-                if (sourceEv) {
-                  if (sourceEv.fixedStart) metaBadges.push("FixStart");
-                  if (typeof sourceEv.minDurationMin === "number") metaBadges.push(`min:${sourceEv.minDurationMin}m`);
-                  if (sourceEv.dependsOn?.length) metaBadges.push(`dep:${sourceEv.dependsOn.length}`);
-                  if (sourceEv.involved?.length) {
-                    const req = sourceEv.involved.filter(i => i.role === "required").length;
-                    const hlp = sourceEv.involved.length - req;
-                    metaBadges.push(`inv:${req}${hlp ? `+${hlp}h` : ""}`);
-                  }
-                  if (sourceEv.allowAlone === true) metaBadges.push("självOK");
-                  if (sourceEv.resource) metaBadges.push(`res:${sourceEv.resource}`);
-                  if (sourceEv.location) metaBadges.push(`loc:${sourceEv.location}`);
-                  if (sourceEv.cluster) metaBadges.push(`cluster:${sourceEv.cluster}`);
-                }
-                
-                const seed = sourceEventId ? visEvents.find(e => e.id === sourceEventId) : null;
-                const plannedEnd = seed ? plannedEndMsForEvent(seed, visEvents) : null;
-                const isOverdue = !!(seed && plannedEnd && nowMs > plannedEnd && (!completedCut || completedCut < plannedEnd));
-
-                return (
-                  <div key={p.id+"-"+rIdx} className={`px-2 py-2 flex flex-col justify-center gap-1 border-b border-neutral-800 border-r last:border-r-0 ${isCenterRow?"bg-neutral-900/40":"bg-neutral-950"} ${p.id.startsWith('syn-') ? 'border-dashed' : ''} relative`}>
-                    
-                    {rIdx === centerIndex && <div className="absolute inset-0 border-y border-fuchsia-500/40 bg-fuchsia-500/5 pointer-events-none" />}
-
-                    <div className="flex items-center gap-3">
-                      {/* Bildruta */}
-                      <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-neutral-800 to-neutral-900 grid place-items-center shrink-0">
-                        <div className={`w-18 h-18 rounded-lg bg-gradient-to-br ${p.color} grid place-items-center text-2xl`}>{ico}</div>
-                      </div>
-                      {/* Text */}
-                      <div className="min-w-0">
-                        <div className={`text-[11px] mb-0.5 ${isPastRow ? "text-neutral-500" : "text-neutral-400"}`}>{timeLabel}</div>
-                        <div className="truncate text-sm">
-                          {title}
-                          {repeat && <span className="ml-1 text-[10px] text-neutral-400 align-middle">↻</span>}
-                        </div>
-                         {isOverdue && (
-                            <span className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded-md border border-amber-600 bg-amber-900/30 text-amber-200">
-                                Ej klar ännu
-                            </span>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* Meta badges */}
-                    {showMeta && sourceEv && (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {metaBadges.map((b, i) => (
-                          <span
-                            key={i}
-                            className="text-[10px] px-1.5 py-0.5 rounded-md border border-neutral-700 bg-neutral-900/60 text-neutral-300"
-                          >
-                            {b}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Progress-linje */}
-                    {(isCenterRow || showAllProgress) && <ProgressTicker personId={p.id} />}
-                    {/* Actions */}
-                    {sourceEventId && isCenterRow && (
-                        <div className="flex gap-2 mt-1">
-                            <button
-                                className="px-2 py-0.5 rounded-md text-xs border border-neutral-700 bg-neutral-900"
-                                onClick={() => handleKlar(sourceEventId)}
-                            >
-                                Klar
-                            </button>
-
-                            <button
-                                className={`px-2 py-0.5 rounded-md text-xs border ${isOverdue ? 'border-rose-700 bg-rose-900/30' : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 cursor-not-allowed'}`}
-                                onClick={() => isOverdue && handleKlarSent(sourceEventId)}
-                                disabled={!isOverdue}
-                                aria-disabled={!isOverdue}
-                                title={isOverdue ? 'Markera som sent och krymp framåt' : 'Kan bara användas när planerat slut har passerats'}
-                            >
-                                Klar sent
-                            </button>
-                        </div>
-                    )}
-                  </div>
-                );
-              })}
+              {(selected.length ? selected : persons).map((p) => (
+                <GridCell 
+                    key={p.id + "-" + row.time}
+                    person={p}
+                    row={row}
+                    rIdx={rIdx}
+                    nowMs={nowMs}
+                    centerIndex={centerIndex}
+                    currentRowIndex={currentRowIndex}
+                    startIndex={startIndex}
+                    allEvents={visEvents}
+                    completedUpTo={completedUpTo.get(p.id)}
+                    showMeta={showMeta}
+                    onKlar={handleKlar}
+                    onKlarSent={handleKlarSent}
+                    onDelete={(id) => console.log("Radera (labb):", id)}
+                    onGenerateImage={(ev) => console.log("Generera bild (labb):", ev.title)}
+                />
+              ))}
             </React.Fragment>
           ))}
         </div>
       </div>
-
-      <div className="mt-4 text-xs text-neutral-400 leading-relaxed">
-        <p><span className="text-neutral-300">Event-baserad vy:</span> 5 rader visas oavsett varaktighet. Starttiden för raden styr, bildyta är konstant.</p>
-        <p className="mt-1"><span className="text-neutral-300">Pågående-regel:</span> om en kolumn fortsätter ett pågående block när en annan startar nytt, visas <strong>radens tid</strong> (inte original-start). Ex: 07:08 visar Maria "Morgonrutin" med tidslabel 07:08 när Leia startar "Borsta tänder".</p>
-        <p className="mt-1"><span className="text-neutral-300">Simtid:</span> 1 timme i kalendern = <strong>{speed}</strong> s IRL. NU hålls centrerad. Snabbknappar: 07/12/18.</p>
-        <p className="mt-1"><span className="text-neutral-300">Progress höger→vänster:</span> emoji (🏎️, 🐆, 🐎, 🦏, 🐖, 🚶‍♂️, 🐢, 🦀, 🐌) väljs efter <strong>totalen</strong> mellan två händelser. Röd zon = sista <em>minDuration</em> av segmentet.</p>
-      </div>
     </div>
   );
 }
+
+
+    
