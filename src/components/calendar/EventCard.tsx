@@ -7,7 +7,6 @@ import { Timer as TimerIcon, Trash2, Play, Repeat, Image as ImageIcon } from "lu
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Event, Person } from '@/types/event';
-import { presentTitle } from '@/app/page';
 
 
 function fmtTime(iso: string | number | undefined) { if (!iso) return ""; try { const d = new Date(iso); return d.toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } }
@@ -35,7 +34,7 @@ export function EventCard({ person, ev, onDelete, onComplete, onPickTimer, onGen
   const p = progressForEvent(ev, now);
   const remaining = remainingTime(ev, now);
   const isTimerRunning = runningId === ev.id;
-  const displayTitle = presentTitle(ev, viewConfig);
+  const displayTitle = ev.title; // Simplified
 
   return (
     <motion.div layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="h-full">

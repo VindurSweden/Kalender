@@ -1,14 +1,14 @@
 
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState, FC } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { format as formatDateFns } from 'date-fns';
 
 import { Header } from '@/components/calendar/Header';
 import { Toolbar } from '@/components/calendar/Toolbar';
-import { EventCard } from '@/components/calendar/EventCard';
 import { AssistantPanel } from '@/components/calendar/AssistantPanel';
+import { CalendarGrid } from '@/components/calendar/CalendarGrid'; 
 
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
@@ -47,199 +47,98 @@ async function boom() {
 }
 
 const DEFAULT_PEOPLE: Person[] = [
-  { id: "leia", name: "Leia", color: "#F28CB2", bg: "bg-pink-600/40", speak: true },
-  { id: "gabriel", name: "Gabriel", color: "#5B9BFF", bg: "bg-blue-600/40", speak: true },
-  { id: "pappa", name: "Pappa", color: "#8AE68C", bg: "bg-green-600/40" },
-  { id: "mamma", name: "Mamma", color: "#C9A7FF", bg: "bg-purple-600/40" },
+  { id: "leia", name: "Leia", color: "#F28CB2", bg: "bg-pink-600/40", emoji: "👧" },
+  { id: "gabriel", name: "Gabriel", color: "#5B9BFF", bg: "bg-blue-600/40", emoji: "🧒" },
+  { id: "maria", name: "Mamma", color: "#C9A7FF", bg: "bg-purple-600/40", emoji: "👩" },
+  { id: "antony", name: "Pappa", color: "#8AE68C", bg: "bg-green-600/40", emoji: "👨‍🦱" },
 ];
 
 const DEFAULT_EVENTS: Event[] = [
+    // Maria
+    { id: uid(), personId: "maria", start: `${todayISO()}T06:00:00`, end: `${todayISO()}T07:00:00`, title: "Vaknar & kaffe", minDurationMin: 5, location: "home", cluster: "morning" },
+    { id: uid(), personId: "maria", start: `${todayISO()}T07:00:00`, end: `${todayISO()}T08:00:00`, title: "Morgonrutin", minDurationMin: 15, location: "home", cluster: "morning" },
+    { id: uid(), personId: "maria", start: `${todayISO()}T08:00:00`, end: `${todayISO()}T12:00:00`, title: "Jobb (förmiddag)", location: "work" },
+    { id: uid(), personId: "maria", start: `${todayISO()}T12:00:00`, end: `${todayISO()}T13:00:00`, title: "Lunch", minDurationMin: 15, location: "work" },
+    { id: uid(), personId: "maria", start: `${todayISO()}T13:00:00`, end: `${todayISO()}T16:30:00`, title: "Jobb (eftermiddag)", location: "work" },
+    { id: uid(), personId: "maria", start: `${todayISO()}T16:30:00`, end: `${todayISO()}T17:00:00`, title: "Hämtar Leia (fritids)", fixedStart: true, involved: [{personId:"leia", role:"required"}], resource: "car", location: "city" },
+    { id: uid(), personId: "maria", start: `${todayISO()}T18:00:00`, end: `${todayISO()}T19:00:00`, title: "Middag", minDurationMin: 20, involved: [{personId:"antony", role:"required"}, {personId:"leia", role:"required"}, {personId:"gabriel", role:"required"}], location: "home", cluster: "evening" },
+    { id: uid(), personId: "maria", start: `${todayISO()}T21:00:00`, end: `${todayISO()}T22:00:00`, title: "Kvällsrutin", minDurationMin: 10, location: "home", cluster: "evening" },
+
+    // Leia
+    { id: uid(), personId: "leia", start: `${todayISO()}T06:00:00`, end: `${todayISO()}T07:00:00`, title: "Vaknar långsamt", minDurationMin: 10, location: "home", cluster: "morning" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T07:00:00`, end: `${todayISO()}T07:08:00`, title: "Vakna", minDurationMin: 3, location: "home", cluster: "morning" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T07:08:00`, end: `${todayISO()}T07:16:00`, title: "Borsta tänder", minDurationMin: 2, location: "home", cluster: "morning" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T07:16:00`, end: `${todayISO()}T07:24:00`, title: "Äta frukost", minDurationMin: 10, dependsOn: ["ant-07-00-10"], involved: [{personId:"antony", role:"required"}], location: "home", cluster: "morning" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T07:24:00`, end: `${todayISO()}T07:32:00`, title: "Ta vitaminer", minDurationMin: 1, dependsOn: ["leia-07-16"], allowAlone: true, location: "home", cluster: "morning" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T07:32:00`, end: `${todayISO()}T07:40:00`, title: "Borsta hår", minDurationMin: 2, allowAlone: true, location: "home", cluster: "morning" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T07:40:00`, end: `${todayISO()}T07:48:00`, title: "Klä på sig", minDurationMin: 4, allowAlone: true, location: "home", cluster: "morning" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T07:48:00`, end: `${todayISO()}T08:00:00`, title: "Packa väska & skor", minDurationMin: 5, allowAlone: true, location: "home", cluster: "morning" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T08:00:00`, end: `${todayISO()}T13:30:00`, title: "Skola", fixedStart: true, location: "school" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T13:30:00`, end: `${todayISO()}T16:30:00`, title: "Fritids", location: "school" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T16:30:00`, end: `${todayISO()}T17:00:00`, title: "Blir hämtad (fritids)", dependsOn: ["maria-1630"], involved: [{personId:"maria", role:"required"}], location: "school", resource: "car" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T18:00:00`, end: `${todayISO()}T19:00:00`, title: "Middag", minDurationMin: 20, involved: [{personId:"maria", role:"required"}, {personId:"antony", role:"required"}, {personId:"gabriel", role:"helper"}], location: "home", cluster: "evening" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T19:00:00`, end: `${todayISO()}T20:00:00`, title: "Läxor", minDurationMin: 15, location: "home" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T20:00:00`, end: `${todayISO()}T21:00:00`, title: "Spel / lugn", minDurationMin: 5, location: "home" },
+    { id: uid(), personId: "leia", start: `${todayISO()}T21:00:00`, end: `${todayISO()}T22:00:00`, title: "Kvällsrutin", minDurationMin: 10, location: "home", cluster: "evening" },
+    
     // Gabriel
-    { id: uid(), title: "Skola", personId: "gabriel", start: `${todayISO()}T08:00:00`, end: `${todayISO()}T13:30:00`, recurrence: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR" },
-    { id: uid(), title: "Borsta tänderna", personId: "gabriel", start: `${todayISO()}T07:30:00`, end: `${todayISO()}T07:45:00`, challenge: "Klar innan timern tar slut" },
+    { id: uid(), personId: "gabriel", start: `${todayISO()}T06:00:00`, end: `${todayISO()}T07:00:00`, title: "Morgonmys", minDurationMin: 5, location: "home" },
+    { id: uid(), personId: "gabriel", start: `${todayISO()}T07:00:00`, end: `${todayISO()}T07:20:00`, title: "Vakna & påklädning", minDurationMin: 8, location: "home", cluster: "morning" },
+    { id: uid(), personId: "gabriel", start: `${todayISO()}T07:20:00`, end: `${todayISO()}T07:40:00`, title: "Frukost", minDurationMin: 8, dependsOn: ["ant-07-00-10"], involved: [{personId:"antony", role:"required"}], location: "home", cluster: "morning" },
+    { id: uid(), personId: "gabriel", start: `${todayISO()}T07:40:00`, end: `${todayISO()}T08:00:00`, title: "Tänder & skor", minDurationMin: 4, allowAlone: false, location: "home", cluster: "morning" },
+    { id: uid(), personId: "gabriel", start: `${todayISO()}T08:00:00`, end: `${todayISO()}T13:00:00`, title: "Förskola", fixedStart: true, location: "school" },
+    { id: uid(), personId: "gabriel", start: `${todayISO()}T13:00:00`, end: `${todayISO()}T16:00:00`, title: "Lek & mellis", minDurationMin: 20, location: "home" },
+    { id: uid(), personId: "gabriel", start: `${todayISO()}T18:00:00`, end: `${todayISO()}T19:00:00`, title: "Middag", minDurationMin: 20, involved: [{personId:"maria", role:"required"}, {personId:"antony", role:"required"}, {personId:"leia", role:"helper"}], location: "home", cluster: "evening" },
+    { id: uid(), personId: "gabriel", start: `${todayISO()}T19:00:00`, end: `${todayISO()}T20:00:00`, title: "Lego", minDurationMin: 5, location: "home" },
+    { id: uid(), personId: "gabriel", start: `${todayISO()}T21:00:00`, end: `${todayISO()}T22:00:00`, title: "Kvällsrutin", minDurationMin: 10, location: "home", cluster: "evening" },
     
-    // Leia's detailed morning
-    { id: uid(), title: "Vakna & klä på dig", personId: "leia", start: `${todayISO()}T07:00:00`, end: `${todayISO()}T07:10:00` },
-    { id: uid(), title: "Gå på toa", personId: "leia", start: `${todayISO()}T07:10:00`, end: `${todayISO()}T07:15:00` },
-    { id: uid(), title: "Äta frukost", personId: "leia", start: `${todayISO()}T07:15:00`, end: `${todayISO()}T07:35:00` },
-    { id: uid(), title: "Medicin", personId: "leia", start: `${todayISO()}T07:35:00`, end: `${todayISO()}T07:40:00` },
-    { id: uid(), title: "Borsta tänderna", personId: "leia", start: `${todayISO()}T07:40:00`, end: `${todayISO()}T07:45:00` },
-    { id: uid(), title: "Packa väskan", personId: "leia", start: `${todayISO()}T07:45:00`, end: `${todayISO()}T07:50:00` },
-    { id: uid(), title: "Ta på skor & jacka", personId: "leia", start: `${todayISO()}T07:50:00`, end: `${todayISO()}T07:55:00` },
-    { id: uid(), title: "Gå till skolan", personId: "leia", start: `${todayISO()}T07:55:00`, end: `${todayISO()}T08:00:00` },
-    { id: uid(), title: "I skolan", personId: "leia", start: `${todayISO()}T08:00:00`, end: `${todayISO()}T13:30:00` },
-    { id: uid(), title: "Åka till träning", personId: "leia", start: `${todayISO()}T16:00:00`, end: `${todayISO()}T17:30:00` },
-    
-    // Family
-    { id: uid(), title: "Middag", personId: "family", start: `${todayISO()}T17:30:00`, end: `${todayISO()}T18:00:00`, isFamily: true, recurrence: "FREQ=DAILY" },
+    // Antony
+    { id: "ant-07-00-10", personId: "antony", start: `${todayISO()}T07:00:00`,  end: `${todayISO()}T07:10:00`, title: "Fixa frukost", minDurationMin: 6, location: "home", resource: "kitchen", cluster: "morning" },
+    { id: "ant-07-10-30", personId: "antony", start: `${todayISO()}T07:10:00`, end: `${todayISO()}T07:30:00`, title: "Äta frukost (med barnen)", minDurationMin: 10, involved: [{personId:"leia", role:"required"}, {personId:"gabriel", role:"required"}], location: "home", cluster: "morning" },
+    { id: "ant-07-30-40", personId: "antony", start: `${todayISO()}T07:30:00`, end: `${todayISO()}T07:40:00`, title: "Göra sig klar", minDurationMin: 6, location: "home", cluster: "morning" },
+    { id: "ant-07-40-50", personId: "antony", start: `${todayISO()}T07:40:00`, end: `${todayISO()}T07:50:00`, title: "Hjälpa Leia bli klar", minDurationMin: 8, involved: [{personId:"leia", role:"required"}], location: "home", cluster: "morning" },
+    { id: "ant-07-50-55", personId: "antony", start: `${todayISO()}T07:50:00`, end: `${todayISO()}T07:55:00`, title: "Hjälpa Gabriel med väskan", minDurationMin: 3, involved: [{personId:"gabriel", role:"required"}], location: "home", cluster: "morning" },
+    { id: "ant-07-55-08", personId: "antony", start: `${todayISO()}T07:55:00`, end: `${todayISO()}T08:00:00`,  title: "Gå med Leia", minDurationMin: 5, involved: [{personId:"leia", role:"required"}], location: "street", cluster: "morning" },
+    { id: uid(), personId: "antony", start: `${todayISO()}T08:00:00`,    end: `${todayISO()}T12:00:00`,   title: "Jobb (hemma)", location: "home" },
+    { id: uid(), personId: "antony", start: `${todayISO()}T12:00:00`,   end: `${todayISO()}T13:00:00`,   title: "Lunch", minDurationMin: 15, location: "home" },
+    { id: uid(), personId: "antony", start: `${todayISO()}T13:00:00`,   end: `${todayISO()}T18:00:00`,   title: "Jobb (hemma)", location: "home" },
+    { id: uid(), personId: "antony", start: `${todayISO()}T18:00:00`,   end: `${todayISO()}T19:00:00`,   title: "Middag", minDurationMin: 20, involved: [{personId:"maria", role:"required"}, {personId:"leia", role:"required"}, {personId:"gabriel", role:"required"}], location: "home", cluster: "evening" },
 ];
-
-
-// --- Spec Implementation ---
-const toOngoingTitle = (base: string): string => {
-    const patterns: [RegExp, string][] = [
-        [/^Åka till (.+)/i, 'Är på $1'],
-        [/^Åker till (.+)/i, 'Är på $1'],
-        [/^Gå till (.+)/i, 'Är på $1'],
-    ];
-    for (const [regex, replacement] of patterns) {
-        const match = base.match(regex);
-        if (match) return replacement.replace('$1', match[1]);
-    }
-    return `${base} (pågår)`;
-};
-
-export const presentTitle = (ev: Event, viewConfig: { assistant: { enableLanguagePolish: boolean } }): string => {
-    if (ev.meta?.isContinuation && viewConfig.assistant.enableLanguagePolish) {
-        return toOngoingTitle(ev.title);
-    }
-    return ev.title;
-};
-
-const makeSyntheticEvent = (start: Date, end: Date, personId: string, mode: "sleep_idle" | "unknown" = "sleep_idle"): Event => {
-    const isNightTime = start.getHours() >= 22 || start.getHours() < 6;
-    const title = (mode === "sleep_idle" && isNightTime) ? "Sover" : (mode === "sleep_idle" ? "Tillgänglig" : "Okänt");
-    return {
-        id: `syn-${personId}-${start.toISOString()}`,
-        personId,
-        start: start.toISOString(),
-        end: end.toISOString(),
-        title,
-        meta: { synthetic: true, source: "assistant" }
-    };
-};
-
-const synthesizeDayFill = (personEvents: Event[], personId: string, day: Date, cfg: { assistant: { enableDayFill: boolean, dayStart: string, dayEnd: string, dayFillMode?: "sleep_idle" | "unknown" } }): Event[] => {
-    if (!cfg.assistant.enableDayFill) return personEvents;
-
-    const dayStart = new Date(day);
-    const [startH, startM] = (cfg.assistant.dayStart || "00:00").split(':').map(Number);
-    dayStart.setHours(startH, startM, 0, 0);
-
-    const dayEnd = new Date(day);
-    const [endH, endM] = (cfg.assistant.dayEnd || "24:00").split(':').map(Number);
-    if(endH === 24) {
-        dayEnd.setDate(dayEnd.getDate() + 1);
-        dayEnd.setHours(0,0,0,0);
-    } else {
-        dayEnd.setHours(endH, endM, 0, 0);
-    }
-    
-    const out: Event[] = [];
-    const sorted = [...personEvents].sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime());
-
-    let cursor = dayStart.getTime();
-
-    for (const ev of sorted) {
-        const startTs = new Date(ev.start).getTime();
-        const endTs = new Date(ev.end).getTime();
-
-        if (cursor < startTs) {
-            out.push(makeSyntheticEvent(new Date(cursor), new Date(startTs), personId, cfg.assistant.dayFillMode));
-        }
-        out.push(ev);
-        cursor = Math.max(cursor, endTs);
-    }
-
-    if (cursor < dayEnd.getTime()) {
-        out.push(makeSyntheticEvent(new Date(cursor), dayEnd, personId, cfg.assistant.dayFillMode));
-    }
-
-    return out;
-};
 
 
 // --- Main Component ---
 export default function NPFScheduleApp() {
   const [isClient, setIsClient] = useState(false);
-  const [people, setPeople] = useState<Person[]>(DEFAULT_PEOPLE);
-  const [events, setEvents] = useState<Event[]>(DEFAULT_EVENTS);
+  const [people, setPeople] = useState<Person[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [date, setDate] = useState(() => new Date());
-  const [showFor, setShowFor] = useState<string[]>(DEFAULT_PEOPLE.slice(0, 2).map(p => p.id));
+  const [showFor, setShowFor] = useState<string[]>([]);
   const [dark, setDark] = useState(true);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [runningId, setRunningId] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     setIsClient(true);
-    setPeople(loadLS("npf.people", DEFAULT_PEOPLE));
-    setEvents(loadLS("npf.events", DEFAULT_EVENTS));
-    setShowFor(loadLS("npf.showFor", DEFAULT_PEOPLE.slice(0, 2).map(p => p.id)));
+    setPeople(loadLS("vcal.people", DEFAULT_PEOPLE));
+    setEvents(loadLS("vcal.events", DEFAULT_EVENTS));
+    setShowFor(loadLS("vcal.showFor", DEFAULT_PEOPLE.slice(0, 2).map(p => p.id)));
   }, []);
 
-  const viewConfig = useMemo(() => ({
-    SLOTS: 5,
-    fillPolicy: "repeat" as const,
-    assistant: {
-        enableLanguagePolish: true,
-        enableDayFill: false, // Keep this off by default for now
-        dayFillMode: "sleep_idle" as const,
-        dayStart: "07:00",
-        dayEnd: "22:00"
-    }
-  }), []);
-
-  useEffect(() => { if (isClient) saveLS("npf.people", people)}, [people, isClient]);
-  useEffect(() => { if (isClient) saveLS("npf.events", events)}, [events, isClient]);
-  useEffect(() => { if (isClient) saveLS("npf.showFor", showFor)}, [showFor, isClient]);
+  useEffect(() => { if (isClient) saveLS("vcal.people", people)}, [people, isClient]);
+  useEffect(() => { if (isClient) saveLS("vcal.events", events)}, [events, isClient]);
+  useEffect(() => { if (isClient) saveLS("vcal.showFor", showFor)}, [showFor, isClient]);
   
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  useEffect(() => { if (typeof window !== 'undefined') { if (dark) document.documentElement.classList.add("dark"); else document.documentElement.classList.remove("dark"); } }, [dark]);
 
   const orderedShowFor = useMemo(() => {
     const order = new Map(people.map((p, i) => [p.id, i]));
     return [...showFor].sort((a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99));
   }, [showFor, people]);
 
-  // --- View Logic ---
-  const columnsData = useMemo(() => {
-    if (!isClient) return [];
-    
-    const allEventsForDay = events.filter(e => isSameDay(new Date(e.start), date) && (orderedShowFor.includes(e.personId) || (e.isFamily && orderedShowFor.length > 0)));
+  const dailyEvents = useMemo(() => {
+      return events.filter(e => isSameDay(new Date(e.start), date));
+  }, [events, date]);
 
-    const allTimeKeys = [...new Set(allEventsForDay.map(e => new Date(e.start).getTime()))].sort();
-    
-    const timeSlots = allTimeKeys.slice(0, viewConfig.SLOTS);
-    
-    return orderedShowFor.map(personId => {
-      const person = people.find(p => p.id === personId)!;
-      let personEventsToday = events.filter(e => isSameDay(new Date(e.start), date) && (e.personId === personId || (e.isFamily && e.personId === 'family' && orderedShowFor.includes(personId))));
-
-      if (viewConfig.assistant.enableDayFill) {
-          personEventsToday = synthesizeDayFill(personEventsToday, personId, date, viewConfig);
-      }
-      
-      const eventGrid: (Event | null)[] = [];
-      let lastRealEvent: Event | null = null;
-      
-      for(const timeKey of timeSlots) {
-        const eventInSlot = personEventsToday.find(e => new Date(e.start).getTime() === timeKey);
-        if (eventInSlot) {
-            eventGrid.push(eventInSlot);
-            lastRealEvent = eventInSlot;
-        } else {
-            const isSpannedByLastEvent = lastRealEvent && timeKey > new Date(lastRealEvent.start).getTime() && timeKey < new Date(lastRealEvent.end).getTime();
-            if (viewConfig.fillPolicy === 'repeat' && isSpannedByLastEvent) {
-                eventGrid.push({ ...lastRealEvent, meta: { ...lastRealEvent.meta, isContinuation: true } });
-            } else {
-                eventGrid.push(null);
-            }
-        }
-      }
-      
-      while(eventGrid.length < viewConfig.SLOTS) {
-        if(viewConfig.fillPolicy === 'repeat' && lastRealEvent && new Date(lastRealEvent.end) > (timeSlots.length > 0 ? new Date(timeSlots[timeSlots.length - 1] || 0) : new Date(0))) {
-             eventGrid.push({ ...lastRealEvent, meta: { ...lastRealEvent.meta, isContinuation: true } });
-        } else {
-             eventGrid.push(null);
-        }
-      }
-
-      return { person, eventGrid };
-    });
-  }, [date, events, orderedShowFor, people, viewConfig, isClient]);
-  
   // --- Event Handlers ---
   const handleEventOperation = async (op: SingleCalendarOperationType, imageHint?: string): Promise<Event | null> => {
       const { commandType, eventIdentifier, eventDetails } = op;
@@ -251,7 +150,6 @@ export default function NPFScheduleApp() {
               newStart.setHours(newTime.getHours(), newTime.getMinutes(), 0, 0);
           }
 
-          // Fallback to first selected person if no person is specified in the instruction
           let personId;
           if (eventDetails.title) {
             const personNameMatch = eventDetails.title.match(/för\s+(\w+)/i);
@@ -262,7 +160,7 @@ export default function NPFScheduleApp() {
           if (!personId && orderedShowFor.length > 0) {
               personId = orderedShowFor[0];
           } else if (!personId) {
-              personId = people[0]?.id; // Fallback to the very first person if no one is selected
+              personId = people[0]?.id;
           }
 
           if (!personId) {
@@ -311,7 +209,6 @@ export default function NPFScheduleApp() {
             return null;
           }
       }
-      // Lägg till MODIFY och DELETE här senare
       return null;
   };
 
@@ -333,9 +230,9 @@ export default function NPFScheduleApp() {
   };
   
   function deleteEvent(id: string) { setEvents(prev => prev.filter(ev => ev.id !== id)); }
-  function toggleComplete(id: string) { setEvents(prev => prev.map(ev => (ev.id === id ? { ...ev, completed: !ev.completed } : ev))); boom(); }
-  function longPressFilter(personId: string) { setShowFor([personId]); }
-  useEffect(() => { if (typeof window !== 'undefined') { if (dark) document.documentElement.classList.add("dark"); else document.documentElement.classList.remove("dark"); } }, [dark]);
+  function onEventUpdate(updatedEvent: Event) {
+    setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
+  }
 
   if (!isClient) {
     return <div className="min-h-screen w-full bg-neutral-950 text-neutral-100 flex items-center justify-center">Laddar...</div>;
@@ -355,44 +252,20 @@ export default function NPFScheduleApp() {
       <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         
-        <div 
-          className="grid gap-4 mt-3" 
-          style={{ gridTemplateColumns: `repeat(${orderedShowFor.length > 0 ? orderedShowFor.length : 1}, 1fr)` }}
-        >
-          {columnsData.map(({ person, eventGrid }) => (
-            <div key={person.id} className={`rounded-2xl p-1 md:p-2 border-t border-neutral-800 ${person.bg}`}>
-              <div className="flex items-center gap-2 mb-2 select-none sticky top-[70px] bg-neutral-950/80 backdrop-blur-sm p-2 rounded-lg z-10" onPointerDown={()=>longPressFilter(person.id)}>
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: person.color }} />
-                <div className="font-semibold">{person.name}</div>
-              </div>
-              <div className="space-y-3 relative">
-                {eventGrid.map((eventOrNull, index) =>
-                  eventOrNull ? (
-                    <EventCard
-                      key={`${eventOrNull.id}-${index}`}
-                      person={person}
-                      ev={eventOrNull}
-                      onDelete={deleteEvent}
-                      onComplete={toggleComplete}
-                      onPickTimer={setRunningId}
-                      onGenerate={handleGenerateImage}
-                      runningId={runningId}
-                      now={now}
-                      showSimple={orderedShowFor.length > 1}
-                      viewConfig={viewConfig}
-                    />
-                  ) : (
-                    <div key={`empty-${person.id}-${index}`} className="h-40 rounded-xl bg-neutral-900/10" />
-                  )
-                )}
-              </div>
-            </div>
-          ))}
-           {orderedShowFor.length === 0 && (
-            <div className="col-span-full text-center p-10 bg-neutral-900/50 rounded-2xl">
-              <p className="text-neutral-400">Välj en eller flera personer i verktygsfältet för att se deras scheman.</p>
-            </div>
-          )}
+        <div className="mt-3">
+            {orderedShowFor.length > 0 ? (
+                <CalendarGrid 
+                    people={people.filter(p => orderedShowFor.includes(p.id))}
+                    events={dailyEvents}
+                    onEventUpdate={onEventUpdate}
+                    onEventDelete={deleteEvent}
+                    onGenerateImage={handleGenerateImage}
+                />
+            ) : (
+                <div className="col-span-full text-center p-10 bg-neutral-900/50 rounded-2xl">
+                  <p className="text-neutral-400">Välj en eller flera personer i verktygsfältet för att se deras scheman.</p>
+                </div>
+            )}
         </div>
       </main>
       <AssistantPanel 
