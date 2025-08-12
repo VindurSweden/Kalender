@@ -87,11 +87,13 @@ const leia07_08: Event[] = [
 ];
 
 const leiaEvents: Event[] = [
+  { id: "leia-00-07", personId: "leia", start: t(0), end: t(7), title: "Sover" },
   ...leia07_08,
   { id: "leia-08-13", personId: "leia", start: t(8), end: t(13), title: "Skola" },
   { id: "leia-13-1630", personId: "leia", start: t(13), end: `${day}T16:30:00`, title: "Fritids" },
   { id: "leia-1630-17", personId: "leia", start: `${day}T16:30:00`, end: t(17), title: "Blir hämtad (fritids)", minDurationMin: 5 },
   { id: "leia-18-19", personId: "leia", start: t(18), end: t(19), title: "Middag", minDurationMin: 20 },
+  { id: "leia-20-24", personId: "leia", start: t(20), end: t(24), title: "Sover" },
 ];
 
 const gabriel07_08: Event[] = [
@@ -101,10 +103,12 @@ const gabriel07_08: Event[] = [
 ];
 
 const gabrielEvents: Event[] = [
+  { id: "gab-00-07", personId: "gabriel", start: t(0), end: t(7), title: "Sover" },
   ...gabriel07_08,
   { id: "gab-08-13", personId: "gabriel", start: t(8), end: t(13), title: "Förskola" },
   { id: "gab-13-16", personId: "gabriel", start: t(13), end: t(16), title: "Lek & mellis" },
   { id: "gab-18-19", personId: "gabriel", start: t(18), end: t(19), title: "Middag", minDurationMin: 15 },
+  { id: "gab-20-24", personId: "gabriel", start: t(20), end: t(24), title: "Sover" },
 ];
 
 const baseEvents: Event[] = [...mariaEvents, ...leiaEvents, ...gabrielEvents];
@@ -163,23 +167,53 @@ function toOngoingTitle(title: string) {
 }
 
 function currentAndNextForPerson(personId: string, nowMs: number) {
-  const list = baseEvents
+  const allPersonEvents = baseEvents
     .filter(e => e.personId === personId)
     .sort((a,b) => +new Date(a.start) - +new Date(b.start));
+
+  if (allPersonEvents.length === 0) return { current: null, next: null };
+
   let current: Event | null = null;
   let next: Event | null = null;
-  for (let i = 0; i < list.length; i++) {
-    const s = +new Date(list[i].start);
-    const e = +new Date(list[i].end);
+
+  for (let i = 0; i < allPersonEvents.length; i++) {
+    const ev = allPersonEvents[i];
+    const s = +new Date(ev.start);
+    const e = +new Date(ev.end);
     if (s <= nowMs && nowMs < e) {
-      current = list[i];
-      next = list[i+1] ?? null;
+      current = ev;
+      next = allPersonEvents[i+1] ?? null;
       break;
     }
-    if (nowMs < s) { next = list[i]; break; }
+    if (nowMs < s) {
+      next = ev;
+      break;
+    }
   }
+
+  // If we are past the last event of the day, loop to the first event of the *next* day.
+  if (!current && !next) {
+    current = allPersonEvents[allPersonEvents.length - 1];
+  }
+  if (current && !next) {
+    const nextDayFirstEvent = { ...allPersonEvents[0] };
+    const currentEnd = new Date(current.end);
+    const nextStart = new Date(nextDayFirstEvent.start);
+    nextStart.setDate(nextStart.getDate() + 1);
+    
+    // Check if the current event already spans across midnight. If so, don't advance the next event.
+    if (currentEnd.getDate() === nextStart.getDate() && currentEnd.getHours() > nextStart.getHours()) {
+        // This case is tricky, for now we just use the next day's event as is.
+    } else {
+        nextDayFirstEvent.start = nextStart.toISOString();
+    }
+    
+    next = nextDayFirstEvent;
+  }
+  
   return { current, next };
 }
+
 
 // ========= Hastighets-emoji =========
 function speedEmojiByTotal(totalMs: number): string {
@@ -203,8 +237,8 @@ export default function LabSimPage() {
 
   const [speed, setSpeed] = useState<number>(5);     // 1h = 5s IRL
   const [playing, setPlaying] = useState<boolean>(true);
-  const [nowMs, setNowMs] = useState<number>(+new Date(t(7, 0))); // start 07:00
-  const startOfDay = +new Date(t(6,0));
+  const [nowMs, setNowMs] = useState<number>(+new Date(t(6, 0))); // start 06:00
+  const startOfDay = +new Date(t(0,0));
   const endOfDay = +new Date(t(24,0));
   const rafId = useRef<number | null>(null);
   const lastTs = useRef<number | null>(null);
@@ -217,6 +251,7 @@ export default function LabSimPage() {
       const factor = 3600000 / (speed * 1000); // kalender-ms per IRL-ms
       setNowMs(v => {
         const nv = v + dt * factor;
+        // Reset to the start of the *same* day if it loops
         return nv >= endOfDay ? startOfDay : nv;
       });
       rafId.current = requestAnimationFrame(step);
@@ -233,8 +268,10 @@ export default function LabSimPage() {
   const S = SLOTS;
   const centerIndex = Math.floor(S / 2);
   const currentRowIndex = useMemo(() => {
-    const idx = rows.findIndex(r => r.time >= nowMs);
-    return idx === -1 ? rows.length - 1 : idx;
+    // Find the last event that has started
+    const idx = rows.findIndex(r => r.time > nowMs);
+    if (idx === -1) return rows.length - 1; // After last event
+    return Math.max(0, idx - 1);
   }, [rows, nowMs]);
   const startIndex = clamp(currentRowIndex - centerIndex, 0, Math.max(0, rows.length - S));
   const visibleRows = rows.slice(startIndex, startIndex + S);
@@ -254,7 +291,7 @@ export default function LabSimPage() {
     const ev = row.cells.get(pId) || null;
     if (ev) return { title: ev.title, repeat: false };
     const list = baseEvents.filter(e => e.personId === pId).sort((a,b) => +new Date(a.start) - +new Date(b.start));
-    const idx = list.findIndex(e => +new Date(e.start) >= row.time);
+    const idx = list.findIndex(e => +new Date(e.start) > row.time);
     const prev = idx === -1 ? list[list.length-1] : list[Math.max(0, idx-1)];
     if (prev && isOngoing(prev, row.time)) return { title: toOngoingTitle(prev.title), repeat: true };
     return { title: "—", repeat: false };
@@ -269,9 +306,32 @@ export default function LabSimPage() {
   function ProgressTicker({ personId }: { personId: string }) {
     const { current, next } = currentAndNextForPerson(personId, nowMs);
     if (!current || !next) return null;
+    
     const start = +new Date(current.start);
-    const target = +new Date(next.start);
-    if (!(start <= nowMs && nowMs <= target)) return null;
+    let target = +new Date(next.start);
+
+    // If next event is on a different day, adjust its timestamp for this view
+    if (new Date(next.start).getDate() !== new Date(current.start).getDate()) {
+        const tempTarget = new Date(target);
+        // This is a simplification; a full solution would handle multi-day views
+        // For this lab, we assume next day means +24h from its original time for calculation
+        const nowDay = new Date(nowMs).setHours(0,0,0,0);
+        const nextDay = new Date(next.start).setHours(0,0,0,0);
+        if(nextDay > nowDay){
+            // It's a future day, that's fine
+        } else {
+             target = +new Date(new Date(next.start).getTime() + 24 * 60 * 60 * 1000);
+        }
+    }
+
+    // Don't show progress if we are outside the current event's bounds
+    if (!(start <= nowMs && nowMs <= target)) {
+      if(nowMs > target) {
+        // We have passed the event, find the next one
+        return null;
+      }
+    }
+
 
     const total = Math.max(1, target - start);
     const remaining = Math.max(0, target - nowMs);
@@ -325,6 +385,7 @@ export default function LabSimPage() {
               <option value={2}>2 s/timme</option>
               <option value={5}>5 s/timme</option>
               <option value={10}>10 s/timme</option>
+              <option value={60}>60 s/timme</option>
             </select>
           </label>
           <label className="flex items-center gap-2">

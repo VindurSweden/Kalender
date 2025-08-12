@@ -27,8 +27,8 @@ export default function RtlProgressLab() {
   // Simulerad klocka: 1h = 5s IRL
   const [speedSecPerHour, setSpeed] = useState(5);
   const [playing, setPlaying] = useState(true);
-  const [nowMs, setNowMs] = useState(+new Date(t(7,0)));
-  const startOfDay = +new Date(t(6,0));
+  const [nowMs, setNowMs] = useState(+new Date(t(6,0)));
+  const startOfDay = +new Date(t(0,0));
   const endOfDay = +new Date(t(24,0));
   const rafId = useRef<number | null>(null);
   const lastTs = useRef<number | null>(null);
@@ -59,6 +59,7 @@ export default function RtlProgressLab() {
             <option value={2}>2 s/timme</option>
             <option value={5}>5 s/timme</option>
             <option value={10}>10 s/timme</option>
+            <option value={60}>60 s/timme</option>
           </select>
         </label>
         <div className="ml-auto text-xs text-neutral-300">Nu (sim): {new Date(nowMs).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</div>
