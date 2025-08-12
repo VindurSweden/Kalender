@@ -40,6 +40,7 @@ const persons: Person[] = [
   { id: "maria", name: "Maria", color: "from-rose-500 to-rose-700", emoji: "👩" },
   { id: "leia", name: "Leia", color: "from-emerald-500 to-teal-600", emoji: "👧" },
   { id: "gabriel", name: "Gabriel", color: "from-amber-500 to-orange-600", emoji: "🧒" },
+  { id: "antony", name: "Antony", color: "from-sky-500 to-indigo-600", emoji: "👨‍🦱" },
 ];
 
 // ========= Ikoner (emoji) =========
@@ -150,7 +151,20 @@ const mariaEvents = synthesizeDayFill(baseMaria, 'maria', new Date(day));
 const leiaEvents = synthesizeDayFill(baseLeia, 'leia', new Date(day));
 const gabrielEvents = synthesizeDayFill(baseGabriel, 'gabriel', new Date(day));
 
-const baseEvents: Event[] = [...mariaEvents, ...leiaEvents, ...gabrielEvents];
+// Antony (pappa) 07:00–08:00 enligt ditt schema
+const antonyEvents: Event[] = [
+  { id: "ant-07-00-10", personId: "antony", start: t(7,0),  end: t(7,10), title: "Fixa frukost",                 minDurationMin: 6  },
+  { id: "ant-07-10-30", personId: "antony", start: t(7,10), end: t(7,30), title: "Äta frukost (med barnen)",     minDurationMin: 10 },
+  { id: "ant-07-30-40", personId: "antony", start: t(7,30), end: t(7,40), title: "Göra sig klar",                 minDurationMin: 6  },
+  { id: "ant-07-40-50", personId: "antony", start: t(7,40), end: t(7,50), title: "Hjälpa Leia bli klar",          minDurationMin: 8  },
+  { id: "ant-07-50-55", personId: "antony", start: t(7,50), end: t(7,55), title: "Hjälpa Gabriel med väskan",     minDurationMin: 3  },
+  { id: "ant-07-55-08", personId: "antony", start: t(7,55), end: t(8,0),  title: "Gå med Leia",                   minDurationMin: 5  },
+  { id: "ant-08-12",    personId: "antony", start: t(8),    end: t(12),   title: "Jobb (hemma)" },
+  { id: "ant-12-13",    personId: "antony", start: t(12),   end: t(13),   title: "Lunch" },
+  { id: "ant-13-16",    personId: "antony", start: t(13),   end: t(16),   title: "Jobb (hemma)" },
+  { id: "ant-18-19",    personId: "antony", start: t(18),   end: t(19),   title: "Middag",                         minDurationMin: 20 },
+];
+const baseEvents: Event[] = [...mariaEvents, ...leiaEvents, ...gabrielEvents, ...antonyEvents];
 
 
 // ========= Gridlogik (event-buckets) =========
@@ -199,11 +213,12 @@ function isOngoing(ev: Event, atMs: number) {
   return s <= atMs && atMs < e;
 }
 
-function toOngoingTitle(title: string) {
-  if (/^Hämtar/i.test(title)) return `${title} (pågår)`;
-  if (/^Blir hämtad/i.test(title)) return `Väntar (pågår)`;
-  if (/^Äta|Frukost/i.test(title)) return `${title} (pågår)`;
-  return `${title} (pågår)`;
+function toOngoingTitle(title: string, past: boolean) {
+  const suffix = past ? "(pågick)" : "(pågår)";
+  if (/^Hämtar/i.test(title)) return `${title} ${suffix}`;
+  if (/^Blir hämtad/i.test(title)) return past ? `Väntade ${suffix}` : `Väntar ${suffix}`;
+  if (/^Äta|Frukost/i.test(title)) return `${title} ${suffix}`;
+  return `${title} ${suffix}`;
 }
 
 function currentAndNextForPerson(personId: string, nowMs: number) {
@@ -334,24 +349,23 @@ export default function LabSimPage() {
   const tillMiddag = nextDinner ? humanDelta(+new Date(nextDinner.start) - nowMs) : null;
 
   // Cellhelpers (titel & tid enligt din regel)
-  function presentTitle(pId: string, row: Row): { title: string; repeat: boolean, isSynthetic: boolean } {
+  function presentTitle(pId: string, row: Row, isPastRow: boolean): { title: string; repeat: boolean; sourceEventId: string | null } {
     const ev = row.cells.get(pId) || null;
-    if (ev) return { title: ev.title, repeat: false, isSynthetic: !!ev.meta?.synthetic };
-
+    if (ev) return { title: ev.title, repeat: false, sourceEventId: ev.id };
     const list = baseEvents.filter(e => e.personId === pId).sort((a,b) => +new Date(a.start) - +new Date(b.start));
     const idx = list.findIndex(e => +new Date(e.start) > row.time);
     const prev = idx === -1 ? list[list.length-1] : list[Math.max(0, idx-1)];
     
     if (prev && isOngoing(prev, row.time)) {
-        return { title: toOngoingTitle(prev.title), repeat: true, isSynthetic: !!prev.meta?.synthetic };
+        return { title: toOngoingTitle(prev.title, isPastRow), repeat: true, sourceEventId: prev.id };
     }
     
-    return { title: "—", repeat: false, isSynthetic: false };
+    return { title: "—", repeat: false, sourceEventId: null };
   }
-  function cellTimeLabel(pId: string, row: Row): string {
+  function cellTimeLabel(pId: string, row: Row, _isPastRow: boolean): string {
     const ev = row.cells.get(pId) || null;
-    if (ev) return HHMM(new Date(ev.start));
-    return HHMM(row.time);
+    const label = ev ? HHMM(new Date(ev.start)) : HHMM(row.time);
+    return label;
   }
 
   // ========= Progress-spår (höger→vänster) =========
@@ -414,6 +428,22 @@ export default function LabSimPage() {
   // Hoppa i tiden (demo-knappar)
   const jumpTo = (h: number, m: number = 0) => setNowMs(+new Date(t(h, m)));
 
+  const [flash, setFlash] = useState<null | { kind: "klar" | "late"; at: number }>(null);
+
+  function handleKlar(eventId: string | null) {
+    if (!eventId) return;
+    console.log("Klar:", { eventId });
+    setFlash({ kind: "klar", at: Date.now() });
+    setTimeout(() => setFlash(null), 1200);
+  }
+  function handleKlarSent(eventId: string | null) {
+    if (!eventId) return;
+    const payload = { seedEventId: eventId, now: new Date(nowMs).toISOString(), horizonMode: "nextFixed" };
+    console.log("Klar sent (preview replan-jobb):", payload);
+    setFlash({ kind: "late", at: Date.now() });
+    setTimeout(() => setFlash(null), 1200);
+  }
+
   return (
     <div className="w-full min-h-screen bg-neutral-950 text-neutral-50 p-3">
       {/* Kontroller */}
@@ -443,6 +473,15 @@ export default function LabSimPage() {
           <button onClick={() => jumpTo(18,0)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">18:00</button>
         </div>
       </div>
+
+      {/* Flash (enkel demo) */}
+      {flash && (
+        <div className="fixed right-4 bottom-4 z-50">
+          <div className={`px-3 py-2 rounded-lg border ${flash.kind === "klar" ? "border-emerald-400/40 bg-emerald-600/15" : "border-amber-400/40 bg-amber-600/15"}`}>
+            {flash.kind === "klar" ? "✔️ Klart (demo)" : "⏱️ Klar sent – skulle trigga replan (demo)"}
+          </div>
+        </div>
+      )}
 
       {/* Nu-info */}
       <div className="mb-3 text-xs text-neutral-300 flex items-center gap-3">
@@ -476,12 +515,13 @@ export default function LabSimPage() {
           {visibleRows.map((row, rIdx) => (
             <React.Fragment key={row.time+"-"+rIdx}>
               {(selected.length ? selected : persons).map((p) => {
-                const { title, repeat, isSynthetic } = presentTitle(p.id, row);
-                const timeLabel = cellTimeLabel(p.id, row);
-                const ico = iconFor(title.replace(/\s*\(pågår\)$/i, ""));
                 const isCenterRow = rIdx === centerIndex;
+                const isPastRow   = rIdx < centerIndex;
+                const { title, repeat, sourceEventId } = presentTitle(p.id, row, isPastRow);
+                const timeLabel = cellTimeLabel(p.id, row, isPastRow);
+                const ico = iconFor(title.replace(/\s*\((pågår|pågick)\)$/i, ""));
                 return (
-                  <div key={p.id+"-"+rIdx} className={`px-2 py-2 flex flex-col justify-center gap-2 border-b border-neutral-800 border-r last:border-r-0 ${isCenterRow?"bg-neutral-900/40":"bg-neutral-950"} ${isSynthetic ? 'border-dashed' : ''}`}>
+                  <div key={p.id+"-"+rIdx} className={`px-2 py-2 flex flex-col justify-center gap-2 border-b border-neutral-800 border-r last:border-r-0 ${isCenterRow?"bg-neutral-900/40":"bg-neutral-950"} ${p.id.startsWith('syn-') ? 'border-dashed' : ''}`}>
                     <div className="flex items-center gap-3">
                       {/* Bildruta */}
                       <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-neutral-800 to-neutral-900 grid place-items-center shrink-0">
@@ -489,7 +529,7 @@ export default function LabSimPage() {
                       </div>
                       {/* Text */}
                       <div className="min-w-0">
-                        <div className="text-[11px] text-neutral-400 mb-0.5">{timeLabel}</div>
+                        <div className={`text-[11px] mb-0.5 ${isPastRow ? "text-neutral-500" : "text-neutral-400"}`}>{timeLabel}</div>
                         <div className="truncate text-sm">
                           {title}
                           {repeat && <span className="ml-1 text-[10px] text-neutral-400 align-middle">↻</span>}
@@ -499,6 +539,15 @@ export default function LabSimPage() {
 
                     {/* Progress-linje */}
                     {(isCenterRow || showAllProgress) && <ProgressTicker personId={p.id} />}
+                    {/* Actions */}
+                    <div className="mt-1">
+                      {isCenterRow && (
+                        <button onClick={() => handleKlar(sourceEventId)} className="px-2 py-1 text-xs rounded-md border bg-neutral-900 border-neutral-800">Klar</button>
+                      )}
+                      {isPastRow && (
+                        <button onClick={() => handleKlarSent(sourceEventId)} className="px-2 py-1 text-xs rounded-md border bg-neutral-900 border-neutral-800">Klar sent</button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -516,3 +565,5 @@ export default function LabSimPage() {
     </div>
   );
 }
+
+    
