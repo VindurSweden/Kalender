@@ -105,7 +105,7 @@ export function GridCell({
           if (allEvents[i].personId !== person.id) continue;
           const s = +new Date(allEvents[i].start);
           const e = +new Date(allEvents[i].end);
-          if (s <= nowMs && nowMs < e) { current = allEvents[i]; next = allEvents[i+1] ?? null; break; }
+          if (s <= nowMs && nowMs < e) { current = allEvents[i]; next = allEvents.find((e, idx) => idx > i && e.personId === person.id) ?? null; break; }
           if (nowMs < s) { next = allEvents[i]; break; }
         }
         return { current, next };

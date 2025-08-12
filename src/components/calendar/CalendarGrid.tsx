@@ -7,10 +7,6 @@ import type { Event, Person, Row, Override } from "@/types/event";
 import { buildRows, applyOverrides, synthesizeDayFill, RESOURCES, whyBlocked, plannedEndMsForEvent, previewReplanProportional } from "@/lib/grid-utils";
 import { GridCell } from './GridCell';
 
-const t = (h: number, m: number = 0) => {
-    const day = "2025-08-11";
-    return `${day}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`;
-}
 const HHMM = (msOrDate: number | Date) => {
   const d = typeof msOrDate === "number" ? new Date(msOrDate) : msOrDate;
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -28,48 +24,18 @@ interface CalendarGridProps {
 }
 
 export function CalendarGrid({ people, events, onEventUpdate, onEventDelete, onGenerateImage }: CalendarGridProps) {
-    const [nowMs, setNowMs] = useState<number>(() => {
-        const d = new Date();
-        d.setHours(6, 0, 0, 0);
-        return d.getTime();
-    });
-    const [playing, setPlaying] = useState<boolean>(true);
-    const [speed, setSpeed] = useState<number>(60);
+    const [nowMs, setNowMs] = useState<number>(() => Date.now());
     const [overrides, setOverrides] = useState<Map<string, Override>>(new Map());
     const [completedUpTo, setCompletedUpTo] = useState<Map<string, number>>(new Map());
     const [showMeta, setShowMeta] = useState(false);
     const [flash, setFlash] = useState<null | { kind: "klar" | "late"; at: number }>(null);
 
-    const rafId = useRef<number | null>(null);
-    const lastTs = useRef<number | null>(null);
-    
-    const startOfDay = useMemo(() => {
-        const d = new Date(nowMs);
-        d.setHours(0, 0, 0, 0);
-        return d.getTime();
-    }, [nowMs]);
-    
-    const endOfDay = useMemo(() => {
-         const d = new Date(nowMs);
-        d.setHours(23, 59, 59, 999);
-        return d.getTime();
-    }, [nowMs]);
-
     useEffect(() => {
-        function step(ts: number) {
-          const prev = lastTs.current ?? ts;
-          const dt = ts - prev;
-          lastTs.current = ts;
-          const factor = 3600000 / (speed * 1000); 
-          setNowMs(v => {
-            const nv = v + dt * factor;
-            return nv >= endOfDay ? startOfDay : nv;
-          });
-          rafId.current = requestAnimationFrame(step);
-        }
-        if (playing) rafId.current = requestAnimationFrame(step);
-        return () => { if (rafId.current != null) cancelAnimationFrame(rafId.current); rafId.current = null; lastTs.current = null; };
-    }, [playing, speed, startOfDay, endOfDay]);
+        const timerId = setInterval(() => {
+            setNowMs(Date.now());
+        }, 1000); // Update every second for a live clock
+        return () => clearInterval(timerId);
+    }, []);
 
     const filledEvents = useMemo(() => {
         let allFilled: Event[] = [];
@@ -140,35 +106,14 @@ export function CalendarGrid({ people, events, onEventUpdate, onEventDelete, onG
       setFlash({ kind: "late", at: Date.now() });
       setTimeout(() => setFlash(null), 1200);
     }
-    
-    const jumpTo = (h: number, m: number = 0) => {
-        const d = new Date();
-        d.setHours(h,m,0,0);
-        setNowMs(d.getTime());
-    }
 
     return (
         <div>
             {/* Controls */}
              <div className="mb-3 flex flex-wrap gap-2 items-center text-xs text-neutral-300">
-                <button onClick={() => setPlaying(p => !p)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">{playing?"Paus":"Spela"}</button>
-                <label className="flex items-center gap-2">
-                    <select value={speed} onChange={(e)=> setSpeed(Number(e.target.value))} className="bg-neutral-900 border border-neutral-800 rounded-md px-2 py-1">
-                        <option value={2}>2 s/timme</option>
-                        <option value={5}>5 s/timme</option>
-                        <option value={10}>10 s/timme</option>
-                        <option value={60}>60 s/timme</option>
-                        <option value={180}>180 s/timme</option>
-                    </select>
-                </label>
                  <label className="flex items-center gap-2">
                     <input type="checkbox" checked={showMeta} onChange={(e) => setShowMeta(e.target.checked)} /> Visa metadata
                 </label>
-                <div className="ml-auto flex items-center gap-2">
-                    <button onClick={() => jumpTo(7,0)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">07:00</button>
-                    <button onClick={() => jumpTo(12,0)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">12:00</button>
-                    <button onClick={() => jumpTo(18,0)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">18:00</button>
-                </div>
             </div>
 
             {/* Grid */}
@@ -230,4 +175,3 @@ export function CalendarGrid({ people, events, onEventUpdate, onEventDelete, onG
         </div>
     );
 }
-
