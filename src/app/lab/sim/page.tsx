@@ -41,10 +41,7 @@ type Row = { time: number; cells: Map<string, Event> };
 // ========= Helpers =========
 const day = "2025-08-11"; // godtycklig testdag
 const t = (h: number, m: number = 0) => `${day}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`;
-const HHMM = (msOrDate: number | Date) => {
-  const d = typeof msOrDate === "number" ? new Date(msOrDate) : msOrDate;
-  return d.toLocaleTimeString("sv-SE", { hour: '2-digit', minute: '2-digit' });
-};
+
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 
 // ========= Personer =========
@@ -126,7 +123,7 @@ function unmetCoLocation(e: Event, atMs: number, events: Event[]): string | null
   return null;
 }
 
-function whyBlocked(e: Event, atMs: number, events: Event[]): string | null {
+function whyBlocked(e: Event, atMs: number, events: Event[], persons: Person[]): string | null {
   return unmetFinishToStart(e, atMs, events)
       ?? unmetRequiredPresence(e, atMs, events)
       ?? unmetResource(e, atMs, events)
@@ -733,16 +730,7 @@ export default function LabSimPage() {
           {visibleRows.map((row, rIdx) => (
             <React.Fragment key={row.time+"-"+rIdx}>
               {(selected.length ? selected : persons).map((p) => {
-                const isCenterRow = (startIndex + rIdx) === currentRowIndex;
-                const isPastRow = (startIndex + rIdx) < currentRowIndex;
                 
-                const sourceEvent = visEvents.find(e => e.personId === p.id && Math.abs(+new Date(e.start) - row.time) < EPSILON_MS);
-                const sourceEventId = sourceEvent?.id ?? null;
-
-                const src = sourceEventId ? visEvents.find(e => e.id === sourceEventId) : null;
-                const plannedEnd = src ? plannedEndMsForEvent(src, visEvents) : null;
-                const isOverdue = !!(src && plannedEnd && nowMs > plannedEnd); 
-
                 return (
                     <GridCell 
                         key={p.id + "-" + row.time}
@@ -754,71 +742,15 @@ export default function LabSimPage() {
                         currentRowIndex={currentRowIndex}
                         startIndex={startIndex}
                         allEvents={visEvents}
+                        allPeople={persons}
                         completedUpTo={completedUpTo.get(p.id)}
                         showMeta={showMeta}
                         onKlar={handleKlar}
                         onKlarSent={handleKlarSent}
                         onEdit={(ev) => { setEditEventId(ev.id); setShowSettings(true);}}
                         onGenerateImage={(ev) => console.log("Generera bild (labb):", ev.title)}
-                    >
-                        {/* Custom children for buttons */}
-                        {isPastRow && src && isOverdue && (
-                            <span className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded-md border border-amber-600 bg-amber-900/30 text-amber-200">
-                                Ej klar ännu
-                            </span>
-                        )}
-
-                        {sourceEventId && isCenterRow && (
-                        <div className="flex gap-2 mt-1">
-                            <button
-                            className="px-2 py-0.5 rounded-md text-xs border border-neutral-700 bg-neutral-900"
-                            onClick={() => handleKlar(sourceEventId)}
-                            >
-                            Klar
-                            </button>
-                            <button
-                            className="px-2 py-0.5 rounded-md text-xs border border-neutral-800 bg-neutral-900/40 text-neutral-500 cursor-not-allowed"
-                            disabled
-                            title="Klar sent visas bara för rader ovanför NU"
-                            >
-                            Klar sent
-                            </button>
-                            <button
-                            className="px-2 py-0.5 rounded-md text-xs border border-neutral-800 bg-neutral-900/40 text-neutral-500 cursor-not-allowed"
-                            disabled
-                            title="Ej klar visas bara för rader ovanför NU"
-                            >
-                            Ej klar
-                            </button>
-                        </div>
-                        )}
-                        {sourceEventId && isPastRow && (
-                        <div className="flex gap-2 mt-1">
-                            <button
-                            className="px-2 py-0.5 rounded-md text-xs border border-neutral-700 bg-neutral-900"
-                            onClick={() => handleEjKlar(sourceEventId)}
-                            >
-                            Ej klar
-                            </button>
-                            <button
-                            className={`px-2 py-0.5 rounded-md text-xs border ${isOverdue ? 'border-rose-700 bg-rose-900/30' : 'border-neutral-800 bg-neutral-900/40 text-neutral-500 cursor-not-allowed'}`}
-                            onClick={() => isOverdue && handleKlarSent(sourceEventId)}
-                            disabled={!isOverdue}
-                            aria-disabled={!isOverdue}
-                            title={isOverdue ? 'Markera som sent och krymp framåt' : 'Kan bara användas när planerat slut passerats'}
-                            >
-                            Klar sent
-                            </button>
-                            <button
-                            className="ml-auto px-2 py-0.5 rounded-md text-xs border border-neutral-700 bg-neutral-900"
-                            onClick={() => { setEditEventId(sourceEventId); setShowSettings(true); }}
-                            title="Redigera detta event"
-                            >
-                            ✎
-                            </button>
-                        </div>
-                        )}
-                    </GridCell>
+                        onDelete={(id) => console.log("Ta bort (labb):", id)}
+                    />
                 )
               })}
             </React.Fragment>
@@ -837,7 +769,7 @@ export default function LabSimPage() {
             const next = new Map(prev ?? new Map());
             const cur = next.get(editEventId) ?? {};
             // start/slut låter vi vara (denna drawer rör meta)
-            // men vi kan spara meta via en side-map om du vill. Tills vidare: uppdatera base array om den är i lokal fil.
+            // men vi kan spara meta via en side-map om du vill. Tills vidare: uppdatera base array om du vill. Tills vidare: uppdatera base array om den är i lokal fil.
             // Här gör vi ingenting destruktivt förutom att logga:
             console.log("SAVE meta patch for", editEventId, patch);
             return next;

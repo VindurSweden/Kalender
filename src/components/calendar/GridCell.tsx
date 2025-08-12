@@ -192,21 +192,30 @@ export function GridCell({
 
             {/* Buttons Overlay */}
             <div className="absolute inset-0 z-30 flex items-center justify-center">
-                {sourceEv && !sourceEv.imageUrl && (
+                {sourceEv && !sourceEv.imageUrl && !sourceEv.meta?.synthetic && (
                     <button onClick={() => onGenerateImage(sourceEv)} className="flex items-center justify-center text-white bg-black/40 hover:bg-black/60 p-2 rounded-md transition-colors text-sm">
                         <ImageIcon size={16} /> <span className="ml-2">Skapa bild</span>
                     </button>
                 )}
             </div>
             
-            {sourceEv && (
-                <button 
-                    onClick={() => onEdit(sourceEv)} 
-                    className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-white/20 hover:text-white z-40"
-                    title="Redigera händelse"
-                >
-                    <Settings size={14}/>
-                </button>
+            {sourceEv && !sourceEv.meta?.synthetic && (
+                <>
+                    <button 
+                        onClick={() => onEdit(sourceEv)} 
+                        className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-white/20 hover:text-white z-40"
+                        title="Redigera händelse"
+                    >
+                        <Settings size={14}/>
+                    </button>
+                    <button 
+                        onClick={() => onDelete(sourceEv.id)} 
+                        className="absolute bottom-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-rose-900/50 hover:text-white z-40"
+                        title="Ta bort händelse"
+                    >
+                        <Trash2 size={14}/>
+                    </button>
+                </>
             )}
         </div>
     );
