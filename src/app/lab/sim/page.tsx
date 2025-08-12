@@ -43,7 +43,7 @@ const day = "2025-08-11"; // godtycklig testdag
 const t = (h: number, m: number = 0) => `${day}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`;
 const HHMM = (msOrDate: number | Date) => {
   const d = typeof msOrDate === "number" ? new Date(msOrDate) : msOrDate;
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return d.toLocaleTimeString("sv-SE", { hour: '2-digit', minute: '2-digit' });
 };
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 
