@@ -2,7 +2,7 @@
 "use client";
 import React from 'react';
 import { motion } from "framer-motion";
-import { Image as ImageIcon, CheckCircle, Clock, Settings } from "lucide-react";
+import { Image as ImageIcon, CheckCircle, Clock, Settings, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Event, Person, Row } from "@/types/event";
 import { plannedEndMsForEvent, getSourceEventForCell, presentTitleForCell, whyBlocked } from '@/lib/grid-utils';
@@ -41,13 +41,14 @@ interface GridCellProps {
     currentRowIndex: number;
     startIndex: number;
     allEvents: Event[];
+    allPeople: Person[];
     completedUpTo?: number;
     showMeta: boolean;
     onKlar: (id: string | null) => void;
     onKlarSent: (id: string | null) => void;
-    onEdit: (event: Event) => void;
+    onEdit: (event: Event | null) => void;
     onGenerateImage: (event: Event) => void;
-    children?: React.ReactNode;
+    onDelete: (id: string) => void;
 }
 
 export function GridCell({
@@ -59,19 +60,20 @@ export function GridCell({
     currentRowIndex,
     startIndex,
     allEvents,
+    allPeople,
     completedUpTo,
     showMeta,
     onKlar,
     onKlarSent,
     onEdit,
     onGenerateImage,
-    children
+    onDelete
 }: GridCellProps) {
     const isCenterRow = (startIndex + rIdx) === currentRowIndex;
     const isPastRow = (startIndex + rIdx) < currentRowIndex;
     const sourceEv = getSourceEventForCell(person.id, row, allEvents);
     
-    const blockedReason = sourceEv ? whyBlocked(sourceEv, row.time, allEvents, []) : null;
+    const blockedReason = sourceEv ? whyBlocked(sourceEv, row.time, allEvents, allPeople) : null;
     
     const { title, repeat, sourceEventId } = presentTitleForCell(person.id, row, allEvents, isPastRow, completedUpTo, blockedReason);
 
@@ -115,8 +117,7 @@ export function GridCell({
         <div className={cn(
             "relative flex flex-col justify-end min-h-[160px] text-white overflow-hidden",
             "border-b border-r border-neutral-800 last:border-r-0 group/row",
-            isCenterRow ? "bg-neutral-900/40" : "bg-neutral-950",
-            sourceEv?.meta?.synthetic ? "border-dashed" : ""
+            isCenterRow ? "bg-neutral-900/40" : "bg-neutral-950"
         )}>
             {isCenterRow && <div className="absolute inset-0 border-y-2 border-fuchsia-500/80 pointer-events-none z-10" />}
 
@@ -128,15 +129,6 @@ export function GridCell({
                     <div className={cn("w-full h-full grid place-items-center text-5xl", person.bg.replace('bg-','bg-gradient-to-br from-').replace('/40', '/70 via-neutral-900 to-neutral-900'))}>{ico}</div>
                 )}
             </div>
-
-            {/* Button container - high z-index to be clickable */}
-            {sourceEv && !sourceEv.imageUrl && !sourceEv.meta?.synthetic && (
-                <div className="absolute inset-0 z-30 flex items-center justify-center">
-                    <button onClick={() => onGenerateImage(sourceEv)} className="flex items-center justify-center text-white bg-black/40 hover:bg-black/60 p-2 rounded-md transition-colors text-sm">
-                        <ImageIcon size={16} /> <span className="ml-2">Skapa bild</span>
-                    </button>
-                </div>
-            )}
             
             {/* Content Overlay */}
             <div className="relative z-20 flex flex-col justify-end h-full p-2 bg-gradient-to-t from-black/80 via-black/50 to-transparent">
@@ -170,15 +162,13 @@ export function GridCell({
                         {title}
                         {repeat && <span className="ml-1.5 text-[10px] text-white/70 align-middle">↻</span>}
                     </div>
-                     {isOverdue && !children && (
+                     {isOverdue && (
                         <span className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded-full border border-amber-500 bg-amber-900/60 text-amber-200 font-medium">
                            ! Ej klar
                         </span>
                     )}
 
-                    {children}
-
-                    {sourceEventId && isCenterRow && !children && (
+                    {sourceEventId && isCenterRow && (
                         <div className="flex gap-2 mt-2">
                             <button
                                 className="px-2.5 py-1 rounded-md text-xs border border-white/20 bg-black/30 backdrop-blur-sm hover:bg-white/20 flex items-center gap-1.5"
@@ -200,10 +190,19 @@ export function GridCell({
                 </div>
             </div>
 
-            {sourceEv && !sourceEv.meta?.synthetic && (
+            {/* Buttons Overlay */}
+            <div className="absolute inset-0 z-30 flex items-center justify-center">
+                {sourceEv && !sourceEv.imageUrl && (
+                    <button onClick={() => onGenerateImage(sourceEv)} className="flex items-center justify-center text-white bg-black/40 hover:bg-black/60 p-2 rounded-md transition-colors text-sm">
+                        <ImageIcon size={16} /> <span className="ml-2">Skapa bild</span>
+                    </button>
+                )}
+            </div>
+            
+            {sourceEv && (
                 <button 
                     onClick={() => onEdit(sourceEv)} 
-                    className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-white/20 hover:text-white z-30"
+                    className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-white/20 hover:text-white z-40"
                     title="Redigera händelse"
                 >
                     <Settings size={14}/>

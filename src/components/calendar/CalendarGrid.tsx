@@ -15,13 +15,14 @@ interface CalendarGridProps {
     people: Person[];
     events: Event[];
     onEventUpdate: (event: Event) => void;
-    onEdit: (event: Event) => void;
+    onEdit: (event: Event | null) => void;
     onGenerateImage: (event: Event) => void;
     onKlar: (id: string | null) => void;
     onKlarSent: (id: string | null) => void;
+    onDelete: (id: string) => void;
 }
 
-export function CalendarGrid({ people, events, onEventUpdate, onEdit, onGenerateImage, onKlar, onKlarSent }: CalendarGridProps) {
+export function CalendarGrid({ people, events, onEventUpdate, onEdit, onGenerateImage, onKlar, onKlarSent, onDelete }: CalendarGridProps) {
     const [nowMs, setNowMs] = useState<number>(() => Date.now());
     const [overrides, setOverrides] = useState<Map<string, Override>>(new Map());
     const [completedUpTo, setCompletedUpTo] = useState<Map<string, number>>(new Map());
@@ -170,12 +171,14 @@ export function CalendarGrid({ people, events, onEventUpdate, onEdit, onGenerate
                                     currentRowIndex={currentRowIndex}
                                     startIndex={startIndex}
                                     allEvents={visEvents}
+                                    allPeople={people}
                                     completedUpTo={completedUpTo.get(p.id)}
                                     showMeta={showMeta}
                                     onKlar={handleLocalKlar}
                                     onKlarSent={handleLocalKlarSent}
                                     onEdit={onEdit}
                                     onGenerateImage={onGenerateImage}
+                                    onDelete={onDelete}
                                 />
                             ))}
                         </React.Fragment>

@@ -86,29 +86,41 @@ const groupByPerson = (events: Event[]) => {
 
 export function buildRows(allEvents: Event[], selectedPeople: Person[]): Row[] {
     const byP = groupByPerson(allEvents.filter(e => selectedPeople.some(p => p.id === e.personId)));
-    const cursors = new Map(selectedPeople.map(p => [p.id, 0] as const));
+    const allTimes = [...new Set(allEvents.flatMap(e => [+new Date(e.start), +new Date(e.end)]))].sort((a,b) => a-b);
+    const uniqueTimes = [...new Set(allTimes)];
     const rows: Row[] = [];
-
-    const allTimes = [...new Set(allEvents.map(e => +new Date(e.start)))].sort((a,b) => a-b);
     
-    for (const t0 of allTimes) {
+    for (const t0 of uniqueTimes) {
         const row: Row = { time: t0, cells: new Map() };
         let hasContent = false;
         for (const p of selectedPeople) {
-          const list = byP.get(p.id) || [];
-          const i = cursors.get(p.id)!;
-          if (i < list.length) {
-            const ev = list[i];
-            if (+new Date(ev.start) === t0) { 
-              row.cells.set(p.id, ev); 
-              cursors.set(p.id, i + 1); 
+            const list = byP.get(p.id) || [];
+            // Find an event starting at or spanning over t0
+            const event = list.find(ev => +new Date(ev.start) === t0 || (+new Date(ev.start) < t0 && +new Date(ev.end) > t0));
+            if(event) {
+              row.cells.set(p.id, event);
               hasContent = true;
             }
-          }
         }
         if (hasContent) rows.push(row);
     }
-    return rows;
+    
+    // This is a simplification; a more robust solution would check for overlaps
+    // and create rows for both start and end times to ensure all changes are captured.
+    // For now, focusing on start times is a good heuristic.
+    const startRows = [...new Set(allEvents.map(e => +new Date(e.start)))].sort((a,b) => a-b).map(time => ({time, cells: new Map()}));
+    
+    for(const p of selectedPeople) {
+        const pEvents = allEvents.filter(e => e.personId === p.id);
+        for(const event of pEvents) {
+            let row = startRows.find(r => r.time === +new Date(event.start));
+            if(row) {
+                row.cells.set(p.id, event);
+            }
+        }
+    }
+
+    return startRows.filter(r => r.cells.size > 0);
 }
 
 function isOngoing(ev: Event, atMs: number) {

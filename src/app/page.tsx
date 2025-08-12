@@ -8,6 +8,7 @@ import { Header } from '@/components/calendar/Header';
 import { Toolbar } from '@/components/calendar/Toolbar';
 import { AssistantPanel } from '@/components/calendar/AssistantPanel';
 import { CalendarGrid } from '@/components/calendar/CalendarGrid'; 
+import { EditEventSheet } from '@/components/calendar/EditEventSheet';
 
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
@@ -229,10 +230,13 @@ export default function NPFScheduleApp() {
     }
   };
   
-  function deleteEvent(id: string) { setEvents(prev => prev.filter(ev => ev.id !== id)); }
+  function deleteEvent(id: string) { 
+    setEvents(prev => prev.filter(ev => ev.id !== id)); 
+  }
   
   function onEventUpdate(updatedEvent: Event) {
     setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
+    setEditingEvent(null);
   }
 
   function handleKlar(eventId: string | null) {
@@ -245,8 +249,7 @@ export default function NPFScheduleApp() {
       boom();
   }
 
-  function handleEditEvent(event: Event) {
-    console.log("Editing event:", event); // This will be replaced by opening the Edit Sheet
+  function handleEditEvent(event: Event | null) {
     setEditingEvent(event);
   }
 
@@ -279,6 +282,7 @@ export default function NPFScheduleApp() {
                     onGenerateImage={handleGenerateImage}
                     onKlar={handleKlar}
                     onKlarSent={handleKlarSent}
+                    onDelete={deleteEvent}
                 />
             ) : (
                 <div className="col-span-full text-center p-10 bg-neutral-900/50 rounded-2xl">
@@ -293,6 +297,15 @@ export default function NPFScheduleApp() {
         events={events} 
         people={people}
         onAiAction={handleEventOperation} 
+      />
+      <EditEventSheet
+        open={!!editingEvent}
+        onClose={() => setEditingEvent(null)}
+        event={editingEvent}
+        onSave={onEventUpdate}
+        onDelete={deleteEvent}
+        onGenerateImage={handleGenerateImage}
+        allPeople={people}
       />
     </div>
   );
