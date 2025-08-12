@@ -254,61 +254,22 @@ function toOngoingTitle(title: string, past: boolean) {
   return `${title} ${suffix}`;
 }
 
-function currentAndNextForPerson(personId: string, nowMs: number) {
-  const allPersonEvents = baseEvents
-    .filter(e => e.personId === personId)
-    .sort((a,b) => +new Date(a.start) - +new Date(b.start));
-
-  if (allPersonEvents.length === 0) return { current: null, next: null };
-
-  let current: Event | null = null;
-  let next: Event | null = null;
-
-  for (let i = 0; i < allPersonEvents.length; i++) {
-    const ev = allPersonEvents[i];
-    const s = +new Date(ev.start);
-    const e = +new Date(ev.end);
-    if (s <= nowMs && nowMs < e) {
-      current = ev;
-      // Find the next *non-synthetic* event
-      next = allPersonEvents.find((nextEv, nextIdx) => nextIdx > i && !nextEv.meta?.synthetic) ?? null;
-      if (!next) {
-         // If no more real events today, find the first real one tomorrow
-         const firstRealEventTomorrow = allPersonEvents.find(e => !e.meta?.synthetic);
-         if (firstRealEventTomorrow) {
-            const nextDayEvent = { ...firstRealEventTomorrow };
-            const nextStart = new Date(nextDayEvent.start);
-            nextStart.setDate(nextStart.getDate() + 1);
-            nextDayEvent.start = nextStart.toISOString();
-            next = nextDayEvent;
-         }
-      }
-      break;
-    }
-    if (nowMs < s) {
-      next = allPersonEvents.find((nextEv, nextIdx) => nextIdx >= i && !nextEv.meta?.synthetic) ?? null;
-      break;
-    }
-  }
-
-  // If we are past the last event of the day, loop to the first event of the *next* day.
-  if (!current && !next) {
-    current = allPersonEvents[allPersonEvents.length - 1];
-  }
-   if (current && !next) {
-        const firstRealEventTomorrow = allPersonEvents.find(e => !e.meta?.synthetic);
-        if (firstRealEventTomorrow) {
-            const nextDayEvent = { ...firstRealEventTomorrow };
-            const nextStart = new Date(nextDayEvent.start);
-            nextStart.setDate(nextStart.getDate() + 1);
-            nextDayEvent.start = nextStart.toISOString();
-            next = nextDayEvent;
-        }
-    }
-  
-  return { current, next };
+function applyOverrides(all: Event[], ov: Map<string, Override>): Event[] {
+  // Kopiera (immutabelt) och ersätt start/end där override finns.
+  return all.map(e => {
+    const o = ov.get(e.id);
+    if (!o) return e;
+    const startMs = o.startMs ?? +new Date(e.start);
+    const durMs = o.plannedMs ?? (+new Date(e.end) - +new Date(e.start));
+    return {
+      ...e,
+      start: new Date(startMs).toISOString(),
+      end: new Date(startMs + durMs).toISOString(),
+    };
+  });
 }
 
+// ========= Replanning Logic & Helpers =========
 function toMs(iso: string) { return +new Date(iso); }
 function ms(min: number) { return min * 60_000; }
 
@@ -428,6 +389,8 @@ export default function LabSimPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>(persons.map(p=>p.id));
   const [showAllProgress, setShowAllProgress] = useState(false);
   const [showMeta, setShowMeta] = useState(false);
+  type Override = { startMs?: number; plannedMs?: number };
+  const [overrides, setOverrides] = useState<Map<string, Override>>(new Map());
 
   const [speed, setSpeed] = useState<number>(5);     // 1h = 5s IRL
   const [playing, setPlaying] = useState<boolean>(true);
@@ -454,9 +417,11 @@ export default function LabSimPage() {
     return () => { if (rafId.current != null) cancelAnimationFrame(rafId.current); rafId.current = null; lastTs.current = null; };
   }, [playing, speed]);
 
+  const visEvents = useMemo(() => applyOverrides(baseEvents, overrides), [overrides]);
+
   // Härleda rader
   const selected = useMemo(() => persons.filter(p => selectedIds.includes(p.id)), [selectedIds]);
-  const rows = useMemo(() => buildRows(baseEvents, selected.length ? selected : persons), [selected, baseEvents]);
+  const rows = useMemo(() => buildRows(visEvents, selected.length ? selected : persons), [visEvents, selected]);
 
   // Centrera NU (slot 3 av 5)
   const S = SLOTS;
@@ -473,18 +438,33 @@ export default function LabSimPage() {
   // Till middag (demo)
   const nextDinner = useMemo(() => {
     const ids = new Set(selected.map(p => p.id));
-    const upcoming = baseEvents
+    const upcoming = visEvents
       .filter(e => ids.has(e.personId) && /\bMiddag\b/i.test(e.title) && +new Date(e.start) >= nowMs)
       .sort((a,b) => +new Date(a.start) - +new Date(b.start))[0];
     return upcoming || null;
-  }, [selected, nowMs]);
+  }, [selected, nowMs, visEvents]);
   const tillMiddag = nextDinner ? humanDelta(+new Date(nextDinner.start) - nowMs) : null;
+
+  function currentAndNextForPerson(personId: string, nowMs: number) {
+    const list = visEvents
+      .filter(e => e.personId === personId)
+      .sort((a,b) => +new Date(a.start) - +new Date(b.start));
+    let current: Event | null = null;
+    let next: Event | null = null;
+    for (let i = 0; i < list.length; i++) {
+      const s = +new Date(list[i].start);
+      const e = +new Date(list[i].end);
+      if (s <= nowMs && nowMs < e) { current = list[i]; next = list[i+1] ?? null; break; }
+      if (nowMs < s) { next = list[i]; break; }
+    }
+    return { current, next };
+  }
 
   // Cellhelpers (titel & tid enligt din regel)
   function presentTitle(pId: string, row: Row, isPastRow: boolean): { title: string; repeat: boolean; sourceEventId: string | null } {
     const ev = row.cells.get(pId) || null;
     if (ev) return { title: ev.title, repeat: false, sourceEventId: ev.id };
-    const list = baseEvents.filter(e => e.personId === pId).sort((a,b) => +new Date(a.start) - +new Date(b.start));
+    const list = visEvents.filter(e => e.personId === pId).sort((a,b) => +new Date(a.start) - +new Date(b.start));
     const idx = list.findIndex(e => +new Date(e.start) > row.time);
     const prev = idx === -1 ? list[list.length-1] : list[Math.max(0, idx-1)];
     
@@ -505,7 +485,7 @@ export default function LabSimPage() {
     if (direct) return direct;
   
     // 2) Annars: vilket var föregående event för personen, och är det pågående vid radens tid?
-    const list = baseEvents
+    const list = visEvents
       .filter(e => e.personId === pId)
       .sort((a,b) => +new Date(a.start) - +new Date(b.start));
   
@@ -519,27 +499,10 @@ export default function LabSimPage() {
   // ========= Progress-spår (höger→vänster) =========
   function ProgressTicker({ personId }: { personId: string }) {
     const { current, next } = currentAndNextForPerson(personId, nowMs);
-
     if (!current || !next) return null;
-    
     const start = +new Date(current.start);
-    let target = +new Date(next.start);
-
-    // If next event is on a different day, adjust its timestamp for this view
-    if (new Date(next.start).getDate() !== new Date(nowMs).getDate()) {
-        const tempTarget = new Date(target);
-        const nowDay = new Date(nowMs).setHours(0,0,0,0);
-        const nextDay = new Date(next.start).setHours(0,0,0,0);
-        if(nextDay <= nowDay){
-             target = +new Date(new Date(next.start).getTime() + 24 * 60 * 60 * 1000);
-        }
-    }
-    
-    // Don't show progress if we are outside the current event's bounds in relation to its target
-    if (nowMs < start || nowMs >= target) {
-        return null;
-    }
-
+    const target = +new Date(next.start);
+    if (!(start <= nowMs && nowMs <= target)) return null;
 
     const total = Math.max(1, target - start);
     const remaining = Math.max(0, target - nowMs);
@@ -580,40 +543,65 @@ export default function LabSimPage() {
 
   function handleKlar(eventId: string | null) {
     if (!eventId) return;
-    console.log("Klar:", { eventId });
+    // Inga overrides. Vi hoppar bara NU till nästa start för samma person.
+    const seed = visEvents.find(e => e.id === eventId);
+    if (!seed) return;
+    const tl = visEvents
+      .filter(e => e.personId === seed.personId)
+      .sort((a,b)=>+new Date(a.start)-+new Date(b.start));
+    const idx = tl.findIndex(e => e.id === eventId);
+    const nextEv = tl[idx + 1];
+    if (nextEv) setNowMs(+new Date(nextEv.start));
     setFlash({ kind: "klar", at: Date.now() });
-    setTimeout(() => setFlash(null), 1200);
+    setTimeout(() => setFlash(null), 800);
   }
+  
   function handleKlarSent(eventId: string | null) {
     if (!eventId) return;
-    const preview = previewReplanProportional(eventId, nowMs, baseEvents);
-    console.log("=== Replan preview (demo) ===");
-    console.log({
+
+    // 1) Kör proportionell preview mot VISNINGsdata (innan overrides uppdateras)
+    const preview = previewReplanProportional(eventId, nowMs, visEvents);
+
+    // 2) Applicera patchar som overrides (även om flex är otillräcklig – vi visar ändå “bästa möjliga”)
+    if ("patches" in preview && preview.patches.length) {
+      setOverrides(prev => {
+        const next = new Map(prev);
+        for (const p of preview.patches) {
+          const o = next.get(p.eventId) ?? {};
+          o.startMs = p.newStartMs;
+          if (p.newPlannedMs != null) o.plannedMs = p.newPlannedMs;
+          next.set(p.eventId, o);
+        }
+        return next;
+      });
+    }
+
+    // 3) Hitta “nästa steg” för samma person efter NU i den NYA visningen och lägg NU där
+    //    (gör nästa render först, sedan hoppa tiden — liten delay för att visEvents ska hinna uppdateras)
+    setTimeout(() => {
+      const seed = visEvents.find(e => e.id === eventId);
+      if (!seed) return;
+      const tl = visEvents
+        .filter(e => e.personId === seed.personId)
+        .sort((a,b)=>+new Date(a.start)-+new Date(b.start));
+      const idx = tl.findIndex(e => e.id === eventId);
+      const nextEv = tl[idx + 1];
+      if (nextEv) {
+        setNowMs(+new Date(nextEv.start)); // NU hamnar i mitten vid nästa steg
+      }
+    }, 0);
+
+    // 4) Flagga (konfetti / feedback) – valfritt
+    setFlash({ kind: "late", at: Date.now() });
+    setTimeout(() => setFlash(null), 1200);
+
+    // 5) Konsol-info kvar för debug
+    console.log("=== Replan applied (demo) ===", {
       status: (preview as any).status,
       requiredSavingMin: Math.round(preview.requiredSavingMs/60000),
       totalFlexMin: Math.round(preview.totalFlexMs/60000),
-      lambda: (preview as any).lambda ?? null,
       horizon: new Date(preview.horizonMs).toLocaleTimeString(),
     });
-    if (preview.status === "ok") {
-      console.table(preview.patches.map(p => ({
-        eventId: p.eventId,
-        newStart: new Date(p.newStartMs).toLocaleTimeString(),
-        plannedMin: Math.round((p.plannedMs ?? 0)/60000),
-        newPlannedMin: Math.round((p.newPlannedMs ?? 0)/60000),
-        minMin: Math.round((p.minDurationMs ?? 0)/60000),
-      })));
-    } else {
-      console.warn("Insufficient flex", {
-        missingMin: Math.round((preview as any).missingMs/60000),
-      });
-      console.table(preview.patches.map(p => ({
-        eventId: p.eventId,
-        newStart: new Date(p.newStartMs).toLocaleTimeString(),
-      })));
-    }
-    setFlash({ kind: "late", at: Date.now() });
-    setTimeout(() => setFlash(null), 1200);
   }
 
   return (
@@ -634,6 +622,7 @@ export default function LabSimPage() {
               <option value={5}>5 s/timme</option>
               <option value={10}>10 s/timme</option>
               <option value={60}>60 s/timme</option>
+              <option value={180}>180 sekunder/timma</option>
             </select>
           </label>
           <label className="flex items-center gap-2">
