@@ -11,25 +11,23 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 // ========= Typer =========
 type Person = { id: string; name: string; color: string; emoji: string };
 type Role = "required" | "helper";
-type Involved = { personId: string; role: Role };
 
 type Event = {
   id: string;
   personId: string;
-  start: string;
-  end: string;
   title: string;
-
-  // === metadata för planering/visning (alla valfria) ===
-  minDurationMin?: number;  // minsta möjliga tid (visar röd zon)
-  fixedStart?: boolean;     // start är en hålltid (”fixed time”)
-  fixedEnd?: boolean;       // ev. fast slut (sällsynt)
-  dependsOn?: string[];     // eventIds som måste vara klara före detta
-  involved?: { personId: string; role: "required" | "helper" }[];
-  allowAlone?: boolean;     // om ägaren kan fortsätta utan hjälpare
-  resource?: string;        // t.ex. "car", "kitchen"
-  location?: string;        // t.ex. "home", "school", "work"
-  cluster?: string;         // t.ex. "morning", "evening"
+  start: string;            // planerad start
+  end: string;              // planerad slut (fallback; i vår modell slutar block vid nästa start)
+  minDurationMin?: number;  // minsta möjliga (för krympning/röd zon)
+  fixedStart?: boolean;     // hålltid (måste börja exakt då)
+  // Deltagare:
+  involved?: { personId: string; role: Role }[];
+  // Förenklade direkta fält (snabba att läsa i UI):
+  dependsOn?: string[];     // event-ID (finishToStart)
+  allowAlone?: boolean;     // kan ägaren fortsätta utan helper
+  resource?: string;        // t.ex. "car", "bathroom" (kapacitet hanteras separat)
+  location?: string;        // "home" | "school" | "work" etc.
+  cluster?: string;         // "morning" | "evening" ...
 
   meta?: { synthetic?: boolean };
 };
@@ -197,7 +195,7 @@ const antonyEvents: Event[] = [
   { id: "ant-18-19",    personId: "antony", start: t(18),   end: t(19),   title: "Middag", minDurationMin: 20, involved: [{personId:"maria", role:"required"}, {personId:"leia", role:"required"}, {personId:"gabriel", role:"required"}], location: "home", cluster: "evening" },
 ];
 
-const baseEvents: Event[] = [...mariaEvents, ...leiaEvents, ...gabrielEvents, ...antonyEvents];
+const baseEvents: Event[] = [...synthesizeDayFill(mariaEvents, "maria", new Date(day)), ...synthesizeDayFill(leiaEvents, "leia", new Date(day)), ...synthesizeDayFill(gabrielEvents, "gabriel", new Date(day)), ...synthesizeDayFill(antonyEvents, "antony", new Date(day))];
 
 
 // ========= Gridlogik (event-buckets) =========
@@ -299,6 +297,90 @@ function findEventIndex(tl: Event[], id: string) {
 function findHorizonNextFixed(all: Event[], nowMs: number): number {
   const fixed = all.filter(e => e.fixedStart && toMs(e.start) >= nowMs).sort((a,b)=>toMs(a.start)-toMs(b.start));
   return fixed.length ? toMs(fixed[0].start) : toMs(`${day}T24:00:00`);
+}
+
+// 1) tidsberoende: någon i dependsOn pågår fortfarande?
+function unmetFinishToStart(e: Event, atMs: number, events: Event[]): string | null {
+  if (!e.dependsOn?.length) return null;
+  for (const id of e.dependsOn) {
+    const dep = events.find(x => x.id === id);
+    if (!dep) continue;
+    const depEnd = +new Date(dep.end);
+    if (atMs < depEnd) {
+      const who = persons.find(p => p.id === dep.personId)?.name ?? "någon";
+      return `Väntar på ${who} (${dep.title})`;
+    }
+  }
+  return null;
+}
+
+// 2) required presence: kräver viss person ledig?
+function unmetRequiredPresence(e: Event, atMs: number, events: Event[]): string | null {
+  if (!e.involved?.length) return null;
+  const required = e.involved.filter(i => i.role === "required");
+  for (const r of required) {
+    // Finns det ett annat event r.personId pågår vid atMs?
+    const busy = events.some(x =>
+      x.personId === r.personId &&
+      +new Date(x.start) <= atMs && atMs < +new Date(x.end) &&
+      x.id !== e.id
+    );
+    if (busy) {
+      const who = persons.find(p => p.id === r.personId)?.name ?? "någon";
+      return `Väntar på ${who}`;
+    }
+  }
+  return null;
+}
+
+// 3) resurs: behövs resurs som är upptagen?
+type Resource = { id: string; capacity: number };
+const RESOURCES: Record<string, Resource> = {
+  car: { id: "car", capacity: 1 },
+  bathroom: { id: "bathroom", capacity: 1 },
+  // lägg fler vid behov
+};
+
+function unmetResource(e: Event, atMs: number, events: Event[]): string | null {
+  if (!e.resource) return null;
+  const res = RESOURCES[e.resource];
+  if (!res) return null;
+  // hur många events kräver samma resurs vid atMs?
+  const using = events.filter(x => x.resource === e.resource &&
+    +new Date(x.start) <= atMs && atMs < +new Date(x.end)
+  ).length;
+  if (using >= res.capacity) {
+    return e.resource === "bathroom" ? "Väntar på ledigt badrum" :
+           e.resource === "car" ? "Väntar på bilen" :
+           `Väntar på resurs: ${e.resource}`;
+  }
+  return null;
+}
+
+// 4) coLocation (enkel): kräver samma location som någon required?
+function unmetCoLocation(e: Event, atMs: number, events: Event[]): string | null {
+  if (!e.involved?.length || !e.location) return null;
+  const required = e.involved.filter(i => i.role === "required");
+  // enkel heuristik: required-personens pågående event måste ha samma location
+  for (const r of required) {
+    const cur = events.find(x =>
+      x.personId === r.personId &&
+      +new Date(x.start) <= atMs && atMs < +new Date(x.end)
+    );
+    if (cur && cur.location && cur.location !== e.location) {
+      const who = persons.find(p => p.id === r.personId)?.name ?? "någon";
+      return `Väntar på att ${who} kommer till ${e.location}`;
+    }
+  }
+  return null;
+}
+
+// Gemensam "varför väntar vi?" (för titeln “Väntar på …”)
+function whyBlocked(e: Event, atMs: number, events: Event[]): string | null {
+  return unmetFinishToStart(e, atMs, events)
+      ?? unmetRequiredPresence(e, atMs, events)
+      ?? unmetResource(e, atMs, events)
+      ?? unmetCoLocation(e, atMs, events);
 }
 
 type PreviewPatch = { eventId: string; newStartMs: number; minDurationMs?: number; plannedMs?: number; newPlannedMs?: number; };
@@ -486,14 +568,18 @@ export default function LabSimPage() {
         return { title: '✓ Klar', repeat: false, sourceEventId: null };
     }
 
-    if (ev) return { title: ev.title, repeat: false, sourceEventId: ev.id };
+    if (ev) {
+        const reason = whyBlocked(ev, row.time, visEvents);
+        if (reason) return { title: isPastRow ? `${reason} (pågick)` : `${reason} (pågår)`, repeat: true, sourceEventId: ev.id };
+        return { title: ev.title, repeat: false, sourceEventId: ev.id };
+    }
 
     const list = visEvents.filter(e => e.personId === pId).sort((a,b) => +new Date(a.start) - +new Date(b.start));
     const idx = list.findIndex(e => +new Date(e.start) > row.time);
     const prev = idx === -1 ? list[list.length-1] : list[Math.max(0, idx-1)];
     
     if (prev && isOngoing(prev, row.time)) {
-        if (completedCut && prev.start < completedCut) {
+        if (completedCut && +new Date(prev.start) < completedCut) {
              return { title: '✓ Klar', repeat: false, sourceEventId: null };
         }
         return { title: toOngoingTitle(prev.title, isPastRow), repeat: true, sourceEventId: prev.id };
@@ -516,7 +602,7 @@ export default function LabSimPage() {
       .filter(e => e.personId === pId)
       .sort((a,b) => +new Date(a.start) - +new Date(b.start));
   
-    const idx = list.findIndex(e => +new Date(e.start) >= row.time);
+    const idx = list.findIndex(e => +new Date(e.start) > row.time);
     const prev = idx === -1 ? list[list.length - 1] : list[Math.max(0, idx - 1)];
     if (prev && isOngoing(prev, row.time)) return prev;
   
@@ -796,5 +882,3 @@ export default function LabSimPage() {
     </div>
   );
 }
-
-    
