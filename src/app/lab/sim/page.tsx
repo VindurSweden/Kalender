@@ -673,13 +673,14 @@ export default function LabSimPage() {
         </div>
 
         {/* Rader */}
-        <div className="relative grid" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${S}, auto)` }}>
+        <div className="relative grid" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))`, gridAutoRows: 'min-content' }}>
           {/* NU-markering över mittenraden */}
-          <div className="pointer-events-none absolute inset-x-0" style={{ top: `calc(${centerIndex} * 112px)` }}>
-            <div className="h-[112px] border-y border-fuchsia-500/40 bg-fuchsia-500/5 grid place-items-center">
-              <div className="text-[10px] px-2 py-0.5 rounded-full bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-300">NU</div>
-            </div>
+          <div className="pointer-events-none absolute z-10 top-1/2 -translate-y-1/2 inset-x-0 h-[1px]">
+             <div className="h-full border-t border-fuchsia-500/40 bg-fuchsia-500/5 flex items-center justify-center">
+                 <div className="text-[10px] -translate-y-1/2 px-2 py-0.5 rounded-full bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-300">NU {HHMM(nowMs)}</div>
+             </div>
           </div>
+          
 
           {visibleRows.map((row, rIdx) => (
             <React.Fragment key={row.time+"-"+rIdx}>
@@ -709,7 +710,10 @@ export default function LabSimPage() {
                 }
 
                 return (
-                  <div key={p.id+"-"+rIdx} className={`px-2 py-2 flex flex-col justify-center gap-1 border-b border-neutral-800 border-r last:border-r-0 ${isCenterRow?"bg-neutral-900/40":"bg-neutral-950"} ${p.id.startsWith('syn-') ? 'border-dashed' : ''}`}>
+                  <div key={p.id+"-"+rIdx} className={`px-2 py-2 flex flex-col justify-center gap-1 border-b border-neutral-800 border-r last:border-r-0 ${isCenterRow?"bg-neutral-900/40":"bg-neutral-950"} ${p.id.startsWith('syn-') ? 'border-dashed' : ''} relative`}>
+                    
+                    {rIdx === centerIndex && <div className="absolute inset-0 border-y border-fuchsia-500/40 bg-fuchsia-500/5 pointer-events-none" />}
+
                     <div className="flex items-center gap-3">
                       {/* Bildruta */}
                       <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-neutral-800 to-neutral-900 grid place-items-center shrink-0">
