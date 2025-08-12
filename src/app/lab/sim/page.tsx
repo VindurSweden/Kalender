@@ -294,7 +294,7 @@ export default function LabSimPage() {
           </div>
           {/* Hål (mål) */}
           <div className="absolute inset-y-0 left-0 w-4 grid place-items-center">
-            <div className="w-2.5 h-2.5 rounded-full bg-black shadow-inner shadow-black/70" aria-hidden />
+            <div className="text-lg" aria-hidden="true">🕳️</div>
           </div>
           {/* Emoji-löpare */}
           <div className="absolute -top-1 text-lg select-none" style={posStyle} aria-label="progress-emoji">{runner}</div>

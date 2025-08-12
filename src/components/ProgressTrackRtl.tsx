@@ -1,4 +1,3 @@
-
 "use client";
 import React from "react";
 import { humanDelta, speedEmojiByTotal } from "@/lib/progress";
@@ -45,7 +44,7 @@ export default function ProgressTrackRtl({ startMs, targetMs, nowMs, minDuration
 
         {/* Hål (mål) */}
         <div className="absolute inset-y-0 left-0 w-4 grid place-items-center">
-          <div className="w-2.5 h-2.5 rounded-full bg-black shadow-inner shadow-black/70" aria-hidden />
+          <div className="text-lg" aria-hidden="true">🕳️</div>
         </div>
 
         {/* Emoji-löpare */}
