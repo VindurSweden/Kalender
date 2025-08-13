@@ -333,75 +333,89 @@ function SettingsDrawer({
         {event ? (
           <>
             <div className="text-xs text-neutral-400 mb-2">Event ID: {event.id}</div>
-
-            <div>
-              <label className="block mb-1 text-neutral-300">Vad heter händelsen?</label>
-              <input
-                className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
-                value={form.title ?? ""}
-                onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-              />
-            </div>
-
-            <div>
-                <label className="block mb-1 text-neutral-300">Hur många minuter tar detta som minst?</label>
-                <input
-                type="number"
-                className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
-                value={form.minDurationMin ?? 0}
-                onChange={e => setForm(f => ({ ...f, minDurationMin: Number(e.target.value || 0) }))}
-                />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                id="fixedStart"
-                type="checkbox"
-                className="w-4 h-4"
-                checked={!!form.fixedStart}
-                onChange={e => setForm(f => ({ ...f, fixedStart: e.target.checked }))}
-              />
-              <label htmlFor="fixedStart" className="text-neutral-300">Är starttiden helt fast och kan inte flyttas?</label>
-            </div>
-
-            <div>
-                <label className="block mb-1 text-neutral-300">Kräver händelsen en speciell resurs?</label>
-                <select
-                className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
-                value={form.resource ?? ""}
-                onChange={e => setForm(f => ({ ...f, resource: e.target.value || undefined }))}
-                >
-                <option value="">Ingen</option>
-                <option value="bathroom">Badrummet</option>
-                <option value="car">Bilen</option>
-                </select>
-            </div>
-
-             <div>
-                <label className="block mb-1 text-neutral-300">Var äger händelsen rum?</label>
-                <select
-                className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
-                value={form.location ?? ""}
-                onChange={e => setForm(f => ({ ...f, location: e.target.value || undefined }))}
-                >
-                <option value="">Okänd</option>
-                <option value="home">Hemma</option>
-                <option value="school">Skola/Förskola</option>
-                <option value="work">Jobbet</option>
-                </select>
+            
+            {/* Sektion 1: Basinfo */}
+            <div className="space-y-3 p-3 rounded-lg border border-neutral-800">
+                <h4 className="font-medium text-neutral-200 text-xs uppercase tracking-wider">Grundinfo</h4>
+                <div>
+                  <label className="block mb-1 text-neutral-300">Vad heter händelsen?</label>
+                  <input
+                    className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+                    value={form.title ?? ""}
+                    onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                  />
+                </div>
             </div>
 
 
-            <div>
-                <label className="block mb-1 text-neutral-300">Måste andra händelser vara klara först?</label>
-                <input
-                className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
-                value={dependsCsv}
-                onChange={e => setForm(f => ({ ...f, dependsOn: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }))}
-                placeholder="Ange event-ID, separerade med kommatecken"
-                />
-                 <p className="text-xs text-neutral-500 mt-1">Ex: maria-06-07,ant-foo-01</p>
+            {/* Sektion 2: Tid & Typ */}
+            <div className="space-y-3 p-3 rounded-lg border border-neutral-800">
+                <h4 className="font-medium text-neutral-200 text-xs uppercase tracking-wider">Tid & Typ</h4>
+                <div>
+                    <label className="block mb-1 text-neutral-300">Hur många minuter tar detta som minst?</label>
+                    <input
+                    type="number"
+                    className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+                    value={form.minDurationMin ?? 0}
+                    onChange={e => setForm(f => ({ ...f, minDurationMin: Number(e.target.value || 0) }))}
+                    />
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="fixedStart"
+                    type="checkbox"
+                    className="w-4 h-4"
+                    checked={!!form.fixedStart}
+                    onChange={e => setForm(f => ({ ...f, fixedStart: e.target.checked }))}
+                  />
+                  <label htmlFor="fixedStart" className="text-neutral-300">Är starttiden helt fast och kan inte flyttas?</label>
+                </div>
+                 {/* TODO: Add fixedEnd toggle */}
             </div>
+
+            {/* Sektion 3: Beroenden & Resurser */}
+            <div className="space-y-3 p-3 rounded-lg border border-neutral-800">
+                <h4 className="font-medium text-neutral-200 text-xs uppercase tracking-wider">Beroenden & Resurser</h4>
+                <div>
+                    <label className="block mb-1 text-neutral-300">Kräver händelsen en speciell resurs?</label>
+                    <select
+                    className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+                    value={form.resource ?? ""}
+                    onChange={e => setForm(f => ({ ...f, resource: e.target.value || undefined }))}
+                    >
+                    <option value="">Ingen</option>
+                    <option value="bathroom">Badrummet</option>
+                    <option value="car">Bilen</option>
+                    <option value="kitchen">Köket</option>
+                    </select>
+                </div>
+                 <div>
+                    <label className="block mb-1 text-neutral-300">Var äger händelsen rum?</label>
+                    <select
+                    className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+                    value={form.location ?? ""}
+                    onChange={e => setForm(f => ({ ...f, location: e.target.value || undefined }))}
+                    >
+                    <option value="">Okänd</option>
+                    <option value="home">Hemma</option>
+                    <option value="school">Skola/Förskola</option>
+                    <option value="work">Jobbet</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="block mb-1 text-neutral-300">Måste andra händelser vara klara först? (IDs)</label>
+                    <input
+                    className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+                    value={dependsCsv}
+                    onChange={e => setForm(f => ({ ...f, dependsOn: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }))}
+                    placeholder="Ange event-ID, separerade med kommatecken"
+                    />
+                     <p className="text-xs text-neutral-500 mt-1">Ex: maria-morning-...,antony-prep-breakfast-...</p>
+                </div>
+            </div>
+
+            {/* TODO: Sektion 4: Roller */}
+
            
             <div className="mt-4 flex gap-2">
               <button
@@ -431,3 +445,4 @@ function SettingsDrawer({
     
 
     
+
