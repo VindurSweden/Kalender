@@ -57,3 +57,8 @@
     @apply bg-background text-foreground;
   }
 }
+
+.grid-clip-animate {
+  transition: transform 120ms ease-out;
+  will-change: transform;
+}
