@@ -33,7 +33,7 @@ import { format as formatDateFns } from 'date-fns';
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
-import type { Event, Person, ConversationMessage, TolkAIOutput, FormatPlanOutput, SingleCalendarOperationType } from '@/types/event';
+import type { Event, Person, ConversationMessage, TolkAIOutput, TolkAIInput, FormatPlanOutput, SingleCalendarOperationType } from '@/types/event';
 import { AiEventSchema as AiEvent } from '@/ai/schemas';
 import { parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString, isSameDay } from '@/lib/date-utils';
 
@@ -250,27 +250,33 @@ export default function NPFScheduleApp({ params, searchParams }: NPFScheduleAppP
       
       const eventGrid: (Event | null)[] = [];
       let lastRealEvent: Event | null = null;
-      
-      for(const timeKey of timeSlots) {
+
+      for (const timeKey of timeSlots) {
         const eventInSlot = personEventsToday.find(e => new Date(e.start).getTime() === timeKey);
         if (eventInSlot) {
-            eventGrid.push(eventInSlot);
-            lastRealEvent = eventInSlot;
+          eventGrid.push(eventInSlot);
+          lastRealEvent = eventInSlot;
         } else {
-            const isSpannedByLastEvent = lastRealEvent && timeKey > new Date(lastRealEvent.start).getTime() && timeKey < new Date(lastRealEvent.end).getTime();
-            if (viewConfig.fillPolicy === 'repeat' && isSpannedByLastEvent) {
-                eventGrid.push({ ...lastRealEvent, meta: { ...lastRealEvent.meta, isContinuation: true } });
-            } else {
-                eventGrid.push(null);
-            }
+          const isSpannedByLastEvent = lastRealEvent
+            ? timeKey > new Date(lastRealEvent.start).getTime() && timeKey < new Date(lastRealEvent.end).getTime()
+            : false;
+          if (viewConfig.fillPolicy === 'repeat' && isSpannedByLastEvent && lastRealEvent) {
+            eventGrid.push({ ...lastRealEvent, meta: { ...lastRealEvent.meta, isContinuation: true } });
+          } else {
+            eventGrid.push(null);
+          }
         }
       }
-      
-      while(eventGrid.length < viewConfig.SLOTS) {
-        if(viewConfig.fillPolicy === 'repeat' && lastRealEvent && new Date(lastRealEvent.end) > (timeSlots.length > 0 ? new Date(timeSlots[timeSlots.length - 1] || 0) : new Date(0))) {
-             eventGrid.push({ ...lastRealEvent, meta: { ...lastRealEvent.meta, isContinuation: true } });
+
+      while (eventGrid.length < viewConfig.SLOTS) {
+        if (
+          viewConfig.fillPolicy === 'repeat' &&
+          lastRealEvent &&
+          new Date(lastRealEvent.end) > (timeSlots.length > 0 ? new Date(timeSlots[timeSlots.length - 1]) : new Date(0))
+        ) {
+          eventGrid.push({ ...lastRealEvent, meta: { ...lastRealEvent.meta, isContinuation: true } });
         } else {
-             eventGrid.push(null);
+          eventGrid.push(null);
         }
       }
 
@@ -375,7 +381,15 @@ export default function NPFScheduleApp({ params, searchParams }: NPFScheduleAppP
 
   return (
     <div className="min-h-screen w-full bg-neutral-950 text-neutral-100 antialiased">
-      <Header date={date} shift={(d) => setDate(new Date(date.setDate(date.getDate() + d)))} dark={dark} setDark={setDark} assistantOpen={assistantOpen} setAssistantOpen={setAssistantOpen} />
+      <Header
+        date={date}
+        onShift={(d: number) => setDate(new Date(date.setDate(date.getDate() + d)))}
+        onToday={() => setDate(new Date())}
+        dark={dark}
+        setDark={setDark}
+        assistantOpen={assistantOpen}
+        setAssistantOpen={setAssistantOpen}
+      />
       <main className="p-3 md:p-6 max-w-[1600px] mx-auto">
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         
@@ -424,7 +438,7 @@ export default function NPFScheduleApp({ params, searchParams }: NPFScheduleAppP
   );
 }
 
-function Header({ date, shift, dark, setDark, assistantOpen, setAssistantOpen }: any) {
+function Header({ date, onShift, onToday, dark, setDark, assistantOpen, setAssistantOpen }: { date: Date; onShift: (d: number) => void; onToday: () => void; dark: boolean; setDark: (v: boolean) => void; assistantOpen: boolean; setAssistantOpen: (v: boolean) => void; }) {
   const dstr = date.toLocaleDateString("sv-SE", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   return (
     <header className="sticky top-0 z-40 bg-neutral-950/80 backdrop-blur border-b border-neutral-800">
@@ -433,9 +447,9 @@ function Header({ date, shift, dark, setDark, assistantOpen, setAssistantOpen }:
         <h1 className="font-semibold tracking-tight">VisuCal</h1>
         <div className="mx-2 opacity-60 hidden sm:block">{dstr}</div>
         <div className="ml-auto flex items-center gap-2">
-          <Button size="icon" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={() => shift(-1)}><ChevronLeft className="w-4 h-4" /></Button>
-          <Button size="icon" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={() => shift(1)}><ChevronRight className="w-4 h-4" /></Button>
-          <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700 hidden sm:flex" onClick={() => setDate(new Date())}>Idag</Button>
+          <Button size="icon" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={() => onShift(-1)}><ChevronLeft className="w-4 h-4" /></Button>
+          <Button size="icon" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={() => onShift(1)}><ChevronRight className="w-4 h-4" /></Button>
+          <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700 hidden sm:flex" onClick={onToday}>Idag</Button>
           <div className="flex items-center gap-3 ml-2">
             <MoonToggle dark={dark} setDark={setDark} />
             <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={() => setAssistantOpen(!assistantOpen)}>Assistent</Button>
@@ -516,7 +530,7 @@ function EventCard({ person, ev, onDelete, onComplete, onPickTimer, onGenerate, 
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3 flex flex-col justify-end pointer-events-none">
             <div className={`font-semibold text-white ${showSimple ? 'text-base' : 'text-xl'}`} style={{textShadow: '2px 2px 4px rgba(0,0,0,0.8)'}}>
               {displayTitle}
-              {ev.meta?.isContinuation && <Repeat className="w-4 h-4 text-white/70 inline-block ml-1" title="Pågående aktivitet" />}
+              {ev.meta?.isContinuation && <Repeat className="w-4 h-4 text-white/70 inline-block ml-1" />}
             </div>
           </div>
           {(isTimerRunning || activeNow) && (

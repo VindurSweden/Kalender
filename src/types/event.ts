@@ -55,3 +55,4 @@ import { type FormatPlanOutput as GenkitFormatPlanOutput } from '@/ai/schemas';
 export type TolkAIInput = GenkitTolkAIInput;
 export type TolkAIOutput = GenkitTolkAIOutput;
 export type FormatPlanOutput = GenkitFormatPlanOutput;
+export type SingleCalendarOperationType = any;
