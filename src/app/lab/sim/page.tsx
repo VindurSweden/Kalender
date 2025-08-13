@@ -324,9 +324,9 @@ function SettingsDrawer({
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="absolute right-0 top-0 h-full w-[360px] bg-neutral-950 border-l border-neutral-800 p-4 overflow-auto">
+      <div className="absolute right-0 top-0 h-full w-[360px] bg-neutral-950 border-l border-neutral-800 p-4 overflow-auto text-sm space-y-4">
         <div className="flex items-center justify-between mb-3">
-          <div className="font-medium">Inställningar</div>
+          <div className="font-medium">Redigera Egenskaper</div>
           <button className="text-neutral-400" onClick={onClose}>✕</button>
         </div>
 
@@ -334,78 +334,91 @@ function SettingsDrawer({
           <>
             <div className="text-xs text-neutral-400 mb-2">Event ID: {event.id}</div>
 
-            <label className="block text-sm mb-1">Titel</label>
-            <input
-              className="w-full mb-3 px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
-              value={form.title ?? ""}
-              onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-            />
+            <div>
+              <label className="block mb-1 text-neutral-300">Vad heter händelsen?</label>
+              <input
+                className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+                value={form.title ?? ""}
+                onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+              />
+            </div>
 
-            <label className="block text-sm mb-1">Minsta tid (min)</label>
-            <input
-              type="number"
-              className="w-full mb-3 px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
-              value={form.minDurationMin ?? 0}
-              onChange={e => setForm(f => ({ ...f, minDurationMin: Number(e.target.value || 0) }))}
-            />
+            <div>
+                <label className="block mb-1 text-neutral-300">Hur många minuter tar detta som minst?</label>
+                <input
+                type="number"
+                className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+                value={form.minDurationMin ?? 0}
+                onChange={e => setForm(f => ({ ...f, minDurationMin: Number(e.target.value || 0) }))}
+                />
+            </div>
 
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2">
               <input
                 id="fixedStart"
                 type="checkbox"
+                className="w-4 h-4"
                 checked={!!form.fixedStart}
                 onChange={e => setForm(f => ({ ...f, fixedStart: e.target.checked }))}
               />
-              <label htmlFor="fixedStart" className="text-sm">Fixed start</label>
+              <label htmlFor="fixedStart" className="text-neutral-300">Är starttiden helt fast och kan inte flyttas?</label>
             </div>
 
-            <label className="block text-sm mb-1">Resurs</label>
-            <select
-              className="w-full mb-3 px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
-              value={form.resource ?? ""}
-              onChange={e => setForm(f => ({ ...f, resource: e.target.value || undefined }))}
-            >
-              <option value="">—</option>
-              <option value="bathroom">bathroom</option>
-              <option value="car">car</option>
-            </select>
+            <div>
+                <label className="block mb-1 text-neutral-300">Kräver händelsen en speciell resurs?</label>
+                <select
+                className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+                value={form.resource ?? ""}
+                onChange={e => setForm(f => ({ ...f, resource: e.target.value || undefined }))}
+                >
+                <option value="">Ingen</option>
+                <option value="bathroom">Badrummet</option>
+                <option value="car">Bilen</option>
+                </select>
+            </div>
 
-            <label className="block text-sm mb-1">Plats</label>
-            <select
-              className="w-full mb-3 px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
-              value={form.location ?? ""}
-              onChange={e => setForm(f => ({ ...f, location: e.target.value || undefined }))}
-            >
-              <option value="">—</option>
-              <option value="home">home</option>
-              <option value="school">school</option>
-              <option value="work">work</option>
-            </select>
+             <div>
+                <label className="block mb-1 text-neutral-300">Var äger händelsen rum?</label>
+                <select
+                className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+                value={form.location ?? ""}
+                onChange={e => setForm(f => ({ ...f, location: e.target.value || undefined }))}
+                >
+                <option value="">Okänd</option>
+                <option value="home">Hemma</option>
+                <option value="school">Skola/Förskola</option>
+                <option value="work">Jobbet</option>
+                </select>
+            </div>
 
-            <label className="block text-sm mb-1">dependsOn (CSV med event-ID)</label>
-            <input
-              className="w-full mb-3 px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
-              value={dependsCsv}
-              onChange={e => setForm(f => ({ ...f, dependsOn: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }))}
-              placeholder="ex: maria-06-07,ant-foo-01"
-            />
 
+            <div>
+                <label className="block mb-1 text-neutral-300">Måste andra händelser vara klara först?</label>
+                <input
+                className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+                value={dependsCsv}
+                onChange={e => setForm(f => ({ ...f, dependsOn: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }))}
+                placeholder="Ange event-ID, separerade med kommatecken"
+                />
+                 <p className="text-xs text-neutral-500 mt-1">Ex: maria-06-07,ant-foo-01</p>
+            </div>
+           
             <div className="mt-4 flex gap-2">
               <button
-                className="px-3 py-1 rounded-md border border-neutral-700 bg-neutral-900"
+                className="px-3 py-1 rounded-md border border-neutral-700 bg-neutral-900 hover:bg-neutral-800"
                 onClick={() => { onSave(form); onClose(); }}
               >
                 Spara
               </button>
-              <button className="px-3 py-1 rounded-md border border-neutral-800 bg-neutral-900/40" onClick={onClose}>
+              <button className="px-3 py-1 rounded-md border border-transparent hover:bg-neutral-800/50" onClick={onClose}>
                 Avbryt
               </button>
             </div>
           </>
         ) : (
           <div className="text-neutral-400 text-sm">
-            Ingen specifik händelse vald. Klicka ✎ på en cell för att redigera ett event,
-            eller stäng och välj ett event i griden.
+            <p>Ingen specifik händelse är vald för redigering.</p>
+            <p className="mt-2">Klicka på en penna ✎ i rutnätet för att redigera en händelse.</p>
           </div>
         )}
       </div>
