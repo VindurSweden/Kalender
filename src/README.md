@@ -11,7 +11,7 @@ Applikationen bygger på några centrala idéer:
 3.  **Dynamisk Expansion:** Dagens schema ("instansen") skapas dynamiskt genom att "expandera" mallen för den aktuella dagen. Detta gör att mallen förblir oförändrad medan dagens schema kan justeras (t.ex. vid förseningar).
 4.  **AI-assistent:** Appen har en inbyggd AI-assistent som hjälper till med att tolka naturligt språk för att skapa, ändra eller svara på frågor om kalendern.
 
-För en extremt detaljerad teknisk plan, inklusive Google Calendar-synkroniseringsstrategi, se [PLAN.md](PLAN.md).
+För en extremt detaljerad teknisk plan, inklusive Google Calendar-synkroniseringsstrategi, se [PLAN.md](/PLAN.md) i projektets rotmapp.
 
 ## Arkitektur & Teknik
 
@@ -22,14 +22,31 @@ För en extremt detaljerad teknisk plan, inklusive Google Calendar-synkroniserin
 
 ## Filstruktur - Viktiga Filer
 
--   `src/app/page.tsx`: Huvudsidan och applikationens primära startpunkt.
--   `src/lib/recurrence.ts`: **HJÄRTAT I APPEN.** Innehåller definitioner för mallar (`TemplateStep`), regler (`RULES`), och logiken för att expandera en mall till en dags händelselista (`Event[]`).
--   `src/lib/grid-utils.ts`: Hjälpfunktioner specifikt för att bygga och hantera det visuella rutnätet, inklusive logik för omplanering ("Klar sent").
--   `src/types/event.ts`: Centrala TypeScript-typer som används i hela applikationen (`Event`, `Person`, `DayType`, etc.).
--   `src/components/calendar/`: Innehåller UI-komponenterna som bygger upp kalendervyn, t.ex. `CalendarGrid.tsx` och `GridCell.tsx`.
--   `src/ai/`: Mappen för all AI-relaterad kod.
-    -   `src/ai/flows/`: Innehåller de olika AI-flödena, t.ex. för att tolka användarinput (`natural-language-event-creation.ts`) eller generera bilder (`generate-event-image.ts`).
-    -   `src/ai/schemas.ts`: Definerar datastrukturerna (med Zod) som AI-flödena använder för input och output.
+För att förstå projektet är det bäst att börja med följande filer och mappar:
+
+-   `src/app/page.tsx`: Huvudsidan och applikationens primära startpunkt. Här hanteras det övergripande tillståndet (state) för händelser, personer och användarinteraktioner.
+
+-   `src/lib/recurrence.ts`: **HJÄRTAT I APPEN.** Denna fil innehåller all logik för den återkommande schemaläggningen.
+    -   Definitioner för mallar (`TemplateStep`).
+    -   Regler (`RULES`) för att avgöra dagstyp.
+    -   Logiken för att expandera en mall till en dags kompletta händelselista (`Event[]`).
+
+-   `src/lib/grid-utils.ts`: Innehåller hjälpfunktioner specifikt för att bygga och hantera det visuella rutnätet. Här finns logik för att:
+    -   Bygga rader (`buildRows`).
+    -   Applicera `overrides` från användarinteraktioner (som "Klar sent").
+    -   Fylla ut luckor i schemat med syntetiska händelser som "Sover" eller "Tillgänglig" (`synthesizeDayFill`).
+
+-   `src/types/event.ts`: Definerar de centrala TypeScript-typerna som används i hela applikationen, såsom `Event`, `Person`, `DayType`, `TemplateStep` och alla AI-relaterade in- och utdataformat.
+
+-   `src/components/calendar/`: Denna mapp innehåller alla React-komponenter som bygger upp kalendervyn:
+    -   `CalendarGrid.tsx`: Huvudkomponenten för rutnätet som visar alla händelser.
+    -   `GridCell.tsx`: Representerar en enskild cell i rutnätet. Innehåller logik för att visa rätt information och knappar baserat på tid och status.
+    -   `AssistantPanel.tsx`: UI för AI-assistenten.
+    -   `EditEventSheet.tsx`: Panelen för att redigera enskilda händelser.
+
+-   `src/ai/`: Denna mapp innehåller all AI-relaterad kod.
+    -   `src/ai/flows/`: Innehåller de olika AI-flödena som definierats med Genkit. Varje fil representerar en specifik AI-agent (t.ex. `natural-language-event-creation.ts` för Tolk-AI:n eller `generate-event-image.ts` för Bildskapar-AI:n).
+    -   `src/ai/schemas.ts`: Definerar datastrukturerna (med Zod) som AI-flödena använder för input och output, vilket garanterar typsäkerhet mellan frontend och AI-backend.
 
 ## Komma Igång
 
