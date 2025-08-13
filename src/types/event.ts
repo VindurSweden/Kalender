@@ -15,6 +15,26 @@ export interface Person {
 
 export type Role = "required" | "helper";
 
+export type DayType = "SchoolDay" | "OffDay" | "FritidsDay";
+
+export type TemplateStep = {
+  key: string;
+  personId: "antony" | "maria" | "leia" | "gabriel";
+  title: string;
+  at?: string; // "HH:MM" (absolut start)
+  offsetMin?: number; // alt: relativt
+  atByNextDayType?: Partial<Record<DayType, string>>; // kväll styrs av i morgon
+  minDurationMin?: number;
+  fixedStart?: boolean;
+  dependsOnKeys?: string[];
+  involved?: { personId: string; role: Role }[];
+  resource?: string;
+  location?: string;
+  cluster?: "morning" | "day" | "evening";
+};
+
+export type DayProfile = { id: DayType; label: string; steps: TemplateStep[]; };
+
 // Updated Event type based on the new specification
 export interface Event {
   id: string;
@@ -23,29 +43,23 @@ export interface Event {
   end: string;   // ISO8601, now mandatory
   title: string;
   
-  // Metadata for planning/display
-  minDurationMin?: number;  // minsta möjliga tid (för krympning/röd zon)
-  fixedStart?: boolean;     // hålltid (måste börja exakt då)
-  dependsOn?: string[];     // event-ID (finishToStart)
+  // Metadata from template
+  minDurationMin?: number;
+  fixedStart?: boolean;
+  dependsOn?: string[];
   involved?: { personId: string; role: Role }[];
-  allowAlone?: boolean;     // kan ägaren fortsätta utan helper
-  resource?: string;        // t.ex. "car", "bathroom" (kapacitet hanteras separat)
-  location?: string;        // "home" | "school" | "work" etc.
-  cluster?: string;         // "morning" | "evening" ...
+  resource?: string;
+  location?: string;
+  cluster?: string;
   
-  // Legacy / UI fields
-  isFamily?: boolean; 
+  // UI/Legacy fields
   imageUrl?: string;
-  recurrence?: string;
-  completed?: boolean;
-  challenge?: string;
-  presentation?: {
-    displayTitle?: string;
-  };
+  challenge?: string; // from user input
   meta?: {
-    synthetic?: boolean; // true if created by the assistant
-    source?: "user" | "assistant" | "system";
-    isContinuation?: boolean; // True if this is a repeated block of a longer event
+    templateKey?: string;
+    dayType?: DayType;
+    synthetic?: boolean; // True if it's a fill-in event like "Sover" or "Tillgänglig"
+    source?: "user" | "assistant" | "system" | "template";
   };
 }
 
@@ -74,3 +88,5 @@ export type SingleCalendarOperationType = z.infer<typeof GenkitSingleCalendarOpe
 
 export type Row = { time: number; cells: Map<string, Event> };
 export type Override = { startMs?: number; plannedMs?: number };
+
+    

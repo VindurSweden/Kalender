@@ -1,5 +1,6 @@
 
-import type { Event, Person, Row } from '@/types/event';
+
+import type { Event, Person, Row, RuleSet } from '@/types/event';
 
 // ========================= Resources (kapaciteter) =========================
 export const RESOURCES: Record<string, { id: string; capacity: number }> = {
@@ -13,7 +14,8 @@ function unmetFinishToStart(e: Event, atMs: number, events: Event[], persons: Pe
   for (const id of e.dependsOn) {
     const dep = events.find(x => x.id === id);
     if (!dep) continue;
-    const depEnd = +new Date(dep.end);
+    // Use plannedEndMsForEvent to correctly find the dependency's end time.
+    const depEnd = plannedEndMsForEvent(dep, events);
     if (atMs < depEnd) {
       const who = persons.find(p => p.id === dep.personId)?.name ?? "någon";
       return `Väntar på ${who} (${dep.title})`;
@@ -86,17 +88,16 @@ const groupByPerson = (events: Event[]) => {
 
 export function buildRows(allEvents: Event[], selectedPeople: Person[]): Row[] {
     const byP = groupByPerson(allEvents.filter(e => selectedPeople.some(p => p.id === e.personId)));
-    const allTimes = [...new Set(allEvents.flatMap(e => [+new Date(e.start), +new Date(e.end)]))].sort((a,b) => a-b);
-    const uniqueTimes = [...new Set(allTimes)];
+    const allTimes = [...new Set(allEvents.map(e => +new Date(e.start)))].sort((a,b) => a-b);
+    
     const rows: Row[] = [];
     
-    for (const t0 of uniqueTimes) {
+    for (const t0 of allTimes) {
         const row: Row = { time: t0, cells: new Map() };
         let hasContent = false;
         for (const p of selectedPeople) {
             const list = byP.get(p.id) || [];
-            // Find an event starting at or spanning over t0
-            const event = list.find(ev => +new Date(ev.start) === t0 || (+new Date(ev.start) < t0 && +new Date(ev.end) > t0));
+            const event = list.find(ev => +new Date(ev.start) === t0);
             if(event) {
               row.cells.set(p.id, event);
               hasContent = true;
@@ -104,23 +105,7 @@ export function buildRows(allEvents: Event[], selectedPeople: Person[]): Row[] {
         }
         if (hasContent) rows.push(row);
     }
-    
-    // This is a simplification; a more robust solution would check for overlaps
-    // and create rows for both start and end times to ensure all changes are captured.
-    // For now, focusing on start times is a good heuristic.
-    const startRows = [...new Set(allEvents.map(e => +new Date(e.start)))].sort((a,b) => a-b).map(time => ({time, cells: new Map()}));
-    
-    for(const p of selectedPeople) {
-        const pEvents = allEvents.filter(e => e.personId === p.id);
-        for(const event of pEvents) {
-            let row = startRows.find(r => r.time === +new Date(event.start));
-            if(row) {
-                row.cells.set(p.id, event);
-            }
-        }
-    }
-
-    return startRows.filter(r => r.cells.size > 0);
+    return rows;
 }
 
 function isOngoing(ev: Event, atMs: number) {
@@ -135,7 +120,10 @@ export function getSourceEventForCell(pId: string, row: Row, allEvents: Event[])
     const list = allEvents.filter(e => e.personId === pId).sort((a,b) => +new Date(a.start) - +new Date(b.start));
     const idx = list.findIndex(e => +new Date(e.start) > row.time);
     const prev = idx === -1 ? list[list.length - 1] : list[Math.max(0, idx - 1)];
-    if (prev && isOngoing(prev, row.time)) return prev;
+    
+    if (prev && isOngoing(prev, row.time)) {
+        return prev;
+    }
     
     return null;
 }
@@ -200,7 +188,7 @@ const makeSyntheticEvent = (start: Date, end: Date, personId: string, mode: "sle
         start: start.toISOString(),
         end: end.toISOString(),
         title,
-        meta: { synthetic: true, source: "assistant" }
+        meta: { synthetic: true, source: "system" }
     };
 };
 
@@ -208,8 +196,8 @@ export const synthesizeDayFill = (personEvents: Event[], personId: string, day: 
     const dayStart = new Date(day); dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(day); dayEnd.setDate(dayEnd.getDate() + 1); dayEnd.setHours(0,0,0,0);
     
-    const out: Event[] = [];
-    const sorted = [...personEvents].sort((a,b) => +new Date(a.start) - +new Date(b.start).getTime());
+    const out: Event[] = [...personEvents];
+    const sorted = out.sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
     let cursor = dayStart.getTime();
 
@@ -220,14 +208,13 @@ export const synthesizeDayFill = (personEvents: Event[], personId: string, day: 
         if (cursor < startTs) {
             out.push(makeSyntheticEvent(new Date(cursor), new Date(startTs), personId));
         }
-        out.push(ev);
         cursor = Math.max(cursor, endTs);
     }
 
     if (cursor < dayEnd.getTime()) {
         out.push(makeSyntheticEvent(new Date(cursor), dayEnd, personId));
     }
-    return out;
+    return out.sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 };
 
 
@@ -286,7 +273,7 @@ export function previewReplanProportional(seedEventId: string, nowMs: number, al
   for (let k = 0; k < window.length; k++) {
     const e = window[k];
     const start = toMs(e.start);
-    const next = (k < window.length-1) ? toMs(window[k+1].start) : Math.min(horizon, toMs(e.end));
+    const next = (k < window.length-1) ? toMs(window[k+1].start) : Math.min(horizon, plannedEndMsForEvent(e, all));
     const plannedMs = Math.max(1, next - start);
     const minMs = ms(e.minDurationMin ?? 0);
     totalFlex += Math.max(0, plannedMs - minMs);
@@ -319,3 +306,5 @@ export function previewReplanProportional(seedEventId: string, nowMs: number, al
 
   return { status: "ok", requiredSavingMs: requiredSaving, totalFlexMs: totalFlex, lambda, horizonMs: horizon, patches: patches };
 }
+
+    
