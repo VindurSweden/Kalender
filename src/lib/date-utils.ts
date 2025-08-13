@@ -63,7 +63,7 @@ const swedishWeekdays: { [key: string]: Day } = {
 const swedishMonths: { [key: string]: number } = {
   'januari': 0, 'februari': 1, 'mars': 2, 'april': 3, 'maj': 4, 'juni': 5,
   'juli': 6, 'augusti': 7, 'september': 8, 'oktober': 9, 'november': 10, 'december': 11,
-  'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'maj': 4, 'jun': 5,
+  'jan': 0, 'feb': 1, 'mar': 2, 'apr': 3, 'jun': 5,
   'jul': 6, 'aug': 7, 'sep': 8, 'okt': 9, 'nov': 10, 'dec': 11
 };
 

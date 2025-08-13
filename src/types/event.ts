@@ -84,9 +84,13 @@ export interface ConversationMessage {
 export type TolkAIInput = GenkitTolkAIInput;
 export type TolkAIOutput = GenkitTolkAIOutput;
 export type FormatPlanOutput = GenkitFormatPlanOutput;
+<<<<<<< HEAD
 export type SingleCalendarOperationType = z.infer<typeof GenkitSingleCalendarOperationSchema>;
 
 export type Row = { time: number; cells: Map<string, Event> };
 export type Override = { startMs?: number; plannedMs?: number };
 
     
+=======
+export type SingleCalendarOperationType = any;
+>>>>>>> add-simulated-time-feature-in-test-environment
