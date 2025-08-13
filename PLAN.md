@@ -1,3 +1,77 @@
+Grundidé med appen
+Visuell kalender med bildstöd som automatiskt sekvenserar rutiner beroende på vilken typ av dag det är.
+
+Tre dagstyper:
+
+Skoldag – vanlig vardag, tidiga läggtider.
+
+Icke-skoldag – helg/lov, senare läggtider.
+
+Fritidsdag – skoldag för ett barn, helg för ett annat; påverkar rutiner för både dagen och kvällen innan.
+
+Dagstypen styr vilken återkommande mall som används för dagens och kvällen innan scheman.
+
+UI-krav
+Aktiviteter visas med bilder/ikoner som kan klickas upp för att visa en lista med mindre steg.
+
+Stöder flexibel ordning – man kan göra steg i ordning eller i oordning, och uppgifter försvinner inte.
+
+Ska hantera både mycket korta moment (<1 minut) och långa pass.
+
+Möjlighet att zooma in på sin egen rad och skrolla bakåt i tid (men återställs efter inaktivitet).
+
+Labbsida för test med simulerad tid och kontroll av hastighet, som kan hämta bilder från huvudsidan men använder placeholders om inget finns.
+
+Huvudsidan går på riktig tid och ska senare kunna synkas med Google Calendar API.
+
+Avancerad logik – senhetskontroll
+Målet är att systemet ska kunna upptäcka och markera om man riskerar att bli sen och anpassa schemat därefter.
+
+Planerat start- och sluttid per event.
+
+Beroenden (dependsOn) – vissa steg kräver att andra är klara först.
+
+Resurser – t.ex. badrum, bil, person; kan bara användas av en åt gången.
+
+Minsta varaktighet – en uppgift kan inte kortas under sin minsta tid.
+
+Fast start/slut (fixedStart, fixedEnd) – tider som inte kan flyttas.
+
+Involverade personer – aktiviteter som kräver en viss person eller kombination.
+
+Logiken fungerar så här:
+
+Om ett event riskerar att starta efter sin planerade starttid p.g.a. beroenden eller resurskonflikter → markera som risk för sen start.
+
+Om det närmar sig sluttiden och minsta tid + beroenden gör att man inte hinner innan nästa fast start → markera som kommer bli sen.
+
+När “Klar sent”-knappen trycks, körs en replan-preview där schemat krymper proportionellt fram till nästa fast start, och eventet flyttas efter “nu”-markören.
+
+Metadata för events
+Vid testläge finns en toggle “Visa metadata” som visar små badges under varje event:
+
+fixStart/End – fasta tider
+
+min:Xm – minsta varaktighet
+
+dep:N – antal beroenden
+
+inv:Req+Hh – involverade personer
+
+självOK – kan göras ensam
+
+res:… – resurser
+
+loc:… – plats
+
+cluster:… – gruppering
+
+Test och simulering
+Labbsidan ska vara full av testevents med metadata ifyllda så logiken kan testas.
+
+Möjlighet att trycka “Klar sent” eller “Ej klar” på events som ligger före “nu” i tid.
+
+Events som passerat men fortfarande pågår ska ha en tydlig markering för att visa att de ligger i det förflutna, även om status är “pågår”.
 
 ---
 
