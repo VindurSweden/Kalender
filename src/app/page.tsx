@@ -14,7 +14,7 @@ import { interpretUserInstruction } from '@/ai/flows/natural-language-event-crea
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
 
-import { expandDay, RULES, PROFILES, classifyDay } from "@/lib/recurrence";
+import { expandProfileForDate, RULES, PROFILES, classifyDay } from "@/lib/recurrence";
 import type { Event, Person, TolkAIInput, TolkAIOutput, FormatPlanOutput, SingleCalendarOperationType, DayType } from '@/types/event';
 import { isSameDay, parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString } from '@/lib/date-utils';
 
@@ -305,5 +305,7 @@ export default function NPFScheduleApp() {
   );
 }
 
+
+    
 
     
