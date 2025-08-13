@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import ProgressTrackRtl from "@/components/ProgressTrackRtl";
 import { humanDelta, speedEmojiByTotal } from "@/lib/progress";
 import type { Event, Person, DayType } from "@/types/event";
-import { expandDay, expandProfileForDate, RULES, PROFILES, classifyDay } from "@/lib/recurrence";
+import { expandProfileForDate, RULES, PROFILES, classifyDay } from "@/lib/recurrence";
 import { GridCell } from "@/components/calendar/GridCell";
 import { cn } from "@/lib/utils";
 
@@ -54,8 +54,10 @@ export default function LabSimPage() {
   
   const [baseEvents, setBaseEvents] = useState<Event[]>([]);
   const [labDate, setLabDate] = useState(day);
-  const [autoDayType, setAutoDayType] = useState(true);
+  const [autoDayType, setAutoDayType] = useState(false);
   const [manualDayType, setManualDayType] = useState<DayType>("SchoolDay");
+  const currentDayType: DayType = autoDayType ? classifyDay(labDate, RULES) : manualDayType;
+
 
   const [flash, setFlash] = useState<null | { kind: "klar" | "late"; at: number }>(null);
 
@@ -215,7 +217,10 @@ export default function LabSimPage() {
                 <option value="OffDay">Fridag/Lov</option>
                 <option value="FritidsDay">Fritidsdag</option>
             </select>
-            <button onClick={handleGenerateDay} className="px-3 py-1 rounded-md border border-neutral-700 bg-neutral-800 hover:bg-neutral-700">Generera dag</button>
+             <div className="text-xs space-x-2">
+                <span className="px-2 py-1 rounded-md bg-neutral-800 border border-neutral-700">Dagstyp: {currentDayType}</span>
+                <span className="px-2 py-1 rounded-md bg-neutral-800 border border-neutral-700">Events: {baseEvents.length}</span>
+            </div>
       </div>
 
       {/* Nu-info */}
@@ -407,6 +412,8 @@ function SettingsDrawer({
     </div>
   );
 }
+
+    
 
     
 
