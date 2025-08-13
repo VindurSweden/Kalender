@@ -1,7 +1,7 @@
 
 "use client";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import ProgressTrackRtl from "@/components/ProgressTrackRtl";
+import ProgressTrack from "@/components/ProgressTrackRtl";
 import { humanDelta, speedEmojiByTotal } from "@/lib/progress";
 import type { Event, Person, DayType, Role } from "@/types/event";
 import { expandProfileForDate, RULES, PROFILES, classifyDay } from "@/lib/recurrence";
@@ -241,16 +241,17 @@ export default function LabSimPage() {
         </div>
 
         {/* Rader */}
-        <div className="relative grid grid-clip-animate" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))`, gridAutoRows: 'min-content' }}>
+        <div className="relative grid grid-clip-animate" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))`, transform: `translateY(-${(startIndex / rows.length) * 100}%)`, gridAutoRows: 'min-content' }}>
           <div className="pointer-events-none absolute z-20 top-1/2 -translate-y-1/2 inset-x-0 h-[1px]">
              <div className="h-full border-t border-fuchsia-500/40 bg-fuchsia-500/5 flex items-center justify-center">
                  <div className="text-[10px] -translate-y-1/2 px-2 py-0.5 rounded-full bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-300">NU {new Date(nowMs).toLocaleTimeString("sv-SE", {hour: '2-digit', minute: '2-digit'})}</div>
              </div>
           </div>
           
-          {visibleRows.map((row, rIdx) => (
+          {rows.map((row, rIdx) => (
             <React.Fragment key={row.time+"-"+rIdx}>
               {(selected.length ? selected : persons).map((p) => {
+                const isCenterRow = rIdx === currentRowIndex;
                 return (
                     <GridCell 
                         key={p.id + "-" + row.time}
@@ -478,3 +479,4 @@ function SettingsDrawer({
 
 
     
+

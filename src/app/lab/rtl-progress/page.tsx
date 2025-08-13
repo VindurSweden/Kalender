@@ -1,7 +1,7 @@
 
 "use client";
 import React, { useEffect, useRef, useState } from "react";
-import ProgressTrackRtl from "@/components/ProgressTrackRtl";
+import ProgressTrack from "@/components/ProgressTrackRtl";
 
 const day = "2025-08-11";
 const t = (h: number, m: number = 0) => `${day}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`;
@@ -70,11 +70,12 @@ export default function RtlProgressLab() {
           <div key={seg.id} className="rounded-xl border border-neutral-800 p-3 bg-neutral-900/30">
             <div className="text-xs text-neutral-400 mb-1">{new Date(seg.start).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})} → {new Date(seg.nextStart).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</div>
             <div className="text-sm mb-2">{seg.title}</div>
-            <ProgressTrackRtl
+            <ProgressTrack
               startMs={toMs(seg.start)}
               targetMs={toMs(seg.nextStart)}
               nowMs={nowMs}
               minDurationMs={(seg.minDurationMin ?? 0) * 60000}
+              direction="horizontal"
             />
           </div>
         ))}
