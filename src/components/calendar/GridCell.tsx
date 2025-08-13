@@ -117,7 +117,8 @@ export function GridCell({
         <motion.div layout="position" transition={{ duration: 0.12 }} className={cn(
             "relative flex flex-col justify-end text-white overflow-hidden",
             "border-b border-r border-neutral-800 last:border-r-0 group/row",
-            isCenterRow ? "bg-neutral-900/40 min-h-[240px]" : "bg-neutral-950 min-h-[160px]"
+            isCenterRow ? "bg-neutral-900/40 min-h-[240px]" : "bg-neutral-950 min-h-[160px]",
+            isCenterRow && person.id === 'leia' && "ring-4 ring-yellow-400 z-20" // EXAMPLE: Add yellow ring for Leia in center row
         )}>
             {isCenterRow && <div className="absolute inset-0 border-y-2 border-fuchsia-500/80 pointer-events-none z-10" />}
 
