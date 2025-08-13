@@ -11,7 +11,9 @@ Applikationen bygger på några centrala idéer:
 3.  **Dynamisk Expansion:** Dagens schema ("instansen") skapas dynamiskt genom att "expandera" mallen för den aktuella dagen. Detta gör att mallen förblir oförändrad medan dagens schema kan justeras (t.ex. vid förseningar).
 4.  **AI-assistent:** Appen har en inbyggd AI-assistent som hjälper till med att tolka naturligt språk för att skapa, ändra eller svara på frågor om kalendern.
 
-För en extremt detaljerad teknisk plan, inklusive Google Calendar-synkroniseringsstrategi, se [PLAN.md](/PLAN.md) i projektets rotmapp.
+För en extremt detaljerad teknisk plan, inklusive Google Calendar-synkroniseringsstrategi och en **aktiv att-göra-lista**, se [PLAN.md](/PLAN.md) i projektets rotmapp.
+
+**Viktigt för alla utvecklare (inklusive AI-assistenter):** Konsultera och uppdatera `PLAN.md` kontinuerligt. När ett steg i implementeringsplanen är slutfört, markera det som `✅` och justera status för nästa steg.
 
 ## Arkitektur & Teknik
 

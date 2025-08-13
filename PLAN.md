@@ -1,448 +1,211 @@
-Grundidé med appen
+# Projektplan & Teknisk Vision
+
+Detta dokument beskriver den övergripande visionen, arkitekturen och den tekniska implementeringsplanen för VisuCal.
+
+---
+
+## 1. Grundidé & Målbild
+
+### 1.1. Grundidé med appen
+
 Visuell kalender med bildstöd som automatiskt sekvenserar rutiner beroende på vilken typ av dag det är.
 
 Tre dagstyper:
-
-Skoldag – vanlig vardag, tidiga läggtider.
-
-Icke-skoldag – helg/lov, senare läggtider.
-
-Fritidsdag – skoldag för ett barn, helg för ett annat; påverkar rutiner för både dagen och kvällen innan.
+*   **Skoldag** – vanlig vardag, tidiga läggtider.
+*   **Icke-skoldag** – helg/lov, senare läggtider.
+*   **Fritidsdag** – skoldag för ett barn, helg för ett annat; påverkar rutiner för både dagen och kvällen innan.
 
 Dagstypen styr vilken återkommande mall som används för dagens och kvällen innan scheman.
 
-UI-krav
-Aktiviteter visas med bilder/ikoner som kan klickas upp för att visa en lista med mindre steg.
+### 1.2. Målbild för Huvudsidan (Live-tid)
 
-Stöder flexibel ordning – man kan göra steg i ordning eller i oordning, och uppgifter försvinner inte.
+*   **NU i mitten:** Visar alltid ett fönster av händelser centrerat kring den aktuella tiden (t.ex. 2 rader före + 1 NU + 2 efter).
+*   **Progress-emoji:** En emoji rör sig från höger till vänster för att visualisera tiden som återstår av en aktivitet, och träffar "hålet" precis när nästa aktivitet börjar.
+*   **"Klar"-knapp:** Påverkar endast den pågående händelsen för den specifika personen.
+*   **"Klar sent"-knapp:** Är endast tillgänglig för händelser som har passerat sin planerade sluttid. Den triggar en lokal omplanering som proportionellt krymper efterföljande händelser fram till nästa fasta tidpunkt, utan att ändra i den grundläggande mallen.
 
-Ska hantera både mycket korta moment (<1 minut) och långa pass.
+### 1.3. Målbild för Google Calendar-synk
 
-Möjlighet att zooma in på sin egen rad och skrolla bakåt i tid (men återställs efter inaktivitet).
+*   **Egen "Routine"-kalender:** Appen hanterar en specifik kalender per person (t.ex. "Routine – Leia") för alla mall-genererade händelser.
+*   **Externa händelser (Read-only):** Möten och andra bokningar från användarens vanliga kalendrar läses in som låsta block och kan påverka sekvenseringen (t.ex. tidigarelägga kvällsrutinen om ett tidigt möte finns nästa dag).
+*   **Inga dubbletter:** En stabil ID-strategi (`extendedProperties.private.appId`) används för att säkerställa tvåvägssynkronisering utan att skapa dubbletter.
 
-Labbsida för test med simulerad tid och kontroll av hastighet, som kan hämta bilder från huvudsidan men använder placeholders om inget finns.
+---
 
-Huvudsidan går på riktig tid och ska senare kunna synkas med Google Calendar API.
+## 2. Arkitektur & Begrepp
 
-Avancerad logik – senhetskontroll
+### 2.1. Begrepp (Kontrakt)
+
+*   **DayType:** `"SchoolDay" | "OffDay" | "FritidsDay"`.
+*   **TemplateStep (Mallsteg):** Definitionen av en återkommande händelse i en mall. Innehåller `key`, `personId`, `title`, tidsinformation (`at`, `offsetMin`, `atByNextDayType`), metadata (`minDurationMin`, `fixedStart`, `dependsOnKeys`, `involved`, `resource`, `location`, `cluster`).
+*   **Expanded Event (Dagens instans):** En konkret händelse för en specifik dag, genererad från en `TemplateStep`. Har en riktig start- och sluttid samt referenser till sin mall.
+*   **GoogleEvent Link:** Hur en Google Calendar-händelse mappas till en instans i vår app via `extendedProperties.private`.
+
+### 2.2. Datakällor & Sanning
+
+*   **Primary Truth (Rutiner):** Appens mallar (`TemplateStep`) + den dagliga expansionen (`Expanded Event`) + lokala justeringar (`overrides`).
+*   **Primary Truth (Externa händelser):** Användarens Google Calendar.
+*   **Skrivning till Google:** Appen skriver *endast* till de dedikerade "Routine"-kalendrarna.
+
+### 2.3. Flöde på Huvudsidan (Live)
+
+1.  **Nu-klocka:** `nowMs` tickar i realtid. NU-raden hålls visuellt centrerad.
+2.  **Dagstyp:** Klassificera `todayType` och `tomorrowType` baserat på `RULES`.
+3.  **Expansion:** `expandProfileForDate(...)` genererar `routineEventsToday` från mallen.
+4.  **Google-pull:** Hämta Google-händelser (både "Routine" och externa) för dagen.
+5.  **Merge:** Kombinera `routineEventsToday`, Google-händelser och lokala `overrides` till en slutgiltig lista för rendering.
+6.  **Render:** Visa griden med all information, inklusive "väntar på"-status och progress-emojis.
+
+---
+
+## 3. Implementationsplan (Aktiv Att-göra-lista)
+
+**Instruktion till AI-assistenter:** Denna sektion är en aktiv att-göra-lista. När du slutför ett steg, uppdatera denna plan för att reflektera vad som är klart (`✅`), pågående (`❗`), eller nästa steg (`🔜`).
+
+### Kort status/roadmap (cheat-sheet)
+
+*   `✅` NU-vy live, replan-grund, grundläggande mallmotor, dokumentation finns.
+*   `❗` Verifiera att mallen verkligen används korrekt i UI (Task 1).
+*   `🔜` Knapplogik (Klar/Ej klar), Spara i EditSheet, WhyBlocked, fler DayTypes, visuell replan-preview, polish av NU-linje, HUD.
+*   `⏭️` GCal-sync (när nycklarna är redo).
+
+### Detaljerad Plan
+
+**0) Globala regler (måste följas)**
+
+*   Ändra inte `package.json`/deps.
+*   Små PR:er.
+*   Bygg till `dist/`.
+*   Ingen live-deploy, endast ev. preview-kanal.
+
+**1) Synliggör att mallmotorn verkligen körs (snabb verifiering)**
+*   **Fil(er):** Main + ev. recurrence.ts
+*   **Gör:**
+    *   Visa aktiv `DayType` (SchoolDay/OffDay/FritidsDay) uppe till vänster i Main.
+    *   Lägg liten debug-badge: “events: N” (antalet genererade för idag).
+    *   Lägg en tillfällig `select` (endast dev-mode) för att växla `DayType` i minnet och forcerat re-expandera dagen (så vi kan bevisa att mallen används).
+*   **Definition of Done:**
+    *   Byter jag till en annan `DayType` (dev-select) ändras listan tydligt utan reload.
+    *   Badge visar korrekt antal events.
+*   **Manuellt test:**
+    *   Öppna Main → se `DayType`-badge och events-count.
+    *   Växla `DayType` i dev-select → listan ändras (bevis för att recurrence.ts körs).
+
+**2) Knapplogik: “Klar”, “Ej klar” (ersätter “Klar sent”)**
+*   **Fil(er):** CalendarGrid, GridCell (där knapparna renderas)
+*   **Gör:**
+    *   **NU-rad:** endast `Klar` (klickbar).
+    *   **Rader ovanför NU (passerat):** visa `Ej klar` (klickbar). Ta bort “Klar sent” i UI (enligt önskemål; behåll ev. intern fn för senare).
+    *   **Rader under NU:** inga åtgärdsknappar.
+*   **Definition of Done:**
+    *   “Ej klar” syns endast på passerade rader, är klickbar.
+    *   “Klar” syns endast på NU-raden.
+*   **Manuellt test:**
+    *   Låt tiden passera en rad → “Ej klar” syns där, “Klar” bara i NU.
+
+**3) Wire “Spara” i EditEventSheet → uppdatera metadata i state**
+*   **Fil(er):** EditEventSheet, events-store/context
+*   **Gör:**
+    *   Koppla “Spara” så att metadata (`minDurationMin`, `fixedStart/End`, `dependsOn`, `involved`, `resource`, `location`, `cluster`) skrivs in i state och triggar re-render.
+    *   Lägg grundvalidering:
+        *   `minDurationMin` ≥ 0
+        *   `involved.required` får inte vara tom om `allowAlone=false` (om fältet finns)
+        *   `dependsOn` får inte peka på okänt id.
+*   **Definition of Done:**
+    *   Ändrar jag t.ex. `minDurationMin` eller `resource` och sparar → cellens badges uppdateras direkt.
+*   **Manuellt test:**
+    *   Öppna kugghjul → ändra `minDurationMin` → spara → se uppdaterad badge `min:Xm`.
+
+**4) “Väntar på…” (whyBlocked) – första version**
+*   **Fil(er):** whyBlocked.ts, integrera i cell-rendering
+*   **Gör (MVP):**
+    *   Om event A inte kan starta p.g.a. ouppfyllda `dependsOn` → returnera “Väntar på <titel/person>”.
+    *   Om `resource` konflikt (samtidigt nyttjande) → “Väntar på <resurs>”.
+    *   Om `required` person är upptagen i annat pågående event → “Väntar på <namn>”.
+*   **UI:**
+    *   Visa liten grå badge med texten under titeln i cellen.
+*   **Definition of Done:**
+    *   Minst ett scenario per typ (dependsOn / resource / person) visar korrekt “Väntar på…”.
+*   **Manuellt test:**
+    *   Skapa enkel konflikt (t.ex. två som behöver “badrum” samtidigt) → badge ska synas.
+
+**5) Utöka dagstypernas mallar (OffDay + FritidsDay)**
+*   **Fil(er):** recurrence.ts
+*   **Gör:**
+    *   Fyll `OffDay` (helg/lov): senare läggtid kvällen innan, friare morgon.
+    *   Fyll `FritidsDay`: skoldagstider för Leia, helg-liknande för Gabriel, vanliga jobbdagar för vuxna. Anpassa kväll före.
+    *   Se till att `expandDay(date)` tar hänsyn till kvällen innan (t.ex. läggtid) genom att templaten för “kväll före” bestäms av morgondagens `DayType`.
+*   **Definition of Done:**
+    *   När jag växlar `DayType` (dev-select) i Main, ändras både morgon och (om visad) kväll före enligt reglerna.
+*   **Manuellt test:**
+    *   Byt till `OffDay` → morgon/kväll beter sig annorlunda än `SchoolDay`.
+    *   Byt till `FritidsDay` → Leia får “skol-liknande” tider, Gabriel helg-liknande.
+
+**6) Replan-preview: visuell feedback utan att ändra state**
+*   **Fil(er):** grid-utils.ts (`previewReplanProportional`, finns redan), GridCell/CalendarGrid
+*   **Gör:**
+    *   Vid klick på `Ej klar` (passerad rad) kör `previewReplanProportional(...)`.
+    *   Visa icke-invasiv overlay på berörda celler i UI:
+        *   markera föreslagen ny starttid (diskret text i cellen),
+        *   visa att röd zon kan växa (om min-tid äter upp plan-tid),
+        *   ändra emoji-hastighet lokalt i render (utan att mutera state) för att indikera snabbare/långsammare progress.
+    *   Lägg en enkel “Nollställ preview” (t.ex. knapp i toolbar) som tar bort highlighten (ingen state-mutation behövs).
+*   **Definition of Done:**
+    *   Tryck på “Ej klar” ovanför NU → syns en tydlig men temporär preview i UI (utan att spara).
+    *   “Nollställ preview” rensar.
+*   **Manuellt test:**
+    *   Testa både fall `status:"ok"` (med λ) och `status:"insufficientFlex"` (visa liten varning i cellerna som berörs).
+
+**7) Lab-sida: simulering + kontroller + metadata-toggle (om inte redan komplett)**
+*   **Fil(er):** Lab + EventGrid
+*   **Gör:**
+    *   Säkerställ: play/pause, hastighet (2 / 5 / 10 s/timme), Jump 07/12/18.
+    *   Toggle “Visa metadata” och “Progress på alla rader”.
+    *   Lägg liten HUD: `now`, `currentRowIndex`, `startIndex`, aktiv `DayType`, senaste preview-status.
+*   **Definition of Done:**
+    *   Allt ovan fungerar utan reload; metadata-badges visas när togglen är på.
+*   **Manuellt test:**
+    *   Växla toggles och hastigheter, se HUD uppdateras.
+
+**8) NU-linje & klipp (polish)**
+*   **Fil(er):** EventGrid
+*   **Gör:**
+    *   NU-linjen ska alltid ligga perfekt över mittenraden (justera ev. pixel-offset).
+    *   Vid fönsterbyte (ny starttid passerar): hårt klipp i data, men applicera 120 ms CSS-transition (`translateY`) på wrapper för mjuk känsla. Ingen “glidande tid”.
+*   **Definition of Done:**
+    *   Ingen “drift”: NU-linjen exakt mitt.
+    *   Byte känns mjukt men sker omedelbart.
+*   **Manuellt test:**
+    *   Simtid med hög hastighet → stabil mitten och mjuk nudge vid byten.
+
+**9) Dokumentation – hur man testar**
+*   **Fil(er):** `PLAN.md` / `README.md`
+*   **Gör:**
+    *   Lägg in en ”Test checklist”:
+        *   Hur man växlar `DayType` i dev-select och ser förändringen.
+        *   Hur man öppnar `EditEventSheet` och ändrar metadata (Spara → badges uppdateras).
+        *   Hur man triggar “Ej klar” och tolkar `replan-preview`.
+        *   Varför “Klar sent” inte visas (ersatt av “Ej klar”).
+        *   Hur “Väntar på…” visas i tre exempel (dependsOn/person/resource).
+*   **Definition of Done:**
+    *   Jag kan följa listan och återskapa allt som är viktigt, utan att fråga.
+
+---
+
+### Avancerad logik – senhetskontroll
+
 Målet är att systemet ska kunna upptäcka och markera om man riskerar att bli sen och anpassa schemat därefter.
 
-Planerat start- och sluttid per event.
+*   **Beroenden (`dependsOn`):** Vissa steg kräver att andra är klara först.
+*   **Resurser:** T.ex. badrum, bil, person; kan bara användas av en åt gången.
+*   **Minsta varaktighet:** En uppgift kan inte kortas under sin minsta tid.
+*   **Fasta tider (`fixedStart`, `fixedEnd`):** Tider som inte kan flyttas.
+*   **Involverade personer:** Aktiviteter som kräver en viss person eller kombination.
 
-Beroenden (dependsOn) – vissa steg kräver att andra är klara först.
-
-Resurser – t.ex. badrum, bil, person; kan bara användas av en åt gången.
-
-Minsta varaktighet – en uppgift kan inte kortas under sin minsta tid.
-
-Fast start/slut (fixedStart, fixedEnd) – tider som inte kan flyttas.
-
-Involverade personer – aktiviteter som kräver en viss person eller kombination.
-
-Logiken fungerar så här:
-
-Om ett event riskerar att starta efter sin planerade starttid p.g.a. beroenden eller resurskonflikter → markera som risk för sen start.
-
-Om det närmar sig sluttiden och minsta tid + beroenden gör att man inte hinner innan nästa fast start → markera som kommer bli sen.
-
-När “Klar sent”-knappen trycks, körs en replan-preview där schemat krymper proportionellt fram till nästa fast start, och eventet flyttas efter “nu”-markören.
-
-Metadata för events
-Vid testläge finns en toggle “Visa metadata” som visar små badges under varje event:
-
-fixStart/End – fasta tider
-
-min:Xm – minsta varaktighet
-
-dep:N – antal beroenden
-
-inv:Req+Hh – involverade personer
-
-självOK – kan göras ensam
-
-res:… – resurser
-
-loc:… – plats
-
-cluster:… – gruppering
-
-Test och simulering
-Labbsidan ska vara full av testevents med metadata ifyllda så logiken kan testas.
-
-Möjlighet att trycka “Klar sent” eller “Ej klar” på events som ligger före “nu” i tid.
-
-Events som passerat men fortfarande pågår ska ha en tydlig markering för att visa att de ligger i det förflutna, även om status är “pågår”.
+**Logiken fungerar så här:**
+1.  Om ett event riskerar att starta efter sin planerade starttid p.g.a. beroenden eller resurskonflikter → markera som `risk för sen start`.
+2.  Om det närmar sig sluttiden och minsta tid + beroenden gör att man inte hinner innan nästa fast start → markera som `kommer bli sen`.
+3.  När “Klar sent”-knappen trycks, körs en `replan-preview` där schemat krymper proportionellt fram till nästa fast start, och eventet flyttas efter “nu”-markören.
 
 ---
-
-Målbild
-
-1. Huvudsidan (live-tid):
-
-NU ligger alltid i mitten (2 rader före + 1 NU + 2 efter).
-
-Progress-emoji rör sig höger → vänster och träffar “hålet” exakt när nästa start inträffar.
-
-“Klar” påverkar bara pågående block för aktuell person.
-
-“Klar sent” gäller endast rader ovanför NU och triggar lokal replan (proportionellt → närmsta fixed start i kedjan), utan att förstöra mallar.
-
-
-
-2. Dagstyper & expansion:
-
-SchoolDay / OffDay / FritidsDay väljs automatiskt per datum (regler + undantag).
-
-Dagens rutinschema genereras av en mall (template) som skapar dagens händelser (“instans”).
-
-Mall förblir orörd; dagens instans får overrides (“Klar sent” m.m.).
-
-
-
-3. Google Calendar-synk:
-
-Egen “Routine” kalender per person för rutinhändelser som vår app äger.
-
-Externa händelser (möten, tandläkare) läses read-only från användarens övriga kalendrar & visas i griden → påverkar dagstyp/sekvensering (t.ex. kväll tidigare om möte kl 06:30).
-
-Tvåvägs synk endast för vår “Routine” kalender.
-
-Ingen dubblett: stabil externalId + extendedProperties.private i Google-event.
-
-
-
-
-
----
-
-Begrepp (kontrakt)
-
-DayType: "SchoolDay" | "OffDay" | "FritidsDay".
-
-TemplateStep (mallsteg): key, personId, title, at eller offsetMin, minDurationMin, fixedStart, dependsOnKeys, involved, resource, location, cluster, atByNextDayType.
-
-Expanded Event (dagens instans): har riktiga start/end (end = nästa start), plus meta.templateKey och dayType.
-
-GoogleEvent link:
-
-extendedProperties.private.appId = vår interna ID (t.ex. leia-hair-2025-09-12)
-
-extendedProperties.private.dayType
-
-extendedProperties.private.minDurationMin / fixedStart / dependsOn / involved / resource / location (JSON)
-
-
-
-
----
-
-Datakällor & sanning
-
-Primary truth för rutiner: mallen + vår dagliga expansion + lokala overrides i appen.
-
-Primary truth för externa händelser: Google Calendar.
-
-Skrivning till Google: endast vår Routine-kalender. Externa kalendrar lämnas orörda.
-
-
-
----
-
-Flöde på huvudsidan (live)
-
-1. Nu-klocka: nowMs tickar i realtid (Stockholm TZ). NU-raden hålls visuellt centrerad.
-
-
-2. Dagstyp: klassificera todayType = classifyDay(today, RULES) och även tomorrowType (påverkar kvällens tider).
-
-
-3. Expansion: expandProfileForDate(today, PROFILES[todayType], tomorrowType) → routineEventsToday.
-
-
-4. Google-pull: hämta googleEventsToday för tidsfönster [00:00, 24:00) inkl. all-day (som block), från:
-
-“Routine – {Person}” (vår)
-
-övriga kalendrar (read-only)
-
-
-
-5. Merge till visning:
-
-Baslista = routineEventsToday.
-
-Lägg in “Routine-Google” uppdateringar (om status/namn ändrats av användaren i Google i efterhand).
-
-Lägg in externa Google-events som låsta block (resurser/required kan påverka väntan).
-
-Applicera lokala overrides (Klar sent → replan, etc.).
-
-
-
-6. Render: event-baserad grid (5 rader), ikon/emoji, varför-väntar-vi (dependsOn/required/resource), NU-progress höger→vänster.
-
-
-
-
----
-
-Google-synk (tekniskt)
-
-Setup
-
-OAuth 2.0 (user consent). Scope:
-
-Read: https://www.googleapis.com/auth/calendar.readonly
-
-Write (endast vår kalender): https://www.googleapis.com/auth/calendar (eller .../calendar.events)
-
-
-Per person: skapa/förvänta en kalender: “Routine – {Person}”. Lagra calendarId i vår profil.
-
-TZ: sätt timeZone = "Europe/Stockholm" när vi skapar/uppdaterar events.
-
-
-ID-strategi & dubbletter
-
-Vår interna ID per dagens rutin: "{personId}-{templateKey}-{YYYY-MM-DD}".
-
-När vi skapar i Google:
-
-summary = title
-
-start.dateTime / end.dateTime = vår instans
-
-extendedProperties.private.appId = internalId
-
-Lagra googles id i vår lokala indexkarta gIdByAppId.
-
-
-Vid upsert:
-
-Finns gIdByAppId[internalId] → PATCH det Google-eventet.
-
-Annars “search by private.appId” (list query filter) → om träff, uppdatera; annars POST nytt.
-
-
-
-Riktning & granularitet
-
-Pull (inkrementell):
-
-Använd syncToken från Calendar API för events.list → minimal diff sedan förra körningen.
-
-Alternativ/komplement: watch (push-kanaler) för snabb uppdatering.
-
-
-Push (vår sida):
-
-Endast till Routine kalendrar.
-
-Vid “Klar sent”/replan: uppdatera berörda appIds.
-
-Vid “Klar”: valfritt flagga status="confirmed" + ev. colorId i vår kalender (visuell feedback i Google).
-
-
-
-Fält-mappning
-
-Min-tid: extendedProperties.private.minDurationMin (nummer)
-
-Fixed start: extendedProperties.private.fixedStart = true samt sätt start.dateTime exakt; om användaren flyttar i Google, tolka som override.
-
-Beroenden: extendedProperties.private.dependsOn = '["appId1","appId2"]' (JSON string)
-
-Involved: extendedProperties.private.involved = '[{"personId":"maria","role":"required"}]'
-
-Resurs/Plats: extendedProperties.private.resource, location (Google har eget location-fält; behåll båda).
-
-DayType/TemplateKey: extendedProperties.private.dayType, ...templateKey.
-
-
-Konflikter & lås
-
-Om användaren redigerar vår Routine-händelse i Google:
-
-Vi läser ändringen och visar den (override).
-
-Skriv tillbaka endast om ändringen är kompatibel; annars markera i UI (⚠ Manuell ändring i Google).
-
-
-Externa kalenderhändelser styr väntan/resurser i vår grid men skrivs aldrig av appen.
-
-
-
----
-
-Dagstyp som påverkar kvällen
-
-När huvudsidan laddar/byter datum:
-
-1. todayType = classifyDay(today, RULES)
-
-
-2. tomorrowType = classifyDay(today+1, RULES)
-
-
-3. I expansionen används atByNextDayType för kvällsblock (t.ex. läggdags +60 min om Off/Fritids i morgon).
-
-
-
-Om Google visar ett mycket tidigt möte i morgon (t.ex. 06:30), kan en regel tidigarelägga läggdags (heuristik):
-
-“Morgonmöte < 07:00” ⇒ tvinga kvällens läggdags till SchoolDay-nivå.
-
-
-
-
----
-
-UI-beteende (huvudsidan)
-
-NU i mitten: currentRowIndex beräknas mot nowMs; startIndex = currentRowIndex - 2; ingen “autoscroll animation”, bara hårt klipp när nya starttider passerar (enligt ditt önskemål).
-
-Knappar:
-
-“Klar” endast på NU-raden.
-
-“Ej klar” + “Klar sent” endast ovanför NU; “Klar sent” kräver nowMs > plannedEnd.
-
-
-“Väntar på …”: visas när dependsOn, required-närvaro, resurs eller co-location blockerar start.
-
-Emoji-hastighet mappas mot TOTAL segmenttid (från aktuell start → nästa start). Byter automatiskt vid replan.
-
-
-
----
-
-Edge cases
-
-Sommartid/zon: alltid “Europe/Stockholm”; använd dateTime + timeZone i Google.
-
-All-day events: rendera som lås/block hela dagen (ex: “Skollov”).
-
-Dubbelbokning av resurs: “Väntar på bilen/badrum”.
-
-Många snabba steg: grid är händelsebaserad (fast kortstorlek); många korta steg är läsbara.
-
-Offline: cachea senaste googleEventsToday + syncToken; köa writes till Routine-kalendrar.
-
-Rate limits: batcha writes (1 PATCH/POST per 250 ms), exponential backoff.
-
-
-
----
-
-Roller/kalendrar (rekommendation)
-
-Antony/Maria/Leia/Gabriel får vardera en Routine-kalender (delbar vid behov).
-
-I UI kan du slå av/på visning per person.
-
-Familjevy: visa endast händelser med involved.length ≥ 2 eller samma start mellan ≥2 personer.
-
-
-
----
-
-Implementationssteg (pragmatisk ordning)
-
-1. Huvudsidan:
-
-Håll NU centrerad (klar).
-
-Lägg in klassificering + expansion i stället för testlistan (utan Google först).
-
-Visa “Väntar på …” (dependsOn/required/resource).
-
-
-
-2. Google – läsning (read-only):
-
-OAuth, lista kalendrar, välj vilka som är “externa” vs “Routine – {Person}”.
-
-Dra in events för idag (list range). Blanda in i griden.
-
-
-
-3. Google – skriv (bara Routine):
-
-Skapa/peka ut “Routine – {Person}”.
-
-Upsert med extendedProperties.private.appId.
-
-Hantera dubbletter.
-
-“Klar sent” → PATCH berörda Routine-events.
-
-
-
-4. Inkrementell sync:
-
-syncToken och/eller watch kanaler för snabb refresh.
-
-UI uppdateras utan att NU flyttar sig.
-
-
-
-5. Regel-UI:
-
-Enkel panel för fritidsDates, breaks, per-datum override.
-
-Spara lokalt (senare: Firestore/Supabase).
-
-
-
-6. Polish:
-
-Läggdagsheuristik mot “i morgon tidigt möte”.
-
-Visuell markering av Google-manuell ändring på Routine-event.
-
-Export/import av mallar.
-
-
-
-
-
----
-
-Testplan (kritiskt)
-
-Dagstyp: vardag → SchoolDay; helg → OffDay; fritidslista → FritidsDay.
-
-Kväll mot i morgon: Off/Fritids i morgon ger +60 min läggdags; School i morgon drar tillbaka till 21:00.
-
-Replan: “Klar sent” före 07:45/08:00 minskar planerat fram till närmsta fixed; emoji-hastighet uppdateras.
-
-Google:
-
-Skapa Routine-event → syns i Google med extendedProperties.
-
-Flytta Routine-event i Google → vår UI läser ändringen (flagga override).
-
-Extern Google-händelse 06:30 → kväll backas via heuristik (om slått på).
-
-All-day lov → OffDay utan mallkollision.
-
-
-
-
----
-
-När Google-nyckeln är klar
-
-Sätt upp OAuth-client, redirect URI.
-
-Lagra refresh_token krypterat.
-
-Första gång: skapa “Routine – {Person}” om den saknas, spara calendarId.
-
-Starta read loop (list + syncToken) och write queue för Routine-ändringar.
-
-
-
----
-
-Den här planen gör att rutinkalendern (sekvenser, min-tider, beroenden) styr UI/assistens, medan Google ger externa constraints och fungerar som delad sanningskälla för “verkliga” händelser — utan att mallar förstörs eller dubbletter skapas. När du vill, kan jag skriva precisa kodstubs för: OAuth-init, listEvents med syncToken, upsertRoutineEvent, och merge-logiken mot expandedEventsToday.
+*Detta dokument ska uppdateras kontinuerligt allt eftersom stegen i planen slutförs.*
