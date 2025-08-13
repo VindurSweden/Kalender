@@ -17,6 +17,7 @@ import { generateEventImage } from '@/ai/flows/generate-event-image';
 import { expandDay, RULES } from "@/lib/recurrence";
 import type { Event, Person, TolkAIInput, TolkAIOutput, FormatPlanOutput, SingleCalendarOperationType, DayType } from '@/types/event';
 import { isSameDay, parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString } from '@/lib/date-utils';
+import { synthesizeDayFill } from "@/lib/grid-utils";
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const INCR = 20;
@@ -81,9 +82,18 @@ export default function NPFScheduleApp() {
     function generate(forDate: Date) {
       const forISO = forDate.toISOString().slice(0, 10);
       const { todayType, tomorrowType, events } = expandDay(forISO, RULES);
+      
+      let allFilled: Event[] = [];
+      const currentPeople = loadLS("vcal.people", DEFAULT_PEOPLE);
+      for (const p of currentPeople) {
+          const personEvents = events.filter(e => e.personId === p.id);
+          const filled = synthesizeDayFill(personEvents, p.id, forDate);
+          allFilled.push(...filled);
+      }
+      
       setTodayType(todayType);
       setTomorrowType(tomorrowType);
-      setSourceEvents(events);
+      setSourceEvents(allFilled);
     }
     generate(date);
   

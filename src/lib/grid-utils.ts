@@ -34,6 +34,10 @@ function unmetRequiredPresence(e: Event, atMs: number, events: Event[], persons:
       x.id !== e.id
     );
     if (busy) {
+      if (!persons) {
+          console.warn("persons array is missing in unmetRequiredPresence");
+          return `Väntar på någon`;
+      }
       const who = persons.find(p => p.id === r.personId)?.name ?? "någon";
       return `Väntar på ${who}`;
     }
@@ -196,7 +200,12 @@ export const synthesizeDayFill = (personEvents: Event[], personId: string, day: 
     const dayStart = new Date(day); dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(day); dayEnd.setDate(dayEnd.getDate() + 1); dayEnd.setHours(0,0,0,0);
     
-    const out: Event[] = [...personEvents];
+    const out: Event[] = [...(personEvents || [])];
+    if (out.length === 0) { // If there are no events, fill the whole day
+        out.push(makeSyntheticEvent(dayStart, dayEnd, personId));
+        return out;
+    }
+
     const sorted = out.sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
     let cursor = dayStart.getTime();
