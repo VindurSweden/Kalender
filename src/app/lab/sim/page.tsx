@@ -96,10 +96,20 @@ export default function LabSimPage() {
     handleGenerateDay();
   }, [labDate, autoDayType, manualDayType]);
 
+  const filledEvents = useMemo(() => {
+      let allFilled: Event[] = [];
+      const selected = persons.filter(p => selectedIds.includes(p.id));
+      for (const p of (selected.length ? selected : persons)) {
+          const personEvents = baseEvents.filter(e => e.personId === p.id);
+          const filled = synthesizeDayFill(personEvents, p.id, new Date(labDate));
+          allFilled.push(...filled);
+      }
+      return allFilled;
+  }, [baseEvents, selectedIds, labDate]);
+
   const visEvents = useMemo(() => {
-      const filled = synthesizeDayFill(baseEvents, 'leia', new Date(labDate)); // Example person
-      return applyOverrides(filled, overrides);
-  }, [baseEvents, overrides, labDate]);
+      return applyOverrides(filledEvents, overrides);
+  }, [filledEvents, overrides]);
 
   const selected = useMemo(() => persons.filter(p => selectedIds.includes(p.id)), [selectedIds]);
   const rows = useMemo(() => buildRows(visEvents, selected.length ? selected : persons), [visEvents, selected]);
@@ -241,17 +251,17 @@ export default function LabSimPage() {
         </div>
 
         {/* Rader */}
-        <div className="relative grid grid-clip-animate" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))`, transform: `translateY(-${(startIndex / rows.length) * 100}%)`, gridAutoRows: 'min-content' }}>
+        <div className="relative grid" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))`, transform: `translateY(-${(startIndex / (rows.length || 1)) * 100}%)`, gridAutoRows: 'min-content' }}>
           <div className="pointer-events-none absolute z-20 top-1/2 -translate-y-1/2 inset-x-0 h-[1px]">
              <div className="h-full border-t border-fuchsia-500/40 bg-fuchsia-500/5 flex items-center justify-center">
                  <div className="text-[10px] -translate-y-1/2 px-2 py-0.5 rounded-full bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-300">NU {new Date(nowMs).toLocaleTimeString("sv-SE", {hour: '2-digit', minute: '2-digit'})}</div>
              </div>
           </div>
           
-          {rows.map((row, rIdx) => (
+          {visibleRows.map((row, rIdx) => (
             <React.Fragment key={row.time+"-"+rIdx}>
               {(selected.length ? selected : persons).map((p) => {
-                const isCenterRow = rIdx === currentRowIndex;
+                const isCenterRow = (startIndex + rIdx) === currentRowIndex;
                 return (
                     <GridCell 
                         key={p.id + "-" + row.time}
@@ -469,14 +479,3 @@ function SettingsDrawer({
     </div>
   );
 }
-
-    
-
-    
-
-    
-
-
-
-    
-

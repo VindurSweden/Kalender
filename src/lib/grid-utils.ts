@@ -1,5 +1,6 @@
 
 
+
 import type { Event, Person, Row, RuleSet } from '@/types/event';
 
 // ========================= Resources (kapaciteter) =========================
@@ -156,6 +157,9 @@ export function presentTitleForCell(pId: string, row: Row, allEvents: Event[], i
     if (sourceEv) {
         if (completedCut && +new Date(sourceEv.start) < completedCut) {
              return { title: '✓ Klar', repeat: false, sourceEventId: null };
+        }
+        if (sourceEv.meta?.synthetic) {
+            return { title: sourceEv.title, repeat: true, sourceEventId: sourceEv.id };
         }
         return { title: toOngoingTitle(sourceEv.title, isPastRow), repeat: true, sourceEventId: sourceEv.id };
     }
@@ -315,5 +319,3 @@ export function previewReplanProportional(seedEventId: string, nowMs: number, al
 
   return { status: "ok", requiredSavingMs: requiredSaving, totalFlexMs: totalFlex, lambda, horizonMs: horizon, patches: patches };
 }
-
-    

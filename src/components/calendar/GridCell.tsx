@@ -114,7 +114,7 @@ export function GridCell({
     const showProgress = isCenterRow && current && next;
 
     return (
-        <div className={cn(
+        <motion.div layout="position" transition={{ duration: 0.12 }} className={cn(
             "relative flex flex-col justify-end text-white overflow-hidden",
             "border-b border-r border-neutral-800 last:border-r-0 group/row",
             isCenterRow ? "bg-neutral-900/40 min-h-[240px]" : "bg-neutral-950 min-h-[160px]"
@@ -218,6 +218,6 @@ export function GridCell({
                     </button>
                 </>
             )}
-        </div>
+        </motion.div>
     );
 }
