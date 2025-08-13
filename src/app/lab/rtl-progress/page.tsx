@@ -28,6 +28,7 @@ export default function RtlProgressLab() {
   const [speedSecPerHour, setSpeed] = useState(5);
   const [playing, setPlaying] = useState(true);
   const [nowMs, setNowMs] = useState(+new Date(t(6,0)));
+  const [displayTime, setDisplayTime] = useState("");
   const startOfDay = +new Date(t(0,0));
   const endOfDay = +new Date(t(24,0));
   const rafId = useRef<number | null>(null);
@@ -47,7 +48,12 @@ export default function RtlProgressLab() {
     }
     if (playing) rafId.current = requestAnimationFrame(step);
     return () => { if (rafId.current != null) cancelAnimationFrame(rafId.current); rafId.current = null; lastTs.current = null; };
-  }, [playing, speedSecPerHour]);
+  }, [playing, speedSecPerHour, endOfDay, startOfDay]);
+
+  useEffect(() => {
+    // Format time on client to avoid hydration mismatch
+    setDisplayTime(new Date(nowMs).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}));
+  }, [nowMs]);
 
   return (
     <div className="w-full min-h-screen bg-neutral-950 text-neutral-50 p-4">
@@ -62,7 +68,7 @@ export default function RtlProgressLab() {
             <option value={60}>60 s/timme</option>
           </select>
         </label>
-        <div className="ml-auto text-xs text-neutral-300">Nu (sim): {new Date(nowMs).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</div>
+        <div className="ml-auto text-xs text-neutral-300">Nu (sim): {displayTime}</div>
       </div>
 
       <div className="space-y-6">
