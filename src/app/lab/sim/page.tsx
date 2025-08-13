@@ -163,7 +163,8 @@ export default function LabSimPage() {
 
   function handleGenerateDay() {
     const type = autoDayType ? classifyDay(labDate, RULES) : manualDayType;
-    const { events } = expandProfileForDate(labDate, PROFILES[type], classifyDay(new Date(new Date(labDate).getTime() + 86400000).toISOString().slice(0,10), RULES));
+    const tomorrowType = classifyDay(new Date(new Date(labDate).getTime() + 86400000).toISOString().slice(0, 10), RULES);
+    const events = expandProfileForDate(labDate, PROFILES[type], tomorrowType);
     setBaseEvents(events);
   }
 
@@ -406,5 +407,7 @@ function SettingsDrawer({
     </div>
   );
 }
+
+    
 
     
