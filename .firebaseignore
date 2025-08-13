@@ -1,0 +1,16 @@
+**/node_modules/**
+**/dist/**
+**/build/**
+**/.next/**
+**/.output/**
+**/coverage/**
+**/__tests__/**
+**/cypress/**
+**/*.spec.*
+**/*.test.*
+**/*.map
+**/*.snap
+**/*.log
+**/.DS_Store
+**/.vscode/**
+**/Thumbs.db
