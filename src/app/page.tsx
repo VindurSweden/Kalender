@@ -17,7 +17,7 @@ import { generateEventImage } from '@/ai/flows/generate-event-image';
 import { expandDay, RULES } from "@/lib/recurrence";
 import type { Event, Person, TolkAIInput, TolkAIOutput, FormatPlanOutput, SingleCalendarOperationType, DayType } from '@/types/event';
 import { isSameDay, parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString } from '@/lib/date-utils';
-import { synthesizeDayFill } from "@/lib/grid-utils";
+import { synthesizeDayFill, applyOverrides, previewReplanProportional } from "@/lib/grid-utils";
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const INCR = 20;
@@ -82,18 +82,9 @@ export default function NPFScheduleApp() {
     function generate(forDate: Date) {
       const forISO = forDate.toISOString().slice(0, 10);
       const { todayType, tomorrowType, events } = expandDay(forISO, RULES);
-      
-      let allFilled: Event[] = [];
-      const currentPeople = loadLS("vcal.people", DEFAULT_PEOPLE);
-      for (const p of currentPeople) {
-          const personEvents = events.filter(e => e.personId === p.id);
-          const filled = synthesizeDayFill(personEvents, p.id, forDate);
-          allFilled.push(...filled);
-      }
-      
       setTodayType(todayType);
       setTomorrowType(tomorrowType);
-      setSourceEvents(allFilled);
+      setSourceEvents(events);
     }
     generate(date);
   
@@ -162,7 +153,6 @@ export default function NPFScheduleApp() {
           try {
             const title = eventDetails.title || 'AI Händelse';
             const start = newStart.toISOString();
-            const end = new Date(newStart.getTime() + INCR * 60 * 1000).toISOString();
             
             let imageUrl: string | undefined = undefined;
             if (title) {
@@ -177,7 +167,7 @@ export default function NPFScheduleApp() {
               title,
               personId,
               start,
-              end,
+              end: new Date(newStart.getTime() + INCR * 60 * 1000).toISOString(),
               imageUrl,
               challenge: eventDetails.description,
               meta: { source: 'assistant' }
@@ -215,6 +205,7 @@ export default function NPFScheduleApp() {
   
   function deleteEvent(id: string) { 
     setSourceEvents(prev => prev.filter(ev => ev.id !== id)); 
+    setEditingEvent(null);
   }
   
   function onEventUpdate(updatedEvent: Event) {
@@ -224,11 +215,17 @@ export default function NPFScheduleApp() {
 
   function handleKlar(eventId: string | null) {
       if (!eventId) return;
+      const ev = sourceEvents.find(e => e.id === eventId);
+      if (!ev) return;
+      // Here you could update the event status if you add that property
       boom();
   }
   
   function handleKlarSent(eventId: string | null) {
       if (!eventId) return;
+       const ev = sourceEvents.find(e => e.id === eventId);
+      if (!ev) return;
+      // Here you would trigger the replanning logic
       boom();
   }
 
@@ -293,5 +290,3 @@ export default function NPFScheduleApp() {
     </div>
   );
 }
-
-    

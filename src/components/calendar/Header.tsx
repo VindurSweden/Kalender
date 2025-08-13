@@ -49,9 +49,15 @@ export function Header({ date, shiftDate, setDate, dark, setDark, assistantOpen,
                   <p className="text-neutral-400">Här kommer inställningar för Kalenderassistenten.</p>
                   <div className="pt-4 border-t border-neutral-800 mt-4">
                     <h4 className="font-semibold text-neutral-200 mb-2">Länkar till labbsidor</h4>
-                    <ul className="list-disc list-inside space-y-1 text-neutral-300">
-                      <li><a href="/lab/sim" className="underline text-primary/90 hover:text-primary">Labbsida: Simulerad Tid + Grid</a></li>
-                      <li><a href="/lab/rtl-progress" className="underline text-primary/90 hover:text-primary">Labbsida: RTL Progress-test</a></li>
+                    <ul className="list-disc list-inside space-y-2 text-neutral-300">
+                      <li>
+                        <a href="/lab/sim" className="underline text-primary/90 hover:text-primary">Labbsida: Simulerad Tid + Grid</a>
+                        <p className="text-xs text-neutral-400 pl-2">En testsida för att simulera tidens gång, testa omplanering ("Klar sent") och inspektera grid-logiken med olika dagstyper.</p>
+                      </li>
+                      <li>
+                        <a href="/lab/rtl-progress" className="underline text-primary/90 hover:text-primary">Labbsida: RTL Progress-test</a>
+                         <p className="text-xs text-neutral-400 pl-2">En isolerad testsida för att verifiera och finjustera den höger-till-vänster-gående progressbaren.</p>
+                      </li>
                     </ul>
                   </div>
                 </div>
