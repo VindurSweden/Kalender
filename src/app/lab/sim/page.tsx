@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import ProgressTrackRtl from "@/components/ProgressTrackRtl";
 import { humanDelta, speedEmojiByTotal } from "@/lib/progress";
-import type { Event, Person, DayType } from "@/types/event";
+import type { Event, Person, DayType, Role } from "@/types/event";
 import { expandProfileForDate, RULES, PROFILES, classifyDay } from "@/lib/recurrence";
 import { GridCell } from "@/components/calendar/GridCell";
 import { cn } from "@/lib/utils";
@@ -308,23 +308,32 @@ function SettingsDrawer({
   useEffect(() => {
     if (!event) { setForm({}); return; }
     setForm({
-      title: event.title,
-      location: event.location,
-      resource: event.resource,
-      minDurationMin: event.minDurationMin,
-      fixedStart: !!event.fixedStart,
-      dependsOn: event.dependsOn,
+        ...event,
+        // Make sure array fields are handled correctly
+        dependsOn: event.dependsOn ?? [],
+        involved: event.involved ?? [],
     });
   }, [event]);
 
   if (!open) return null;
 
+  const handleInvolvedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const {value} = e.target;
+    // Super-simple parsing for now: "person1:required,person2:helper"
+    const involved = value.split(',').map(s => s.trim()).filter(Boolean).map(part => {
+        const [personId, role = 'required'] = part.split(':');
+        return { personId, role: role as Role };
+    });
+    setForm(f => ({ ...f, involved }));
+  };
+
   const dependsCsv = (form.dependsOn ?? []).join(",");
+  const involvedCsv = (form.involved ?? []).map(i => `${i.personId}:${i.role}`).join(", ");
 
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="absolute right-0 top-0 h-full w-[360px] bg-neutral-950 border-l border-neutral-800 p-4 overflow-auto text-sm space-y-4">
+      <div className="absolute right-0 top-0 h-full w-[380px] bg-neutral-950 border-l border-neutral-800 p-4 overflow-auto text-sm space-y-4">
         <div className="flex items-center justify-between mb-3">
           <div className="font-medium">Redigera Egenskaper</div>
           <button className="text-neutral-400" onClick={onClose}>✕</button>
@@ -334,7 +343,7 @@ function SettingsDrawer({
           <>
             <div className="text-xs text-neutral-400 mb-2">Event ID: {event.id}</div>
             
-            {/* Sektion 1: Basinfo */}
+            {/* Sektion 1: Grundinfo */}
             <div className="space-y-3 p-3 rounded-lg border border-neutral-800">
                 <h4 className="font-medium text-neutral-200 text-xs uppercase tracking-wider">Grundinfo</h4>
                 <div>
@@ -343,6 +352,15 @@ function SettingsDrawer({
                     className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
                     value={form.title ?? ""}
                     onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-neutral-300">Tillhör den en rutin (cluster)?</label>
+                  <input
+                    className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+                    value={form.cluster ?? ""}
+                    onChange={e => setForm(f => ({ ...f, cluster: e.target.value }))}
+                    placeholder="T.ex. 'morgonrutin'"
                   />
                 </div>
             </div>
@@ -361,16 +379,13 @@ function SettingsDrawer({
                     />
                 </div>
                 <div className="flex items-center gap-2">
-                  <input
-                    id="fixedStart"
-                    type="checkbox"
-                    className="w-4 h-4"
-                    checked={!!form.fixedStart}
-                    onChange={e => setForm(f => ({ ...f, fixedStart: e.target.checked }))}
-                  />
-                  <label htmlFor="fixedStart" className="text-neutral-300">Är starttiden helt fast och kan inte flyttas?</label>
+                  <input id="fixedStart" type="checkbox" className="w-4 h-4" checked={!!form.fixedStart} onChange={e => setForm(f => ({ ...f, fixedStart: e.target.checked }))} />
+                  <label htmlFor="fixedStart" className="text-neutral-300">Är starttiden helt fast?</label>
                 </div>
-                 {/* TODO: Add fixedEnd toggle */}
+                <div className="flex items-center gap-2">
+                  <input id="fixedEnd" type="checkbox" className="w-4 h-4" checked={!!form.fixedEnd} onChange={e => setForm(f => ({ ...f, fixedEnd: e.target.checked }))} />
+                  <label htmlFor="fixedEnd" className="text-neutral-300">Är sluttiden helt fast?</label>
+                </div>
             </div>
 
             {/* Sektion 3: Beroenden & Resurser */}
@@ -381,8 +396,7 @@ function SettingsDrawer({
                     <select
                     className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
                     value={form.resource ?? ""}
-                    onChange={e => setForm(f => ({ ...f, resource: e.target.value || undefined }))}
-                    >
+                    onChange={e => setForm(f => ({ ...f, resource: e.target.value || undefined }))}>
                     <option value="">Ingen</option>
                     <option value="bathroom">Badrummet</option>
                     <option value="car">Bilen</option>
@@ -394,8 +408,7 @@ function SettingsDrawer({
                     <select
                     className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
                     value={form.location ?? ""}
-                    onChange={e => setForm(f => ({ ...f, location: e.target.value || undefined }))}
-                    >
+                    onChange={e => setForm(f => ({ ...f, location: e.target.value || undefined }))}>
                     <option value="">Okänd</option>
                     <option value="home">Hemma</option>
                     <option value="school">Skola/Förskola</option>
@@ -408,13 +421,29 @@ function SettingsDrawer({
                     className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
                     value={dependsCsv}
                     onChange={e => setForm(f => ({ ...f, dependsOn: e.target.value.split(",").map(s => s.trim()).filter(Boolean) }))}
-                    placeholder="Ange event-ID, separerade med kommatecken"
-                    />
+                    placeholder="Ange event-ID, separerade med kommatecken" />
                      <p className="text-xs text-neutral-500 mt-1">Ex: maria-morning-...,antony-prep-breakfast-...</p>
                 </div>
             </div>
 
-            {/* TODO: Sektion 4: Roller */}
+            {/* Sektion 4: Roller */}
+             <div className="space-y-3 p-3 rounded-lg border border-neutral-800">
+                <h4 className="font-medium text-neutral-200 text-xs uppercase tracking-wider">Roller & Involverade</h4>
+                 <div className="flex items-center gap-2">
+                  <input id="allowAlone" type="checkbox" className="w-4 h-4" checked={!!form.allowAlone} onChange={e => setForm(f => ({ ...f, allowAlone: e.target.checked }))} />
+                  <label htmlFor="allowAlone" className="text-neutral-300">Kan detta göras ensam?</label>
+                </div>
+                 <div>
+                    <label className="block mb-1 text-neutral-300">Vilka personer behövs (och vilken roll)?</label>
+                    <input
+                        className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+                        value={involvedCsv}
+                        onChange={handleInvolvedChange}
+                        placeholder="Ex: 'antony:required, leia:helper'"
+                    />
+                     <p className="text-xs text-neutral-500 mt-1">Format: personId:roll. Roller är 'required' eller 'helper'.</p>
+                </div>
+            </div>
 
            
             <div className="mt-4 flex gap-2">
@@ -446,3 +475,6 @@ function SettingsDrawer({
 
     
 
+
+
+    
