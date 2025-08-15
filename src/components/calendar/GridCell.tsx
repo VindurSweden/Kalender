@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import type { Event, Person, Row } from "@/types/event";
 import { plannedEndMsForEvent, getSourceEventForCell, presentTitleForCell, whyBlocked } from '@/lib/grid-utils';
 import { buildOverlayBackground, clamp01 } from './overlayTopDown';
+import { speedEmojiByTotal } from '@/lib/progress';
 
 const iconFor = (title: string) => {
     const activityIcon: Array<[RegExp, string]> = [
@@ -99,18 +100,28 @@ export function GridCell({
     const plannedEnd = sourceEv ? plannedEndMsForEvent(sourceEv, allEvents) : null;
     const isOverdue = !!(sourceEv && plannedEnd && nowMs > plannedEnd && (!completedUpTo || completedUpTo < plannedEnd));
     
-    const progress = useMemo(() => {
-        if (!isCenterRow || !sourceEv || sourceEv.meta?.synthetic) return -1;
+    const progressData = useMemo(() => {
+        if (!isCenterRow || !sourceEv || sourceEv.meta?.synthetic) return null;
         const start = +new Date(sourceEv.start);
         const end = plannedEndMsForEvent(sourceEv, allEvents);
-        if (end <= start) return -1;
-        return clamp01((nowMs - start) / (end - start));
+        const totalMs = end - start;
+        if (totalMs <= 0) return null;
+    
+        const progress = clamp01((nowMs - start) / totalMs);
+        
+        const minMs = (sourceEv.minDurationMin ?? 0) * 60000;
+        const warnStart = minMs > 0 ? clamp01(1 - (minMs / totalMs)) : 1.0;
+        const emoji = speedEmojiByTotal(totalMs);
+
+        const overlayParams = { warnStart, alphaElapsed: 0.32, alphaSafe: 0.09, alphaWarnTop: 0.15, alphaWarnBottom: 0.23, alphaOverdueBoost: 0.14, warnHue: 0 };
+        const overlay = buildOverlayBackground(progress, overlayParams, { liftDark: 0 });
+
+        return { progress, overlay, emoji };
     }, [isCenterRow, sourceEv, nowMs, allEvents]);
 
-    const showProgress = progress !== -1;
     
     const controls = useAnimation();
-    const isPastMidpoint = showProgress && progress > 0.5;
+    const isPastMidpoint = progressData && progressData.progress > 0.5;
 
     React.useEffect(() => {
         controls.start({
@@ -118,9 +129,6 @@ export function GridCell({
         });
     }, [isPastMidpoint, controls]);
 
-
-    const overlayParams = { warnStart: 0.36, alphaElapsed: 0.32, alphaSafe: 0.09, alphaWarnTop: 0.15, alphaWarnBottom: 0.23, alphaOverdueBoost: 0.14, warnHue: 0 };
-    const overlay = showProgress ? buildOverlayBackground(progress, overlayParams, { liftDark: 0 }) : null;
 
     const height = isCenterRow ? 240 : 160;
 
@@ -130,7 +138,6 @@ export function GridCell({
             transition={{ layout: { duration: 0.22, ease: [0.22, 1, 0.36, 1] } }}
             initial={false}
             animate={{ height }}
-            style={{ willChange: "transform, filter, height" }}
             className={cn(
             "relative flex flex-col justify-end text-white overflow-hidden",
             "border-b border-r border-neutral-800 last:border-r-0 group/row"
@@ -146,9 +153,9 @@ export function GridCell({
             </div>
 
             {/* New Overlay */}
-            {overlay && <div className="absolute inset-0 z-10" style={overlay.style} />}
-            {showProgress && (
-                <div className="absolute left-1 z-20" style={{ top: `calc(${progress * 100}% - 10px)` }}>🐇</div>
+            {progressData?.overlay && <div className="absolute inset-0 z-10" style={progressData.overlay.style} />}
+            {progressData && (
+                <div className="absolute left-1 z-20" style={{ top: `calc(${progressData.progress * 100}% - 10px)` }}>{progressData.emoji}</div>
             )}
             
             {/* Content Overlay */}
@@ -221,3 +228,5 @@ export function GridCell({
         </motion.div>
     );
 }
+
+    
