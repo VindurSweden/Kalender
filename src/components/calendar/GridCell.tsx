@@ -2,7 +2,7 @@
 "use client";
 import React, { useMemo } from 'react';
 import { motion, useAnimation } from "framer-motion";
-import { Image as ImageIcon, CheckCircle, Clock, Settings } from "lucide-react";
+import { Image as ImageIcon, CheckCircle, Clock, Settings, Edit } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Event, Person, Row } from "@/types/event";
 import { plannedEndMsForEvent, getSourceEventForCell, presentTitleForCell, whyBlocked } from '@/lib/grid-utils';
@@ -70,8 +70,10 @@ export function GridCell({
     onGenerateImage,
     onDelete
 }: GridCellProps) {
-    const isCenterRow = (startIndex + rIdx) === currentRowIndex;
-    const isPastRow = (startIndex + rIdx) < currentRowIndex;
+    const absoluteRowIndex = startIndex + rIdx;
+    const isCenterRow = absoluteRowIndex === currentRowIndex;
+    const isPastRow = absoluteRowIndex < currentRowIndex;
+
     const sourceEv = getSourceEventForCell(person.id, row, allEvents);
     
     const blockedReason = sourceEv ? whyBlocked(sourceEv, row.time, allEvents, allPeople) : null;
@@ -119,7 +121,6 @@ export function GridCell({
         return { progress, overlay, emoji };
     }, [isCenterRow, sourceEv, nowMs, allEvents]);
 
-    
     const controls = useAnimation();
     const isPastMidpoint = progressData && progressData.progress > 0.5;
 
@@ -129,8 +130,9 @@ export function GridCell({
         });
     }, [isPastMidpoint, controls]);
 
-
-    const height = isCenterRow ? 240 : 160;
+    // Variable row height based on distance from center
+    const distanceFromCenter = Math.abs(rIdx - centerIndex);
+    const height = isCenterRow ? 240 : (distanceFromCenter === 1 ? 160 : 120);
 
     return (
         <motion.div 
@@ -153,8 +155,8 @@ export function GridCell({
             </div>
 
             {/* New Overlay */}
-            {progressData?.overlay && <div className="absolute inset-0 z-10" style={progressData.overlay.style} />}
-            {progressData && (
+            {progressData?.overlay && isCenterRow && <div className="absolute inset-0 z-10" style={progressData.overlay.style} />}
+            {progressData && isCenterRow && (
                 <div className="absolute left-1 z-20" style={{ top: `calc(${progressData.progress * 100}% - 10px)` }}>{progressData.emoji}</div>
             )}
             
@@ -179,7 +181,7 @@ export function GridCell({
                         {title}
                         {repeat && <span className="ml-1.5 text-[10px] text-white/70 align-middle">↻</span>}
                     </div>
-                     {isOverdue && (
+                     {isOverdue && !isCenterRow && (
                         <span className="mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded-full border border-amber-500 bg-amber-900/60 text-amber-200 font-medium">
                            ! Ej klar
                         </span>
@@ -193,16 +195,16 @@ export function GridCell({
                             >
                                <CheckCircle size={14}/> Klar
                             </button>
-
-                            <button
-                                className={cn("px-2.5 py-1 rounded-md text-xs border flex items-center gap-1.5 backdrop-blur-sm", isOverdue ? 'border-rose-500/80 bg-rose-900/50 hover:bg-rose-900/80' : 'border-white/10 bg-black/20 text-neutral-500 cursor-not-allowed')}
-                                onClick={() => isOverdue && onKlarSent(sourceEventId)}
-                                disabled={!isOverdue}
-                                title={isOverdue ? 'Markera som sent och krymp framåt' : 'Kan bara användas när planerat slut har passerats'}
-                            >
-                                <Clock size={14}/> Klar sent
-                            </button>
                         </div>
+                    )}
+                     {sourceEventId && isPastRow && (
+                         <button
+                            className="mt-2 px-2.5 py-1 rounded-md text-xs border flex items-center gap-1.5 backdrop-blur-sm border-amber-500/80 bg-rose-900/50 hover:bg-rose-900/80"
+                            onClick={() => onKlarSent(sourceEventId)}
+                            title='Markera som sent och krymp framåt'
+                        >
+                            <Clock size={14}/> Klar sent
+                        </button>
                     )}
                 </div>
             </motion.div>
@@ -210,7 +212,7 @@ export function GridCell({
             {/* Buttons Overlay */}
             <div className="absolute inset-0 z-30 flex items-center justify-center">
                 {sourceEv && !sourceEv.imageUrl && !sourceEv.meta?.synthetic && (
-                    <button onClick={() => onGenerateImage(sourceEv)} className="flex items-center justify-center text-white bg-black/40 hover:bg-black/60 p-2 rounded-md transition-colors text-sm">
+                    <button onClick={() => onGenerateImage(sourceEv)} className="flex items-center justify-center text-white bg-black/40 hover:bg-black/60 p-2 rounded-md transition-colors text-sm opacity-0 group-hover/row:opacity-100">
                         <ImageIcon size={16} /> <span className="ml-2">Skapa bild</span>
                     </button>
                 )}
@@ -219,10 +221,10 @@ export function GridCell({
             {sourceEv && !sourceEv.meta?.synthetic && (
                 <button 
                     onClick={() => onEdit(sourceEv)} 
-                    className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-white/20 hover:text-white z-40"
+                    className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-white/20 hover:text-white z-40 opacity-0 group-hover/row:opacity-100"
                     title="Redigera händelse"
                 >
-                    <Settings size={14}/>
+                    <Edit size={14}/>
                 </button>
             )}
         </motion.div>

@@ -216,8 +216,64 @@ export default function NPFScheduleApp() {
     setEditingEvent(null);
   }
   
-  function onEventUpdate(updatedEvent: Event) {
-    setSourceEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
+  function onEventUpdate(updatedEventData: Partial<Event>) {
+    if (!updatedEventData.id) return;
+  
+    setSourceEvents(prevEvents => {
+      const newEvents = [...prevEvents];
+      const eventIndex = newEvents.findIndex(e => e.id === updatedEventData.id);
+      if (eventIndex === -1) return prevEvents;
+  
+      const originalEvent = newEvents[eventIndex];
+      const updatedEvent = { ...originalEvent, ...updatedEventData };
+  
+      // Simple property update
+      if (updatedEventData.start === originalEvent.start) {
+        newEvents[eventIndex] = updatedEvent;
+        return newEvents;
+      }
+  
+      // Complex start time update with replanning
+      const personEvents = newEvents
+        .filter(e => e.personId === updatedEvent.personId)
+        .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+  
+      const personEventIndex = personEvents.findIndex(e => e.id === updatedEvent.id);
+  
+      // 1. Update previous event's end time
+      if (personEventIndex > 0) {
+        const prevEventInPersonTimeline = personEvents[personEventIndex - 1];
+        const prevEventGlobalIndex = newEvents.findIndex(e => e.id === prevEventInPersonTimeline.id);
+        if (prevEventGlobalIndex !== -1 && !newEvents[prevEventGlobalIndex].fixedStart) {
+           newEvents[prevEventGlobalIndex].end = updatedEvent.start;
+        }
+      }
+  
+      // 2. Update current event
+      const originalDuration = new Date(originalEvent.end).getTime() - new Date(originalEvent.start).getTime();
+      updatedEvent.end = new Date(new Date(updatedEvent.start).getTime() + originalDuration).toISOString();
+      newEvents[eventIndex] = updatedEvent;
+  
+      // 3. Cascade changes to subsequent events
+      let lastEnd = new Date(updatedEvent.end).getTime();
+      for (let i = personEventIndex + 1; i < personEvents.length; i++) {
+        const subsequentEvent = personEvents[i];
+        if (subsequentEvent.fixedStart) break; // Stop at a fixed event
+  
+        const subsequentEventGlobalIndex = newEvents.findIndex(e => e.id === subsequentEvent.id);
+        if (subsequentEventGlobalIndex !== -1) {
+          const duration = new Date(subsequentEvent.end).getTime() - new Date(subsequentEvent.start).getTime();
+          const newStart = lastEnd;
+          const newEnd = newStart + duration;
+          newEvents[subsequentEventGlobalIndex].start = new Date(newStart).toISOString();
+          newEvents[subsequentEventGlobalIndex].end = new Date(newEnd).toISOString();
+          lastEnd = newEnd;
+        }
+      }
+  
+      return newEvents.sort((a,b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+    });
+  
     setEditingEvent(null);
   }
 

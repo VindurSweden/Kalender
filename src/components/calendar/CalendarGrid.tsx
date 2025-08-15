@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import type { Event, Person, Row, Override } from "@/types/event";
 import { buildRows, applyOverrides, synthesizeDayFill, previewReplanProportional } from "@/lib/grid-utils";
 import { GridCell } from './GridCell';
+import { Edit } from "lucide-react";
 
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 
@@ -14,7 +15,7 @@ const SLOTS = 5;
 interface CalendarGridProps {
     people: Person[];
     events: Event[];
-    onEventUpdate: (event: Event) => void;
+    onEventUpdate: (event: Partial<Event>) => void;
     onEdit: (event: Event | null) => void;
     onGenerateImage: (event: Event) => void;
     onKlar: (id: string | null) => void;
