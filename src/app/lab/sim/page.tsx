@@ -239,9 +239,6 @@ function LabSimInner() {
 
         {/* Rader */}
         <div className="relative grid" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))`, gridAutoRows: 'min-content' }}>
-          <div className="pointer-events-none absolute z-10 top-1/2 -translate-y-1/2 inset-x-0 min-h-[240px] border-y border-fuchsia-500/40 bg-fuchsia-500/5 flex items-center justify-center">
-             <div className="text-[10px] -translate-y-[120px] px-2 py-0.5 rounded-full bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-300">NU {new Date(nowMs).toLocaleTimeString("sv-SE", {hour: '2-digit', minute: '2-digit'})}</div>
-          </div>
           
           {visibleRows.map((row, rIdx) => (
             <React.Fragment key={row.time+"-"+rIdx}>
@@ -489,5 +486,3 @@ export default function LabSimPage() {
     </TimeProvider>
   );
 }
-
-    

@@ -1,12 +1,12 @@
 
 "use client";
-import React from 'react';
-import { motion } from "framer-motion";
-import { Image as ImageIcon, CheckCircle, Clock, Settings, Trash2 } from "lucide-react";
+import React, { useMemo } from 'react';
+import { motion, useAnimation } from "framer-motion";
+import { Image as ImageIcon, CheckCircle, Clock, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Event, Person, Row } from "@/types/event";
 import { plannedEndMsForEvent, getSourceEventForCell, presentTitleForCell, whyBlocked } from '@/lib/grid-utils';
-import ProgressTrack from '../ProgressTrackRtl';
+import { buildOverlayBackground, clamp01 } from './overlayTopDown';
 
 const iconFor = (title: string) => {
     const activityIcon: Array<[RegExp, string]> = [
@@ -99,29 +99,43 @@ export function GridCell({
     const plannedEnd = sourceEv ? plannedEndMsForEvent(sourceEv, allEvents) : null;
     const isOverdue = !!(sourceEv && plannedEnd && nowMs > plannedEnd && (!completedUpTo || completedUpTo < plannedEnd));
     
-    const { current, next } = (() => {
-        let current: Event | null = null;
-        let next: Event | null = null;
-        const personEvents = allEvents.filter(e => e.personId === person.id).sort((a,b) => +new Date(a.start) - +new Date(b.start));
-        for (let i = 0; i < personEvents.length; i++) {
-          const s = +new Date(personEvents[i].start);
-          const e = +new Date(personEvents[i].end);
-          if (s <= nowMs && nowMs < e) { current = personEvents[i]; next = personEvents[i+1] ?? null; break; }
-          if (nowMs < s && !current) { next = personEvents[i]; break; }
-        }
-        return { current, next };
-    })();
-    const showProgress = isCenterRow && current && next;
+    const progress = useMemo(() => {
+        if (!isCenterRow || !sourceEv || sourceEv.meta?.synthetic) return -1;
+        const start = +new Date(sourceEv.start);
+        const end = plannedEndMsForEvent(sourceEv, allEvents);
+        if (end <= start) return -1;
+        return clamp01((nowMs - start) / (end - start));
+    }, [isCenterRow, sourceEv, nowMs, allEvents]);
+
+    const showProgress = progress !== -1;
+    
+    const controls = useAnimation();
+    const isPastMidpoint = showProgress && progress > 0.5;
+
+    React.useEffect(() => {
+        controls.start({
+            justifyContent: isPastMidpoint ? 'flex-start' : 'flex-end',
+        });
+    }, [isPastMidpoint, controls]);
+
+
+    const overlayParams = { warnStart: 0.36, alphaElapsed: 0.32, alphaSafe: 0.09, alphaWarnTop: 0.15, alphaWarnBottom: 0.23, alphaOverdueBoost: 0.14, warnHue: 0 };
+    const overlay = showProgress ? buildOverlayBackground(progress, overlayParams, { liftDark: 0 }) : null;
+
+    const height = isCenterRow ? 240 : 160;
 
     return (
-        <motion.div layout="position" transition={{ duration: 0.12 }} className={cn(
+        <motion.div 
+            layout="position"
+            transition={{ layout: { duration: 0.22, ease: [0.22, 1, 0.36, 1] } }}
+            initial={false}
+            animate={{ height }}
+            style={{ willChange: "transform, filter, height" }}
+            className={cn(
             "relative flex flex-col justify-end text-white overflow-hidden",
-            "border-b border-r border-neutral-800 last:border-r-0 group/row",
-            isCenterRow ? "bg-neutral-900/40 min-h-[240px]" : "bg-neutral-950 min-h-[160px]",
-            isCenterRow && person.id === 'leia' && "ring-4 ring-yellow-400 z-20" // EXAMPLE: Add yellow ring for Leia in center row
+            "border-b border-r border-neutral-800 last:border-r-0 group/row"
         )}>
-            {isCenterRow && <div className="absolute inset-0 border-y-2 border-fuchsia-500/80 pointer-events-none z-10" />}
-
+            
             {/* Background Image or Gradient */}
             <div className="absolute inset-0">
                 {sourceEv && sourceEv.imageUrl ? (
@@ -130,9 +144,15 @@ export function GridCell({
                     <div className={cn("w-full h-full grid place-items-center text-5xl", person.bg.replace('bg-','bg-gradient-to-br from-').replace('/40', '/70 via-neutral-900 to-neutral-900'))}>{ico}</div>
                 )}
             </div>
+
+            {/* New Overlay */}
+            {overlay && <div className="absolute inset-0 z-10" style={overlay.style} />}
+            {showProgress && (
+                <div className="absolute left-1 z-20" style={{ top: `calc(${progress * 100}% - 10px)` }}>🐇</div>
+            )}
             
             {/* Content Overlay */}
-            <div className="relative z-20 flex flex-col justify-end h-full p-2 bg-gradient-to-t from-black/80 via-black/50 to-transparent">
+            <motion.div layout animate={controls} className="relative z-20 flex flex-col h-full p-2 bg-gradient-to-t from-black/80 via-black/50 to-transparent">
                 <div className="flex-grow">
                      {/* Meta Badges - Top Right */}
                      {showMeta && sourceEv && (
@@ -145,18 +165,6 @@ export function GridCell({
                 </div>
                
                 <div>
-                     {/* Progress Bar */}
-                    {showProgress && current && next && (
-                        <div className="mb-2 absolute left-2 top-2 bottom-2 w-10">
-                            <ProgressTrack
-                                startMs={+new Date(current.start)}
-                                targetMs={next ? +new Date(next.start) : +new Date(current.end)}
-                                nowMs={nowMs}
-                                minDurationMs={(current.minDurationMin ?? 0) * 60000}
-                                direction="vertical"
-                            />
-                        </div>
-                    )}
                     <div className={`text-[11px] mb-0.5 font-medium ${isPastRow ? "text-neutral-400" : "text-neutral-300"}`}>
                         {timeLabel}
                     </div>
@@ -172,8 +180,8 @@ export function GridCell({
 
                     {sourceEventId && isCenterRow && (
                         <div className="flex gap-2 mt-2">
-                            <button
-                                className="px-2.5 py-1 rounded-md text-xs border border-white/20 bg-black/30 backdrop-blur-sm hover:bg-white/20 flex items-center gap-1.5"
+                             <button
+                                className="px-2.5 py-1 rounded-md text-xs border flex items-center gap-1.5 backdrop-blur-sm border-white/20 bg-black/30 hover:bg-white/20"
                                 onClick={() => onKlar(sourceEventId)}
                             >
                                <CheckCircle size={14}/> Klar
@@ -190,7 +198,7 @@ export function GridCell({
                         </div>
                     )}
                 </div>
-            </div>
+            </motion.div>
 
             {/* Buttons Overlay */}
             <div className="absolute inset-0 z-30 flex items-center justify-center">
@@ -202,22 +210,13 @@ export function GridCell({
             </div>
             
             {sourceEv && !sourceEv.meta?.synthetic && (
-                <>
-                    <button 
-                        onClick={() => onEdit(sourceEv)} 
-                        className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-white/20 hover:text-white z-40"
-                        title="Redigera händelse"
-                    >
-                        <Settings size={14}/>
-                    </button>
-                    <button 
-                        onClick={() => onDelete(sourceEv.id)} 
-                        className="absolute bottom-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-rose-900/50 hover:text-white z-40"
-                        title="Ta bort händelse"
-                    >
-                        <Trash2 size={14}/>
-                    </button>
-                </>
+                <button 
+                    onClick={() => onEdit(sourceEv)} 
+                    className="absolute top-2 right-2 w-7 h-7 bg-black/30 text-white/70 rounded-full flex items-center justify-center hover:bg-white/20 hover:text-white z-40"
+                    title="Redigera händelse"
+                >
+                    <Settings size={14}/>
+                </button>
             )}
         </motion.div>
     );

@@ -150,14 +150,7 @@ export function CalendarGrid({ people, events, onEventUpdate, onEdit, onGenerate
 
                 {/* Rows */}
                 <div className="relative grid" style={{ gridTemplateColumns: `repeat(${people.length}, minmax(0, 1fr))`, gridAutoRows: 'min-content' }}>
-                    <div className="pointer-events-none absolute z-10 top-1/2 -translate-y-1/2 inset-x-0 h-[1px]">
-                        <div className="h-full border-t border-fuchsia-500/40 bg-fuchsia-500/5 flex items-center justify-center">
-                            <div className="text-[10px] -translate-y-1/2 px-2 py-0.5 rounded-full bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-300">
-                                NU {new Date(nowMs).toLocaleTimeString("sv-SE", {hour: '2-digit', minute: '2-digit'})}
-                            </div>
-                        </div>
-                    </div>
-
+                   
                     {visibleRows.map((row, rIdx) => (
                         <React.Fragment key={row.time + "-" + rIdx}>
                             {people.map(p => (
