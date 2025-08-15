@@ -1,7 +1,7 @@
-
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import ProgressTrack from "@/components/ProgressTrackRtl";
+import { TimeProvider, useTimeControls } from "@/time/TimeSource";
 
 const day = "2025-08-11";
 const t = (h: number, m: number = 0) => `${day}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`;
@@ -23,37 +23,21 @@ const segments: Segment[] = [
 
 const toMs = (iso: string) => +new Date(iso);
 
-export default function RtlProgressLab() {
-  // Simulerad klocka: 1h = 5s IRL
+function RtlProgressLabInner() {
+  const { nowMs, play, pause, setSpeed: setProviderSpeed, jumpTo } = useTimeControls();
   const [speedSecPerHour, setSpeed] = useState(5);
   const [playing, setPlaying] = useState(true);
-  const [nowMs, setNowMs] = useState(+new Date(t(6,0)));
   const [displayTime, setDisplayTime] = useState("");
   const startOfDay = +new Date(t(0,0));
   const endOfDay = +new Date(t(24,0));
-  const rafId = useRef<number | null>(null);
-  const lastTs = useRef<number | null>(null);
+
+  useEffect(() => { setProviderSpeed(speedSecPerHour); }, [speedSecPerHour, setProviderSpeed]);
+  useEffect(() => { playing ? play() : pause(); }, [playing, play, pause]);
 
   useEffect(() => {
-    function step(ts: number) {
-      const prev = lastTs.current ?? ts;
-      const dt = ts - prev;
-      lastTs.current = ts;
-      const factor = 3600000 / (speedSecPerHour * 1000); // kalender-ms per IRL-ms
-      setNowMs((v) => {
-        const nv = v + dt * factor;
-        return nv >= endOfDay ? startOfDay : nv;
-      });
-      rafId.current = requestAnimationFrame(step);
-    }
-    if (playing) rafId.current = requestAnimationFrame(step);
-    return () => { if (rafId.current != null) cancelAnimationFrame(rafId.current); rafId.current = null; lastTs.current = null; };
-  }, [playing, speedSecPerHour, endOfDay, startOfDay]);
-
-  useEffect(() => {
-    // Format time on client to avoid hydration mismatch
+    if (nowMs >= endOfDay) jumpTo(startOfDay);
     setDisplayTime(new Date(nowMs).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}));
-  }, [nowMs]);
+  }, [nowMs, startOfDay, endOfDay, jumpTo]);
 
   return (
     <div className="w-full min-h-screen bg-neutral-950 text-neutral-50 p-4">
@@ -88,8 +72,17 @@ export default function RtlProgressLab() {
       </div>
 
       <div className="mt-6 text-xs text-neutral-400">
-        <p>Spåret fylls från <strong>höger → vänster</strong>. 🕳️ i vänsterkanten är nästa event. Röd zon visar sista <em>minsta möjliga</em> tid för att hinna.</p>
+        <p>Spåret fylls från <strong>höger → vänster</strong>. 🕳️ i vänsterkanten r nästa event. Röd zon visar sista <em>minsta möjliga</em> tid för att hinna.</p>
       </div>
     </div>
   );
 }
+
+export default function RtlProgressLab() {
+  return (
+    <TimeProvider mode="simulated" initialMs={+new Date(t(6,0))}>
+      <RtlProgressLabInner />
+    </TimeProvider>
+  );
+}
+
