@@ -158,7 +158,7 @@ function LabSimInner() {
     setTimeout(() => setFlash(null), 1200);
   }
   
-  const jumpTo = (h: number, m: number = 0) => setNowMs(+new Date(t(h, m)));
+  const jumpToTime = (h: number, m: number = 0) => jumpTo(+new Date(t(h, m)));
 
   function handleGenerateDay() {
     const type = autoDayType ? classifyDay(labDate, RULES) : manualDayType;
@@ -188,7 +188,7 @@ function LabSimInner() {
             <input type="checkbox" checked={showMeta} onChange={(e) => setShowMeta(e.target.checked)} />
             Visa metadata
           </label>
-          <button onClick={() => jumpTo(7,0)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">07:00</button>
+          <button onClick={() => jumpToTime(7,0)} className="px-3 py-1 rounded-2xl border bg-neutral-900 border-neutral-800">07:00</button>
           <button
             onClick={() => { setEditEventId(null); setShowSettings(true); }}
             className="px-2 py-1 rounded-2xl border bg-neutral-900 border-neutral-800"
@@ -238,11 +238,9 @@ function LabSimInner() {
         </div>
 
         {/* Rader */}
-        <div className="relative grid" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))`, transform: `translateY(-${(startIndex / (rows.length || 1)) * 100}%)`, gridAutoRows: 'min-content' }}>
-          <div className="pointer-events-none absolute z-20 top-1/2 -translate-y-1/2 inset-x-0 h-[1px]">
-             <div className="h-full border-t border-fuchsia-500/40 bg-fuchsia-500/5 flex items-center justify-center">
-                 <div className="text-[10px] -translate-y-1/2 px-2 py-0.5 rounded-full bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-300">NU {new Date(nowMs).toLocaleTimeString("sv-SE", {hour: '2-digit', minute: '2-digit'})}</div>
-             </div>
+        <div className="relative grid" style={{ gridTemplateColumns: `repeat(${selected.length || persons.length}, minmax(0, 1fr))`, gridAutoRows: 'min-content' }}>
+          <div className="pointer-events-none absolute z-10 top-1/2 -translate-y-1/2 inset-x-0 min-h-[240px] border-y border-fuchsia-500/40 bg-fuchsia-500/5 flex items-center justify-center">
+             <div className="text-[10px] -translate-y-[120px] px-2 py-0.5 rounded-full bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-300">NU {new Date(nowMs).toLocaleTimeString("sv-SE", {hour: '2-digit', minute: '2-digit'})}</div>
           </div>
           
           {visibleRows.map((row, rIdx) => (
@@ -380,6 +378,23 @@ function SettingsDrawer({
                   <input id="fixedStart" type="checkbox" className="w-4 h-4" checked={!!form.fixedStart} onChange={e => setForm(f => ({ ...f, fixedStart: e.target.checked }))} />
                   <label htmlFor="fixedStart" className="text-neutral-300">Är starttiden helt fast?</label>
                 </div>
+                 <div className="flex items-center gap-2">
+                    <label className="text-neutral-300">Starttid (HH:MM)</label>
+                    <input
+                        type="text"
+                        className="w-full px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800"
+                        defaultValue={new Date(event.start).toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' })}
+                        onBlur={e => {
+                            const newTime = e.target.value;
+                            const [hours, minutes] = newTime.split(':').map(Number);
+                            if (!isNaN(hours) && !isNaN(minutes)) {
+                                const newDate = new Date(event.start);
+                                newDate.setHours(hours, minutes);
+                                setForm(f => ({ ...f, start: newDate.toISOString() }));
+                            }
+                        }}
+                    />
+                </div>
                 <div className="flex items-center gap-2">
                   <input id="fixedEnd" type="checkbox" className="w-4 h-4" checked={!!form.fixedEnd} onChange={e => setForm(f => ({ ...f, fixedEnd: e.target.checked }))} />
                   <label htmlFor="fixedEnd" className="text-neutral-300">Är sluttiden helt fast?</label>
@@ -474,3 +489,5 @@ export default function LabSimPage() {
     </TimeProvider>
   );
 }
+
+    
