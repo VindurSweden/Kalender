@@ -1,7 +1,7 @@
 
 "use client";
 import React, { useEffect, useRef, useState } from "react";
-import ProgressTrackRtl from "@/components/ProgressTrackRtl";
+import ProgressTrack from "@/components/ProgressTrackRtl";
 
 const day = "2025-08-11";
 const t = (h: number, m: number = 0) => `${day}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`;
@@ -28,6 +28,7 @@ export default function RtlProgressLab() {
   const [speedSecPerHour, setSpeed] = useState(5);
   const [playing, setPlaying] = useState(true);
   const [nowMs, setNowMs] = useState(+new Date(t(6,0)));
+  const [displayTime, setDisplayTime] = useState("");
   const startOfDay = +new Date(t(0,0));
   const endOfDay = +new Date(t(24,0));
   const rafId = useRef<number | null>(null);
@@ -47,7 +48,12 @@ export default function RtlProgressLab() {
     }
     if (playing) rafId.current = requestAnimationFrame(step);
     return () => { if (rafId.current != null) cancelAnimationFrame(rafId.current); rafId.current = null; lastTs.current = null; };
-  }, [playing, speedSecPerHour]);
+  }, [playing, speedSecPerHour, endOfDay, startOfDay]);
+
+  useEffect(() => {
+    // Format time on client to avoid hydration mismatch
+    setDisplayTime(new Date(nowMs).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"}));
+  }, [nowMs]);
 
   return (
     <div className="w-full min-h-screen bg-neutral-950 text-neutral-50 p-4">
@@ -62,7 +68,7 @@ export default function RtlProgressLab() {
             <option value={60}>60 s/timme</option>
           </select>
         </label>
-        <div className="ml-auto text-xs text-neutral-300">Nu (sim): {new Date(nowMs).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</div>
+        <div className="ml-auto text-xs text-neutral-300">Nu (sim): {displayTime}</div>
       </div>
 
       <div className="space-y-6">
@@ -70,11 +76,12 @@ export default function RtlProgressLab() {
           <div key={seg.id} className="rounded-xl border border-neutral-800 p-3 bg-neutral-900/30">
             <div className="text-xs text-neutral-400 mb-1">{new Date(seg.start).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})} → {new Date(seg.nextStart).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}</div>
             <div className="text-sm mb-2">{seg.title}</div>
-            <ProgressTrackRtl
+            <ProgressTrack
               startMs={toMs(seg.start)}
               targetMs={toMs(seg.nextStart)}
               nowMs={nowMs}
               minDurationMs={(seg.minDurationMin ?? 0) * 60000}
+              direction="horizontal"
             />
           </div>
         ))}

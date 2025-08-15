@@ -1,211 +1,164 @@
-# Projektplan & Teknisk Vision
+# VisuCal Teknisk Vision & Implementationsplan
 
-Detta dokument beskriver den övergripande visionen, arkitekturen och den tekniska implementeringsplanen för VisuCal.
-
----
-
-## 1. Grundidé & Målbild
-
-### 1.1. Grundidé med appen
-
-Visuell kalender med bildstöd som automatiskt sekvenserar rutiner beroende på vilken typ av dag det är.
-
-Tre dagstyper:
-*   **Skoldag** – vanlig vardag, tidiga läggtider.
-*   **Icke-skoldag** – helg/lov, senare läggtider.
-*   **Fritidsdag** – skoldag för ett barn, helg för ett annat; påverkar rutiner för både dagen och kvällen innan.
-
-Dagstypen styr vilken återkommande mall som används för dagens och kvällen innan scheman.
-
-### 1.2. Målbild för Huvudsidan (Live-tid)
-
-*   **NU i mitten:** Visar alltid ett fönster av händelser centrerat kring den aktuella tiden (t.ex. 2 rader före + 1 NU + 2 efter).
-*   **Progress-emoji:** En emoji rör sig från höger till vänster för att visualisera tiden som återstår av en aktivitet, och träffar "hålet" precis när nästa aktivitet börjar.
-*   **"Klar"-knapp:** Påverkar endast den pågående händelsen för den specifika personen.
-*   **"Klar sent"-knapp:** Är endast tillgänglig för händelser som har passerat sin planerade sluttid. Den triggar en lokal omplanering som proportionellt krymper efterföljande händelser fram till nästa fasta tidpunkt, utan att ändra i den grundläggande mallen.
-
-### 1.3. Målbild för Google Calendar-synk
-
-*   **Egen "Routine"-kalender:** Appen hanterar en specifik kalender per person (t.ex. "Routine – Leia") för alla mall-genererade händelser.
-*   **Externa händelser (Read-only):** Möten och andra bokningar från användarens vanliga kalendrar läses in som låsta block och kan påverka sekvenseringen (t.ex. tidigarelägga kvällsrutinen om ett tidigt möte finns nästa dag).
-*   **Inga dubbletter:** En stabil ID-strategi (`extendedProperties.private.appId`) används för att säkerställa tvåvägssynkronisering utan att skapa dubbletter.
+Här är en kompakt guide för vilka frågor som behövs för metadata – och hur du gör manuell inmatning superenkel (både med röst och via ett snabbt formulär). Allt matchar den modell vi använder (min-tid, beroenden, resurser, involverade, fixed times, dagstyp m.m.).
 
 ---
 
-## 2. Arkitektur & Begrepp
+## 1) Vilken metadata behöver vi?
+Minsta användbara schema per event (fält i appen):
 
-### 2.1. Begrepp (Kontrakt)
-
-*   **DayType:** `"SchoolDay" | "OffDay" | "FritidsDay"`.
-*   **TemplateStep (Mallsteg):** Definitionen av en återkommande händelse i en mall. Innehåller `key`, `personId`, `title`, tidsinformation (`at`, `offsetMin`, `atByNextDayType`), metadata (`minDurationMin`, `fixedStart`, `dependsOnKeys`, `involved`, `resource`, `location`, `cluster`).
-*   **Expanded Event (Dagens instans):** En konkret händelse för en specifik dag, genererad från en `TemplateStep`. Har en riktig start- och sluttid samt referenser till sin mall.
-*   **GoogleEvent Link:** Hur en Google Calendar-händelse mappas till en instans i vår app via `extendedProperties.private`.
-
-### 2.2. Datakällor & Sanning
-
-*   **Primary Truth (Rutiner):** Appens mallar (`TemplateStep`) + den dagliga expansionen (`Expanded Event`) + lokala justeringar (`overrides`).
-*   **Primary Truth (Externa händelser):** Användarens Google Calendar.
-*   **Skrivning till Google:** Appen skriver *endast* till de dedikerade "Routine"-kalendrarna.
-
-### 2.3. Flöde på Huvudsidan (Live)
-
-1.  **Nu-klocka:** `nowMs` tickar i realtid. NU-raden hålls visuellt centrerad.
-2.  **Dagstyp:** Klassificera `todayType` och `tomorrowType` baserat på `RULES`.
-3.  **Expansion:** `expandProfileForDate(...)` genererar `routineEventsToday` från mallen.
-4.  **Google-pull:** Hämta Google-händelser (både "Routine" och externa) för dagen.
-5.  **Merge:** Kombinera `routineEventsToday`, Google-händelser och lokala `overrides` till en slutgiltig lista för rendering.
-6.  **Render:** Visa griden med all information, inklusive "väntar på"-status och progress-emojis.
+*   **title** (namn)
+*   **personId** (vem “äger” uppgiften)
+*   **involved[]**: { personId, role: "required" | "helper" }
+*   **minDurationMin** (minsta möjliga tid)
+*   **fixedStart?** (ja/nej) + ev. startPlanned (ISO eller HH:MM)
+*   **fixedEnd?** (ja/nej) + ev. endPlanned (ISO eller HH:MM)
+*   **dependsOn[]?** (event-nycklar som måste vara klara före)
+*   **resource?** (badrum, bil, kök…)
+*   **location?** (hemma, skola, jobb…)
+*   **allowAlone?** (kan göras utan hjälpare)
+*   **dayType?** ("SchoolDay" | "OffDay" | "FritidsDay")
+*   **cluster?** (t.ex. “Morgonrutin”)
+*   **imagesKey?** (ikon/bildtagg)
 
 ---
 
-## 3. Implementationsplan (Aktiv Att-göra-lista)
+## 2) Frågebatteri (röstläge): minimalt → utökande
 
-**Instruktion till AI-assistenter:** Denna sektion är en aktiv att-göra-lista. När du slutför ett steg, uppdatera denna plan för att reflektera vad som är klart (`✅`), pågående (`❗`), eller nästa steg (`🔜`).
+### A. Snabb (2–3 frågor, bra default)
+1.  **Vad ska göras?**
+    *   “Namn på aktiviteten?” → `title`
+2.  **Vem gäller det?**
+    *   “Vem ska göra det?” → `personId` (förval = den som pratar)
+3.  **Hur snabbt går det i nödfall?**
+    *   “Minsta tid om du skyndar?” → `minDurationMin`
 
-### Kort status/roadmap (cheat-sheet)
+(Efter svar kan assistenten själv föreslå resten via heuristik.)
 
-*   `✅` NU-vy live, replan-grund, grundläggande mallmotor, dokumentation finns.
-*   `❗` Verifiera att mallen verkligen används korrekt i UI (Task 1).
-*   `🔜` Knapplogik (Klar/Ej klar), Spara i EditSheet, WhyBlocked, fler DayTypes, visuell replan-preview, polish av NU-linje, HUD.
-*   `⏭️` GCal-sync (när nycklarna är redo).
-
-### Detaljerad Plan
-
-**0) Globala regler (måste följas)**
-
-*   Ändra inte `package.json`/deps.
-*   Små PR:er.
-*   Bygg till `dist/`.
-*   Ingen live-deploy, endast ev. preview-kanal.
-
-**1) Synliggör att mallmotorn verkligen körs (snabb verifiering)**
-*   **Fil(er):** Main + ev. recurrence.ts
-*   **Gör:**
-    *   Visa aktiv `DayType` (SchoolDay/OffDay/FritidsDay) uppe till vänster i Main.
-    *   Lägg liten debug-badge: “events: N” (antalet genererade för idag).
-    *   Lägg en tillfällig `select` (endast dev-mode) för att växla `DayType` i minnet och forcerat re-expandera dagen (så vi kan bevisa att mallen används).
-*   **Definition of Done:**
-    *   Byter jag till en annan `DayType` (dev-select) ändras listan tydligt utan reload.
-    *   Badge visar korrekt antal events.
-*   **Manuellt test:**
-    *   Öppna Main → se `DayType`-badge och events-count.
-    *   Växla `DayType` i dev-select → listan ändras (bevis för att recurrence.ts körs).
-
-**2) Knapplogik: “Klar”, “Ej klar” (ersätter “Klar sent”)**
-*   **Fil(er):** CalendarGrid, GridCell (där knapparna renderas)
-*   **Gör:**
-    *   **NU-rad:** endast `Klar` (klickbar).
-    *   **Rader ovanför NU (passerat):** visa `Ej klar` (klickbar). Ta bort “Klar sent” i UI (enligt önskemål; behåll ev. intern fn för senare).
-    *   **Rader under NU:** inga åtgärdsknappar.
-*   **Definition of Done:**
-    *   “Ej klar” syns endast på passerade rader, är klickbar.
-    *   “Klar” syns endast på NU-raden.
-*   **Manuellt test:**
-    *   Låt tiden passera en rad → “Ej klar” syns där, “Klar” bara i NU.
-
-**3) Wire “Spara” i EditEventSheet → uppdatera metadata i state**
-*   **Fil(er):** EditEventSheet, events-store/context
-*   **Gör:**
-    *   Koppla “Spara” så att metadata (`minDurationMin`, `fixedStart/End`, `dependsOn`, `involved`, `resource`, `location`, `cluster`) skrivs in i state och triggar re-render.
-    *   Lägg grundvalidering:
-        *   `minDurationMin` ≥ 0
-        *   `involved.required` får inte vara tom om `allowAlone=false` (om fältet finns)
-        *   `dependsOn` får inte peka på okänt id.
-*   **Definition of Done:**
-    *   Ändrar jag t.ex. `minDurationMin` eller `resource` och sparar → cellens badges uppdateras direkt.
-*   **Manuellt test:**
-    *   Öppna kugghjul → ändra `minDurationMin` → spara → se uppdaterad badge `min:Xm`.
-
-**4) “Väntar på…” (whyBlocked) – första version**
-*   **Fil(er):** whyBlocked.ts, integrera i cell-rendering
-*   **Gör (MVP):**
-    *   Om event A inte kan starta p.g.a. ouppfyllda `dependsOn` → returnera “Väntar på <titel/person>”.
-    *   Om `resource` konflikt (samtidigt nyttjande) → “Väntar på <resurs>”.
-    *   Om `required` person är upptagen i annat pågående event → “Väntar på <namn>”.
-*   **UI:**
-    *   Visa liten grå badge med texten under titeln i cellen.
-*   **Definition of Done:**
-    *   Minst ett scenario per typ (dependsOn / resource / person) visar korrekt “Väntar på…”.
-*   **Manuellt test:**
-    *   Skapa enkel konflikt (t.ex. två som behöver “badrum” samtidigt) → badge ska synas.
-
-**5) Utöka dagstypernas mallar (OffDay + FritidsDay)**
-*   **Fil(er):** recurrence.ts
-*   **Gör:**
-    *   Fyll `OffDay` (helg/lov): senare läggtid kvällen innan, friare morgon.
-    *   Fyll `FritidsDay`: skoldagstider för Leia, helg-liknande för Gabriel, vanliga jobbdagar för vuxna. Anpassa kväll före.
-    *   Se till att `expandDay(date)` tar hänsyn till kvällen innan (t.ex. läggtid) genom att templaten för “kväll före” bestäms av morgondagens `DayType`.
-*   **Definition of Done:**
-    *   När jag växlar `DayType` (dev-select) i Main, ändras både morgon och (om visad) kväll före enligt reglerna.
-*   **Manuellt test:**
-    *   Byt till `OffDay` → morgon/kväll beter sig annorlunda än `SchoolDay`.
-    *   Byt till `FritidsDay` → Leia får “skol-liknande” tider, Gabriel helg-liknande.
-
-**6) Replan-preview: visuell feedback utan att ändra state**
-*   **Fil(er):** grid-utils.ts (`previewReplanProportional`, finns redan), GridCell/CalendarGrid
-*   **Gör:**
-    *   Vid klick på `Ej klar` (passerad rad) kör `previewReplanProportional(...)`.
-    *   Visa icke-invasiv overlay på berörda celler i UI:
-        *   markera föreslagen ny starttid (diskret text i cellen),
-        *   visa att röd zon kan växa (om min-tid äter upp plan-tid),
-        *   ändra emoji-hastighet lokalt i render (utan att mutera state) för att indikera snabbare/långsammare progress.
-    *   Lägg en enkel “Nollställ preview” (t.ex. knapp i toolbar) som tar bort highlighten (ingen state-mutation behövs).
-*   **Definition of Done:**
-    *   Tryck på “Ej klar” ovanför NU → syns en tydlig men temporär preview i UI (utan att spara).
-    *   “Nollställ preview” rensar.
-*   **Manuellt test:**
-    *   Testa både fall `status:"ok"` (med λ) och `status:"insufficientFlex"` (visa liten varning i cellerna som berörs).
-
-**7) Lab-sida: simulering + kontroller + metadata-toggle (om inte redan komplett)**
-*   **Fil(er):** Lab + EventGrid
-*   **Gör:**
-    *   Säkerställ: play/pause, hastighet (2 / 5 / 10 s/timme), Jump 07/12/18.
-    *   Toggle “Visa metadata” och “Progress på alla rader”.
-    *   Lägg liten HUD: `now`, `currentRowIndex`, `startIndex`, aktiv `DayType`, senaste preview-status.
-*   **Definition of Done:**
-    *   Allt ovan fungerar utan reload; metadata-badges visas när togglen är på.
-*   **Manuellt test:**
-    *   Växla toggles och hastigheter, se HUD uppdateras.
-
-**8) NU-linje & klipp (polish)**
-*   **Fil(er):** EventGrid
-*   **Gör:**
-    *   NU-linjen ska alltid ligga perfekt över mittenraden (justera ev. pixel-offset).
-    *   Vid fönsterbyte (ny starttid passerar): hårt klipp i data, men applicera 120 ms CSS-transition (`translateY`) på wrapper för mjuk känsla. Ingen “glidande tid”.
-*   **Definition of Done:**
-    *   Ingen “drift”: NU-linjen exakt mitt.
-    *   Byte känns mjukt men sker omedelbart.
-*   **Manuellt test:**
-    *   Simtid med hög hastighet → stabil mitten och mjuk nudge vid byten.
-
-**9) Dokumentation – hur man testar**
-*   **Fil(er):** `PLAN.md` / `README.md`
-*   **Gör:**
-    *   Lägg in en ”Test checklist”:
-        *   Hur man växlar `DayType` i dev-select och ser förändringen.
-        *   Hur man öppnar `EditEventSheet` och ändrar metadata (Spara → badges uppdateras).
-        *   Hur man triggar “Ej klar” och tolkar `replan-preview`.
-        *   Varför “Klar sent” inte visas (ersatt av “Ej klar”).
-        *   Hur “Väntar på…” visas i tre exempel (dependsOn/person/resource).
-*   **Definition of Done:**
-    *   Jag kan följa listan och återskapa allt som är viktigt, utan att fråga.
+### B. Tillägg (bara om relevant)
+*   **När börjar det/behöver det börja?**
+    *   “Fast starttid eller flexibelt?” → `fixedStart` + `startPlanned` (om fast)
+*   **Måste det vara klart senast?**
+    *   “Finns deadline/fixed slut?” → `fixedEnd` + `endPlanned` (om fast)
+*   **Vem behövs?**
+    *   “Behövs hjälp, och av vem?” → `involved[]` + `allowAlone`
+*   **Vad måste vara klart före?**
+    *   “Finns något som måste ske före?” → `dependsOn[]` (sök/föreslå)
+*   **Var och med vad?**
+    *   “Vilken plats och resurs används (badrum, bil…)?” → `location`, `resource`
+*   **Vilken dagstyp?**
+    *   “Gäller detta skoldag, icke-skoldag eller fritidsdag?” → `dayType` (förval: dagens)
+*   **Grupp/kluster?**
+    *   “Tillhör det en rutin (morgon/kväll)?” → `cluster`
 
 ---
 
-### Avancerad logik – senhetskontroll
+## 3) Snabbform (UI) – 15 sekunder, 3 steg
 
-Målet är att systemet ska kunna upptäcka och markera om man riskerar att bli sen och anpassa schemat därefter.
+*   **Steg 1 (överst, stora knappar):**
+    *   **Titel** (chips med senaste/vanliga: “Frukost”, “Borsta tänder”, “Packa”, “Läxor” …) + fritext
+    *   **Vem** (avatar-chips: Maria, Antony, Leia, Gabriel)
+*   **Steg 2 (”Tid & typ”):**
+    *   **Min-tid** (snabbknappar: 2, 5, 10, 15, 20, 30; + fält)
+    *   **Dagstyp** (School/Off/Fritids; default = auto)
+    *   **Fixed start?** (toggle) → ställer fram HH:MM om på
+    *   **Fixed slut?** (toggle) → HH:MM om på
+*   **Steg 3 (”Beroenden & resurser” – progressiv visning):**
+    *   **Involverade** (chips: required/helper; “självOK” toggle)
+    *   **Resurs** (chips: 🛁 badrum, 🚗 bil, 🍳 kök …)
+    *   **Plats** (hemma/skola/jobbet/annat)
+    *   **Beroenden** (autocomplete: föreslå sannolika föregångare, t.ex. “Frukost” före “Vitaminer”)
 
-*   **Beroenden (`dependsOn`):** Vissa steg kräver att andra är klara först.
-*   **Resurser:** T.ex. badrum, bil, person; kan bara användas av en åt gången.
-*   **Minsta varaktighet:** En uppgift kan inte kortas under sin minsta tid.
-*   **Fasta tider (`fixedStart`, `fixedEnd`):** Tider som inte kan flyttas.
-*   **Involverade personer:** Aktiviteter som kräver en viss person eller kombination.
+**Primärknapp:** “Spara” (skapar event). **Sekundär:** “Spara & lägg nästa i samma kluster”.
 
-**Logiken fungerar så här:**
-1.  Om ett event riskerar att starta efter sin planerade starttid p.g.a. beroenden eller resurskonflikter → markera som `risk för sen start`.
-2.  Om det närmar sig sluttiden och minsta tid + beroenden gör att man inte hinner innan nästa fast start → markera som `kommer bli sen`.
-3.  När “Klar sent”-knappen trycks, körs en `replan-preview` där schemat krymper proportionellt fram till nästa fast start, och eventet flyttas efter “nu”-markören.
+---
+
+## 4) Micro-UX för låg friktion
+*   Chips > dropdowns (snabb motorik, dyslexi-vänligt).
+*   Auto-fyll (`dayType`, `location`) utifrån tid på dygnet + historik.
+*   Fuzzy-match för titlar (“tand” → “Borsta tänder”).
+*   Synonymkarta (träning=fotboll=bollträning → samma bild).
+*   Intelligenta default för min-tid per person/aktivitet (lärs in).
+*   “Lägg till igen”: duplicera senaste med ett tryck (för mikro-steg).
+*   Konfliktvarning inline (“Badrum redan bokat 07:15–07:25”).
+*   “Föreslå beroenden”-knapp (t ex: Frukost → Vitaminer → Borsta tänder).
+*   **Kortkommandon:**
+    *   “+5 min buffert”
+    *   “Lås start” / “Lås slut”
+    *   “Gör ensam OK” / “Måste ha hjälp”
+
+---
+
+## 5) Förifyllning (regler som sparar tid)
+*   **Aktivitetsprofiler:**
+    *   **“Borsta tänder”**: `minDurationMin=3`, `resource=bathroom`, `allowAlone=false` för Leia, `true` för Gabriel, `dependsOn=Frukost?` (heuristik).
+    *   **“Vitaminer”**: `min=1`, `dependsOn=Frukost`.
+    *   **“Frukost”**: `min=10`, `resource=kitchen`, `involved: required=Antony|Maria`, `helpers=kids`.
+*   **Dagstyp påverkar kvällen före:** väljer du “SchoolDay” för i morgon → föreslå “Kvällsrutin (skoldag)” i kväll.
+
+---
+
+## 6) Redigering i efterhand (”kugghjulet”)
+I `EditEventSheet` (måste vara enkel):
+*   Överst: titel, ägare, kluster.
+*   Sektion **Tid**: min-tid (chips+fält), fixed start/slut toggles + HH:MM.
+*   Sektion **Roller**: required/helpers (avatar-chips), “självOK” toggle.
+*   Sektion **Resurser/Plats**: chips + “+Ny resurs”.
+*   Sektion **Beroenden**: autocomplete + snabbknapp “Föreslå”.
+*   **Spara** skriver direkt till state och uppdaterar badges.
+*   **Validering:**
+    *   min-tid ≥ 0
+    *   om `allowAlone=false` krävs minst en `required` i `involved`
+    *   `dependsOn` måste finnas i dagens event
+
+---
+
+## 7) Snabb röst-till-metadata (exempel)
+Kommando: *“Lägg till Borsta tänder för Leia. Minsta tid 3 minuter. Efter frukost. I badrummet. Behöver hjälp av Antony. Skoldag.”*
+
+Assistenten fyller:
+```json
+{
+  "title": "Borsta tänder",
+  "personId": "leia",
+  "minDurationMin": 3,
+  "dependsOn": ["frukost"], 
+  "resource": "bathroom",
+  "involved": [{"personId":"antony","role":"required"}],
+  "dayType": "SchoolDay",
+  "allowAlone": false,
+  "cluster": "Morgonrutin"
+}
+```
+
+---
+
+## 8) Två färdiga mall-exempel (för att testa snabbt)
+**A) “Laga mat” (Antony)**
+*   title: Laga mat
+*   personId: antony
+*   minDurationMin: 30
+*   fixedEnd: true (klart senast 17:00)
+*   involved: [{personId:"antony", role:"required"}]
+*   resource: kitchen, location: home
+*   cluster: Middag
+
+**B) “Äta middag” (Antony, Leia, Gabriel)**
+*   title: Middag
+*   personId: antony (äger)
+*   minDurationMin: 20
+*   dependsOn: [“Laga mat”]
+*   involved: required = {antony}, helpers = {leia, gabriel} eller alla required om ni vill
+*   fixedStart? (om ni vill hålla exakt tid)
+*   cluster: Middag
+
+---
+
+## 9) “Varför blockerad?” (whyBlocked) – tydliga etiketter
+Visa alltid liten badge om start inte är möjlig:
+*   “Väntar på: **Frukost**” (beroende ej klart)
+*   “Väntar på: **Badrum**” (resurs upptagen)
+*   “Väntar på: **Maria**” (nödvändig person upptagen)
 
 ---
 *Detta dokument ska uppdateras kontinuerligt allt eftersom stegen i planen slutförs.*

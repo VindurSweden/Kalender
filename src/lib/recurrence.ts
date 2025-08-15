@@ -47,6 +47,20 @@ export function classifyDay(dateISO: string, rules: RuleSet): DayType {
 // ——— profiler (fyll på dina steg) ———
 // Reverse-engineered from the old DEFAULT_EVENTS
 const schoolDaySteps: TemplateStep[] = [
+    // Pre-morning sleep events to ensure grid has rows to scroll up from
+    { key: "sleep-1", personId: "maria", title: "Sover", at: "00:00", location: "home", cluster: "morning" },
+    { key: "sleep-1", personId: "leia", title: "Sover", at: "00:00", location: "home", cluster: "morning" },
+    { key: "sleep-1", personId: "gabriel", title: "Sover", at: "00:00", location: "home", cluster: "morning" },
+    { key: "sleep-1", personId: "antony", title: "Sover", at: "00:00", location: "home", cluster: "morning" },
+    { key: "sleep-2", personId: "maria", title: "Sover", at: "02:00", location: "home", cluster: "morning" },
+    { key: "sleep-2", personId: "leia", title: "Sover", at: "02:00", location: "home", cluster: "morning" },
+    { key: "sleep-2", personId: "gabriel", title: "Sover", at: "02:00", location: "home", cluster: "morning" },
+    { key: "sleep-2", personId: "antony", title: "Sover", at: "02:00", location: "home", cluster: "morning" },
+    { key: "sleep-3", personId: "maria", title: "Sover", at: "04:00", location: "home", cluster: "morning" },
+    { key: "sleep-3", personId: "leia", title: "Sover", at: "04:00", location: "home", cluster: "morning" },
+    { key: "sleep-3", personId: "gabriel", title: "Sover", at: "04:00", location: "home", cluster: "morning" },
+    { key: "sleep-3", personId: "antony", title: "Sover", at: "04:00", location: "home", cluster: "morning" },
+
     { key: "maria-wakeup", personId: "maria", title: "Vaknar & kaffe", at: "06:00", minDurationMin: 5, location: "home", cluster: "morning" },
     { key: "maria-morning", personId: "maria", title: "Morgonrutin", at: "07:00", minDurationMin: 15, location: "home", cluster: "morning" },
     { key: "maria-work-am", personId: "maria", title: "Jobb (förmiddag)", at: "08:00", location: "work" },

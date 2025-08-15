@@ -88,5 +88,3 @@ export type SingleCalendarOperationType = z.infer<typeof GenkitSingleCalendarOpe
 
 export type Row = { time: number; cells: Map<string, Event> };
 export type Override = { startMs?: number; plannedMs?: number };
-
-    

@@ -14,10 +14,9 @@ import { interpretUserInstruction } from '@/ai/flows/natural-language-event-crea
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
 
-import { expandDay, RULES } from "@/lib/recurrence";
+import { expandProfileForDate, RULES, PROFILES, classifyDay } from "@/lib/recurrence";
 import type { Event, Person, TolkAIInput, TolkAIOutput, FormatPlanOutput, SingleCalendarOperationType, DayType } from '@/types/event';
 import { isSameDay, parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString } from '@/lib/date-utils';
-import { synthesizeDayFill, applyOverrides, previewReplanProportional } from "@/lib/grid-utils";
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const INCR = 20;
@@ -69,7 +68,9 @@ export default function NPFScheduleApp() {
   
   const [todayType, setTodayType] = useState<DayType>("SchoolDay");
   const [tomorrowType, setTomorrowType] = useState<DayType>("SchoolDay");
-
+  
+  const [manualDayType, setManualDayType] = useState<DayType | null>(null);
+  const currentDayType: DayType = manualDayType || todayType;
 
   useEffect(() => {
     setIsClient(true);
@@ -81,19 +82,26 @@ export default function NPFScheduleApp() {
   useEffect(() => {
     function generate(forDate: Date) {
       const forISO = forDate.toISOString().slice(0, 10);
-      const { todayType, tomorrowType, events } = expandDay(forISO, RULES);
-      setTodayType(todayType);
-      setTomorrowType(tomorrowType);
+      const effectiveDayType = manualDayType || classifyDay(forISO, RULES);
+      const effectiveTomorrowType = classifyDay(new Date(forDate.getTime() + 86400000).toISOString().slice(0, 10), RULES);
+
+      if (!manualDayType) {
+        setTodayType(effectiveDayType);
+        setTomorrowType(effectiveTomorrowType);
+      }
+      
+      const profile = PROFILES[effectiveDayType];
+      const events = expandProfileForDate(forISO, profile, effectiveTomorrowType);
       setSourceEvents(events);
     }
     generate(date);
   
-    // Optional: Set up a timer to regenerate at midnight
     const timer = setInterval(() => {
       const now = new Date();
       if (now.getHours() === 0 && now.getMinutes() === 0) {
         if (!isSameDay(now, date)) {
-          setDate(now); // This will trigger the effect again
+          setDate(now); 
+          setManualDayType(null);
         } else {
           generate(now);
         }
@@ -101,7 +109,7 @@ export default function NPFScheduleApp() {
     }, 60000);
   
     return () => clearInterval(timer);
-  }, [date]); // Re-run when date changes
+  }, [date, manualDayType]);
 
 
   useEffect(() => { if (isClient) saveLS("vcal.people", people)}, [people, isClient]);
@@ -217,7 +225,6 @@ export default function NPFScheduleApp() {
       if (!eventId) return;
       const ev = sourceEvents.find(e => e.id === eventId);
       if (!ev) return;
-      // Here you could update the event status if you add that property
       boom();
   }
   
@@ -225,7 +232,6 @@ export default function NPFScheduleApp() {
       if (!eventId) return;
        const ev = sourceEvents.find(e => e.id === eventId);
       if (!ev) return;
-      // Here you would trigger the replanning logic
       boom();
   }
 
@@ -242,8 +248,8 @@ export default function NPFScheduleApp() {
     <div className="min-h-screen w-full bg-neutral-950 text-neutral-100 antialiased">
       <Header 
         date={date} 
-        shiftDate={(d) => setDate(new Date(date.setDate(date.getDate() + d)))} 
-        setDate={setDate}
+        shiftDate={(d) => { setDate(new Date(date.setDate(date.getDate() + d))); setManualDayType(null); }}
+        setDate={(newDate) => { setDate(newDate); setManualDayType(null); }}
         dark={dark} 
         setDark={setDark} 
         assistantOpen={assistantOpen} 
@@ -253,6 +259,14 @@ export default function NPFScheduleApp() {
         <Toolbar people={people} showFor={showFor} setShowFor={setShowFor} />
         
         <div className="mt-3">
+             <div className="flex items-center gap-4 text-xs text-neutral-400 mb-2 px-2">
+                <span className="px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800">
+                    Dagstyp: {PROFILES[currentDayType]?.label ?? currentDayType}
+                </span>
+                <span className="px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800">
+                    Events: {sourceEvents.length}
+                </span>
+            </div>
             {orderedShowFor.length > 0 ? (
                 <CalendarGrid 
                     people={people.filter(p => orderedShowFor.includes(p.id))}
@@ -290,3 +304,8 @@ export default function NPFScheduleApp() {
     </div>
   );
 }
+
+
+    
+
+    

@@ -6,7 +6,7 @@ import { Image as ImageIcon, CheckCircle, Clock, Settings, Trash2 } from "lucide
 import { cn } from "@/lib/utils";
 import type { Event, Person, Row } from "@/types/event";
 import { plannedEndMsForEvent, getSourceEventForCell, presentTitleForCell, whyBlocked } from '@/lib/grid-utils';
-import ProgressTrackRtl from '../ProgressTrackRtl';
+import ProgressTrack from '../ProgressTrackRtl';
 
 const iconFor = (title: string) => {
     const activityIcon: Array<[RegExp, string]> = [
@@ -114,10 +114,11 @@ export function GridCell({
     const showProgress = isCenterRow && current && next;
 
     return (
-        <div className={cn(
-            "relative flex flex-col justify-end min-h-[160px] text-white overflow-hidden",
+        <motion.div layout="position" transition={{ duration: 0.12 }} className={cn(
+            "relative flex flex-col justify-end text-white overflow-hidden",
             "border-b border-r border-neutral-800 last:border-r-0 group/row",
-            isCenterRow ? "bg-neutral-900/40" : "bg-neutral-950"
+            isCenterRow ? "bg-neutral-900/40 min-h-[240px]" : "bg-neutral-950 min-h-[160px]",
+            isCenterRow && person.id === 'leia' && "ring-4 ring-yellow-400 z-20" // EXAMPLE: Add yellow ring for Leia in center row
         )}>
             {isCenterRow && <div className="absolute inset-0 border-y-2 border-fuchsia-500/80 pointer-events-none z-10" />}
 
@@ -146,12 +147,13 @@ export function GridCell({
                 <div>
                      {/* Progress Bar */}
                     {showProgress && current && next && (
-                        <div className="mb-2">
-                            <ProgressTrackRtl
+                        <div className="mb-2 absolute left-2 top-2 bottom-2 w-10">
+                            <ProgressTrack
                                 startMs={+new Date(current.start)}
                                 targetMs={next ? +new Date(next.start) : +new Date(current.end)}
                                 nowMs={nowMs}
                                 minDurationMs={(current.minDurationMin ?? 0) * 60000}
+                                direction="vertical"
                             />
                         </div>
                     )}
@@ -217,6 +219,6 @@ export function GridCell({
                     </button>
                 </>
             )}
-        </div>
+        </motion.div>
     );
 }

@@ -17,7 +17,7 @@ import {
   type TolkAIInput,
   type TolkAIOutput,
 } from '@/ai/schemas';
-import { json } from 'genkit';
+const json = (v: unknown) => JSON.stringify(v);
 
 
 // Define the prompt at the top level to avoid runtime definition errors.
