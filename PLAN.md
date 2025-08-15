@@ -161,4 +161,21 @@ Visa alltid liten badge om start inte är möjlig:
 *   “Väntar på: **Maria**” (nödvändig person upptagen)
 
 ---
+## 10) Timer‑hook från labb till main
+1.  Ersätt lokala rAF‑loopar i labb med den gemensamma `useSimTime`‑hooken (klart).
+2.  Verifiera stabilitet: hastighetsväxling, paus/play, React StrictMode.
+3.  När den är bekräftad, refaktorisera huvudkalenderns klocka att använda samma hook för enhetligt beteende.
+
+---
+## 11) Taggning & grundarkitektur
+
+För att framtida AI‑lösningar ska kunna resonera om schemat behöver händelsernas metadata standardiseras.
+
+1.  **Lista tillåtna taggar** – definiera centrala register för `resource`, `location`, `cluster` och `dayType`.
+2.  **Utöka `Event`** – lägg till fält för `attention`, `parallelGroup` och mjuka preferenser (`softPrefs`).
+3.  **Normalisera input** – UI och parsers mappar användartext till dessa register‑ID:n.
+4.  **Uppdatera `grid-utils`** – nyttja taggarna i `whyBlocked()` och vid omplanering.
+5.  **Förbered solver** – säkerställ att varje händelse kan serialiseras till ett lösenbart intervall med resurs‑ och uppmärksamhetskrav.
+
+---
 *Detta dokument ska uppdateras kontinuerligt allt eftersom stegen i planen slutförs.*

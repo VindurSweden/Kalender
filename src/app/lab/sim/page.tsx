@@ -1,12 +1,13 @@
 
 "use client";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import ProgressTrack from "@/components/ProgressTrackRtl";
 import { humanDelta, speedEmojiByTotal } from "@/lib/progress";
 import type { Event, Person, DayType, Role } from "@/types/event";
 import { expandProfileForDate, RULES, PROFILES, classifyDay } from "@/lib/recurrence";
 import { GridCell } from "@/components/calendar/GridCell";
 import { cn } from "@/lib/utils";
+import { useSimTime } from "@/hooks/use-sim-time";
 
 
 // ========= Typer =========
@@ -46,11 +47,13 @@ export default function LabSimPage() {
 
   const [speed, setSpeed] = useState<number>(5);
   const [playing, setPlaying] = useState<boolean>(true);
-  const [nowMs, setNowMs] = useState<number>(() => +new Date(t(6, 0)));
   const startOfDay = +new Date(t(0,0));
   const endOfDay = +new Date(t(24,0));
-  const rafId = useRef<number | null>(null);
-  const lastTs = useRef<number | null>(null);
+  const [nowMs, setNowMs] = useSimTime(playing, speed, {
+    startMs: startOfDay,
+    endMs: endOfDay,
+    initialMs: +new Date(t(6, 0)),
+  });
   
   const [baseEvents, setBaseEvents] = useState<Event[]>([]);
   const [labDate, setLabDate] = useState(day);
@@ -76,22 +79,6 @@ export default function LabSimPage() {
     });
   }
 
-  useEffect(() => {
-    function step(ts: number) {
-      const prev = lastTs.current ?? ts;
-      const dt = ts - prev;
-      lastTs.current = ts;
-      const factor = 3600000 / (speed * 1000);
-      setNowMs(v => {
-        const nv = v + dt * factor;
-        return nv >= endOfDay ? startOfDay : nv;
-      });
-      rafId.current = requestAnimationFrame(step);
-    }
-    if (playing) rafId.current = requestAnimationFrame(step);
-    return () => { if (rafId.current != null) cancelAnimationFrame(rafId.current); rafId.current = null; lastTs.current = null; };
-  }, [playing, speed]);
-  
   useEffect(() => {
     handleGenerateDay();
   }, [labDate, autoDayType, manualDayType]);

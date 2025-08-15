@@ -130,7 +130,19 @@ export function GridCell({
                     <div className={cn("w-full h-full grid place-items-center text-5xl", person.bg.replace('bg-','bg-gradient-to-br from-').replace('/40', '/70 via-neutral-900 to-neutral-900'))}>{ico}</div>
                 )}
             </div>
-            
+
+            {showProgress && current && next && (
+                <ProgressTrack
+                    startMs={+new Date(current.start)}
+                    targetMs={next ? +new Date(next.start) : +new Date(current.end)}
+                    nowMs={nowMs}
+                    minDurationMs={(current.minDurationMin ?? 0) * 60000}
+                    direction="vertical"
+                    variant="overlay"
+                    className="absolute inset-0 z-10"
+                />
+            )}
+
             {/* Content Overlay */}
             <div className="relative z-20 flex flex-col justify-end h-full p-2 bg-gradient-to-t from-black/80 via-black/50 to-transparent">
                 <div className="flex-grow">
@@ -146,17 +158,6 @@ export function GridCell({
                
                 <div>
                      {/* Progress Bar */}
-                    {showProgress && current && next && (
-                        <div className="mb-2 absolute left-2 top-2 bottom-2 w-10">
-                            <ProgressTrack
-                                startMs={+new Date(current.start)}
-                                targetMs={next ? +new Date(next.start) : +new Date(current.end)}
-                                nowMs={nowMs}
-                                minDurationMs={(current.minDurationMin ?? 0) * 60000}
-                                direction="vertical"
-                            />
-                        </div>
-                    )}
                     <div className={`text-[11px] mb-0.5 font-medium ${isPastRow ? "text-neutral-400" : "text-neutral-300"}`}>
                         {timeLabel}
                     </div>

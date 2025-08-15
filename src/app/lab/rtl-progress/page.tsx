@@ -1,7 +1,8 @@
 
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import ProgressTrack from "@/components/ProgressTrackRtl";
+import { useSimTime } from "@/hooks/use-sim-time";
 
 const day = "2025-08-11";
 const t = (h: number, m: number = 0) => `${day}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`;
@@ -27,28 +28,14 @@ export default function RtlProgressLab() {
   // Simulerad klocka: 1h = 5s IRL
   const [speedSecPerHour, setSpeed] = useState(5);
   const [playing, setPlaying] = useState(true);
-  const [nowMs, setNowMs] = useState(+new Date(t(6,0)));
-  const [displayTime, setDisplayTime] = useState("");
   const startOfDay = +new Date(t(0,0));
   const endOfDay = +new Date(t(24,0));
-  const rafId = useRef<number | null>(null);
-  const lastTs = useRef<number | null>(null);
-
-  useEffect(() => {
-    function step(ts: number) {
-      const prev = lastTs.current ?? ts;
-      const dt = ts - prev;
-      lastTs.current = ts;
-      const factor = 3600000 / (speedSecPerHour * 1000); // kalender-ms per IRL-ms
-      setNowMs((v) => {
-        const nv = v + dt * factor;
-        return nv >= endOfDay ? startOfDay : nv;
-      });
-      rafId.current = requestAnimationFrame(step);
-    }
-    if (playing) rafId.current = requestAnimationFrame(step);
-    return () => { if (rafId.current != null) cancelAnimationFrame(rafId.current); rafId.current = null; lastTs.current = null; };
-  }, [playing, speedSecPerHour, endOfDay, startOfDay]);
+  const [nowMs, setNowMs] = useSimTime(playing, speedSecPerHour, {
+    startMs: startOfDay,
+    endMs: endOfDay,
+    initialMs: +new Date(t(6,0)),
+  });
+  const [displayTime, setDisplayTime] = useState("");
 
   useEffect(() => {
     // Format time on client to avoid hydration mismatch
