@@ -60,36 +60,41 @@ const schoolDaySteps: TemplateStep[] = [
     { key: "evening-bedtime-gabriel", personId: "antony", title: "Nattning Gabriel", at: "20:30", minDurationMin: 10, bestDurationMin: 15, dependsOnKeys: ['evening-teeth-gabriel'], involved: [{personId: 'gabriel', role: 'required'}], cluster: 'evening', location: 'home' },
     { key: "evening-bedtime-maria", personId: "maria", title: "Gå och lägga sig", at: "22:00", minDurationMin: 5, cluster: 'evening', location: 'home' },
     { key: "evening-bedtime-antony", personId: "antony", title: "Gå och lägga sig", at: "22:00", minDurationMin: 5, cluster: 'evening', location: 'home' },
-    { key: "sleep-antony", personId: "antony", title: "Sover", at: "22:05", dependsOnKeys: ['evening-bedtime-antony'], location: 'home' },
-    { key: "sleep-maria", personId: "maria", title: "Sover", at: "22:05", dependsOnKeys: ['evening-bedtime-maria'], location: 'home' },
-    { key: "sleep-leia", personId: "leia", title: "Sover", at: "20:30", dependsOnKeys: ['evening-bedtime-leia'], location: 'home' },
-    { key: "sleep-gabriel", personId: "gabriel", title: "Sover", at: "20:45", dependsOnKeys: ['evening-bedtime-gabriel'], location: 'home' },
+    { key: "sleep-antony", personId: "antony", title: "Sover", at: "22:05", minDurationMin: 480, bestDurationMin: 480, dependsOnKeys: ['evening-bedtime-antony'], location: 'home' },
+    { key: "sleep-maria", personId: "maria", title: "Sover", at: "22:05", minDurationMin: 450, bestDurationMin: 450, dependsOnKeys: ['evening-bedtime-maria'], location: 'home' },
+    { key: "sleep-leia", personId: "leia", title: "Sover", at: "20:30", minDurationMin: 600, bestDurationMin: 600, dependsOnKeys: ['evening-bedtime-leia'], location: 'home' },
+    { key: "sleep-gabriel", personId: "gabriel", title: "Sover", at: "20:45", minDurationMin: 585, bestDurationMin: 585, dependsOnKeys: ['evening-bedtime-gabriel'], location: 'home' },
 
     // --- Måndag morgon ---
-    { key: "maria-get-ready", personId: "maria", title: "Göra sig klar", at: "05:30", minDurationMin: 30, bestDurationMin: 30, cluster: 'morning', location: 'home', resource: 'bathroom' },
-    { key: "antony-wake", personId: "antony", title: "Vakna & Kaffe", at: "06:00", minDurationMin: 15, bestDurationMin: 15, cluster: 'morning', location: 'home', resource: 'kitchen' },
+    { key: "maria-get-ready", personId: "maria", title: "Göra sig klar", at: "05:30", minDurationMin: 30, bestDurationMin: 30, cluster: 'morning', location: 'home', resource: 'bathroom', dependsOnKeys: ['sleep-maria'] },
+    { key: "antony-wake", personId: "antony", title: "Vakna & Kaffe", at: "06:00", minDurationMin: 15, bestDurationMin: 15, cluster: 'morning', location: 'home', resource: 'kitchen', dependsOnKeys: ['sleep-antony'] },
     { key: "antony-teeth-kitchen", personId: "antony", title: "Tänder & plocka kök", at: "06:15", minDurationMin: 15, bestDurationMin: 15, dependsOnKeys: ['antony-wake'], cluster: 'morning', location: 'home' },
-    { key: "gabriel-wake-meds", personId: "antony", title: "Väck Gabriel & medicin", at: "06:30", minDurationMin: 5, bestDurationMin: 5, cluster: 'morning', location: 'home', involved: [{personId: 'gabriel', role: 'required'}] },
+    { key: "gabriel-wake-meds", personId: "antony", title: "Väck Gabriel & medicin", at: "06:30", minDurationMin: 5, bestDurationMin: 5, cluster: 'morning', location: 'home', involved: [{personId: 'gabriel', role: 'required'}], dependsOnKeys: ['sleep-gabriel'] },
     { key: "gabriel-breakfast", personId: "gabriel", title: "Frukost", at: "06:35", minDurationMin: 10, bestDurationMin: 15, dependsOnKeys: ['gabriel-wake-meds'], cluster: 'morning', location: 'home', resource: 'kitchen' },
-    { key: "leia-wake", personId: "maria", title: "Väck Leia", at: "06:45", minDurationMin: 5, bestDurationMin: 5, cluster: 'morning', location: 'home', involved: [{personId: 'leia', role: 'required'}] },
+    { key: "leia-wake", personId: "maria", title: "Väck Leia", at: "06:45", minDurationMin: 5, bestDurationMin: 5, cluster: 'morning', location: 'home', involved: [{personId: 'leia', role: 'required'}], dependsOnKeys: ['sleep-leia'] },
     { key: "leia-breakfast", personId: "leia", title: "Frukost", at: "06:50", minDurationMin: 15, bestDurationMin: 20, dependsOnKeys: ['leia-wake'], cluster: 'morning', location: 'home', resource: 'kitchen' },
+    
     { key: "gabriel-vitamins", personId: "antony", title: "Vitaminer Gabriel", at: "07:00", minDurationMin: 2, bestDurationMin: 3, dependsOnKeys: ['gabriel-breakfast'], cluster: 'morning', location: 'home', involved: [{personId: 'gabriel', role: 'required'}] },
     { key: "leia-vitamins", personId: "antony", title: "Vitaminer Leia", at: "07:10", minDurationMin: 2, bestDurationMin: 3, dependsOnKeys: ['leia-breakfast'], cluster: 'morning', location: 'home', involved: [{personId: 'leia', role: 'required'}] },
+
     { key: "gabriel-clothes", personId: "gabriel", title: "Klä på sig", at: "07:02", minDurationMin: 8, bestDurationMin: 10, dependsOnKeys: ['gabriel-vitamins'], cluster: 'morning', location: 'home' },
     { key: "leia-clothes", personId: "leia", title: "Klä på sig", at: "07:12", minDurationMin: 8, bestDurationMin: 10, dependsOnKeys: ['leia-vitamins'], cluster: 'morning', location: 'home' },
+    
     { key: "leia-hair", personId: "maria", title: "Fixa Leias hår", at: "07:30", minDurationMin: 10, bestDurationMin: 10, dependsOnKeys: ['leia-clothes'], involved: [{personId: 'leia', role: 'required'}], cluster: 'morning', location: 'home' },
+    
     { key: "gabriel-teeth", personId: "gabriel", title: "Borsta tänder", at: "07:20", minDurationMin: 3, bestDurationMin: 5, dependsOnKeys: ['gabriel-clothes'], cluster: 'morning', location: 'home', resource: 'bathroom' },
     { key: "leia-teeth", personId: "leia", title: "Borsta tänder", at: "07:40", minDurationMin: 3, bestDurationMin: 5, dependsOnKeys: ['leia-hair'], cluster: 'morning', location: 'home', resource: 'bathroom' },
+
     { key: "gabriel-departure", personId: "gabriel", title: "Avfärd skola", at: "07:40", minDurationMin: 10, fixedStart: false, dependsOnKeys: ['gabriel-teeth'], cluster: 'day', location: 'home' },
-    { key: "antony-leia-departure", personId: "antony", title: "Lämna Leia på skolan", at: "07:50", minDurationMin: 10, dependsOnKeys: ['leia-teeth', 'gabriel-departure'], involved: [{personId: 'leia', role: 'required'}], cluster: 'day', location: 'home' },
-    { key: "leia-school-transport", personId: "leia", title: "Åker till skolan", at: "07:50", minDurationMin: 10, dependsOnKeys: ['leia-teeth', 'gabriel-departure'], involved: [{personId: 'antony', role: 'required'}], cluster: 'day', location: 'home' },
+    { key: "antony-leia-departure", personId: "antony", title: "Lämna Leia på skolan", at: "07:50", minDurationMin: 10, dependsOnKeys: ['leia-teeth', 'gabriel-departure'], involved: [{personId: 'leia', role: 'required'}], cluster: 'day', location: 'home', resource: 'car' },
+    { key: "leia-school-transport", personId: "leia", title: "Åker till skolan", at: "07:50", minDurationMin: 10, dependsOnKeys: ['antony-leia-departure'], involved: [{personId: 'antony', role: 'required'}], cluster: 'day', location: 'home', resource: 'car' },
     { key: "maria-work-departure", personId: "maria", title: "Åka till jobbet", at: "07:50", minDurationMin: 25, fixedStart: false, dependsOnKeys: ['leia-hair'], cluster: 'day', location: 'home', resource: 'car' },
 
     // --- Dagaktiviteter ---
-    { key: "gabriel-school", personId: "gabriel", title: "Skola", at: "08:00", fixedStart: true, dependsOnKeys: ['gabriel-departure'], location: 'school' },
-    { key: "leia-school", personId: "leia", title: "Skola", at: "08:00", fixedStart: true, dependsOnKeys: ['leia-school-transport'], location: 'school' },
-    { key: "maria-work", personId: "maria", title: "Jobb", at: "08:15", fixedStart: false, dependsOnKeys: ['maria-work-departure'], location: 'work' },
-    { key: "antony-work", personId: "antony", title: "Jobb (hemma)", at: "08:00", dependsOnKeys: ['antony-leia-departure'], location: 'home' },
+    { key: "gabriel-school", personId: "gabriel", title: "Skola", at: "08:00", minDurationMin: 420, fixedStart: true, dependsOnKeys: ['gabriel-departure'], location: 'school' },
+    { key: "leia-school", personId: "leia", title: "Skola", at: "08:00", minDurationMin: 420, fixedStart: true, dependsOnKeys: ['leia-school-transport'], location: 'school' },
+    { key: "maria-work", personId: "maria", title: "Jobb", at: "08:15", minDurationMin: 480, fixedStart: false, dependsOnKeys: ['maria-work-departure'], location: 'work' },
+    { key: "antony-work", personId: "antony", title: "Jobb (hemma)", at: "08:00", minDurationMin: 420, dependsOnKeys: ['antony-leia-departure'], location: 'home' },
     { key: "leia-pickup", personId: "antony", title: "Hämta Leia", at: "15:00", minDurationMin: 30, location: 'school', resource: 'car', involved: [{personId: 'leia', role: 'required'}] },
 ];
 
@@ -100,7 +105,7 @@ const schoolDaySteps: TemplateStep[] = [
 // Helper function to shift HH:MM time by a given number of hours
 const shiftTime = (time: string, hours: number): string => {
   const [h, m] = time.split(':').map(Number);
-  const newH = (h + hours) % 24;
+  const newH = (h + hours); // Don't wrap around 24h for simple shifts
   return `${String(newH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 };
 
@@ -174,7 +179,11 @@ export function expandProfileForDate(dateISO: string, profile: DayProfile, nextD
       bestDurationMin: s.bestDurationMin,
       fixedStart: s.fixedStart,
       allowPreemption: s.allowPreemption,
-      involved: s.involved, resource: s.resource, location: s.location, cluster: s.cluster,
+      involved: s.involved, 
+      allowAlone: s.allowAlone,
+      resource: s.resource, 
+      location: s.location, 
+      cluster: s.cluster,
       meta: { templateKey: s.key, dayType: profile.id, source: 'template' },
     };
   });
