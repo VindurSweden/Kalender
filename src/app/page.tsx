@@ -191,9 +191,7 @@ export default function NPFScheduleApp() {
             
             const newEvent: Event = { id: eventId, ...newEventData };
             
-            // Optimistic UI update for the event itself
-            setSourceEvents(prev => [...prev, newEvent].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()));
-
+            // The onSnapshot listener will handle the UI update.
 
             // Then generate and upload image, then update the event
             if (title) {
@@ -235,6 +233,8 @@ export default function NPFScheduleApp() {
     } catch (error: any) {
       console.error("Image generation or upload failed:", error);
       toast({ variant: 'destructive', title: 'Fel vid bildgenerering', description: error.message || 'Kunde inte skapa eller ladda upp bilden.' });
+       // Revert optimistic update on failure
+      setSourceEvents(prev => prev.map(e => e.id === event.id ? { ...e, imageUrl: undefined } : e));
     }
   };
   

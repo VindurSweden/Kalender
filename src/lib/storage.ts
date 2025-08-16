@@ -2,10 +2,10 @@ import { ref, uploadString, getDownloadURL } from "firebase/storage";
 import { storage } from "./firebase";
 
 /**
- * Uploads a base64 data URI to Firebase Storage and returns the public URL.
+ * Uploads a base64 data URI to Firebase Storage and returns the GCS URI.
  * @param dataUri The base64 data URI (e.g., from a generated image).
  * @param eventId The ID of the event to associate the image with.
- * @returns The public URL of the uploaded image.
+ * @returns The GCS URI (gs://bucket/path) of the uploaded image.
  */
 export async function uploadImageAndGetURL(dataUri: string, eventId: string): Promise<string> {
   if (!dataUri.startsWith('data:image')) {
@@ -22,18 +22,19 @@ export async function uploadImageAndGetURL(dataUri: string, eventId: string): Pr
   const base64Data = matches[2];
   
   // Create a storage reference
-  const storageRef = ref(storage, `event-images/${eventId}/${Date.now()}.png`);
+  const imageRef = ref(storage, `event-images/${eventId}/${Date.now()}.png`);
 
   try {
     // Upload the string
-    const snapshot = await uploadString(storageRef, base64Data, 'base64', {
+    const snapshot = await uploadString(imageRef, base64Data, 'base64', {
       contentType: contentType,
     });
     console.log('Uploaded a base64 string!', snapshot);
 
-    // Get the public download URL
-    const downloadURL = await getDownloadURL(snapshot.ref);
-    return downloadURL;
+    // Return the GCS URI (gs://<bucket>/<path>)
+    // This is more robust for cross-service referencing within Firebase
+    return `gs://${snapshot.ref.bucket}/${snapshot.ref.fullPath}`;
+    
   } catch (error) {
     console.error("Upload failed", error);
     throw new Error("Failed to upload image to Firebase Storage.");

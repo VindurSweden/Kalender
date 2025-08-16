@@ -40,46 +40,50 @@ export function CalendarGrid({ people, events, onEventUpdate, onEdit, onGenerate
         return () => clearInterval(timerId);
     }, []);
 
+    // Effect to resolve gs:// URLs to https:// URLs
     useEffect(() => {
         const fetchImageUrls = async () => {
-            const urls: Record<string, string> = {};
-            const urlPromises = events
-                .filter(event => event.imageUrl && event.imageUrl.startsWith('gs://'))
-                .map(async (event) => {
-                    try {
-                        const url = await getDownloadURL(ref(storage, event.imageUrl));
-                        return { id: event.id, url };
-                    } catch (error) {
-                        console.error(`Error fetching image URL for event ${event.id}:`, error);
-                        return null; // Return null on error
-                    }
-                });
+            const urlsToFetch = events.filter(event => 
+                event.imageUrl && 
+                event.imageUrl.startsWith('gs://') && 
+                !imageUrls[event.id] // Only fetch if not already in state
+            );
 
-            const settledUrls = await Promise.all(urlPromises);
-            
-            settledUrls.forEach(result => {
-                if (result) {
-                    urls[result.id] = result.url;
-                }
-            });
-            
-             // Also add direct https or data URIs
-            events.forEach(event => {
-                if (event.imageUrl && !event.imageUrl.startsWith('gs://')) {
-                    urls[event.id] = event.imageUrl;
+            if (urlsToFetch.length === 0) return;
+
+            const newUrls: Record<string, string> = {};
+            const promises = urlsToFetch.map(async (event) => {
+                try {
+                    const url = await getDownloadURL(ref(storage, event.imageUrl!));
+                    newUrls[event.id] = url;
+                } catch (error) {
+                    console.error(`Error fetching image URL for event ${event.id}:`, error);
                 }
             });
 
-            setImageUrls(urls);
+            await Promise.all(promises);
+
+            if (Object.keys(newUrls).length > 0) {
+                setImageUrls(prev => ({ ...prev, ...newUrls }));
+            }
         };
+
         fetchImageUrls();
-    }, [events]);
+    }, [events, imageUrls]);
 
     const eventsWithImages = useMemo(() => {
-        return events.map(event => ({
-            ...event,
-            imageUrl: imageUrls[event.id] || event.imageUrl, // Use fetched URL if available
-        }));
+        return events.map(event => {
+            // Priority:
+            // 1. Resolved https URL from state (imageUrls)
+            // 2. data: URI (for optimistic updates)
+            // 3. The original imageUrl from the event object (could be gs://)
+            const resolvedUrl = imageUrls[event.id];
+            const optimisticUrl = event.imageUrl?.startsWith('data:') ? event.imageUrl : undefined;
+            return {
+                ...event,
+                imageUrl: resolvedUrl || optimisticUrl || event.imageUrl,
+            };
+        });
     }, [events, imageUrls]);
     
     const filledEvents = useMemo(() => {
