@@ -79,7 +79,6 @@ export default function NPFScheduleApp() {
     setShowFor(loadLS("vcal.showFor", DEFAULT_PEOPLE.map(p => p.id)));
 
     const today = new Date();
-    const dayOfWeek = today.getDay();
     // Use classifyDay to correctly determine the day type based on rules
     setTodayType(classifyDay(today.toISOString().slice(0, 10), RULES));
 
@@ -186,21 +185,19 @@ export default function NPFScheduleApp() {
             };
 
             const eventId = uid();
-            const newEvent: Event = { id: eventId, ...newEventData };
             
             // Create event first without image
             await setDoc(doc(db, "events", eventId), newEventData);
+            
+            const newEvent: Event = { id: eventId, ...newEventData };
+            
+            // Optimistic UI update for the event itself
+            setSourceEvents(prev => [...prev, newEvent].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()));
+
 
             // Then generate and upload image, then update the event
             if (title) {
-              try {
-                const imageResult = await generateEventImage({ eventTitle: title, imageHint });
-                if (imageResult.imageUrl) {
-                    const storageUrl = await uploadImageAndGetURL(imageResult.imageUrl, eventId);
-                    await updateDoc(doc(db, "events", eventId), { imageUrl: storageUrl });
-                    newEvent.imageUrl = storageUrl; // Update local object for return
-                }
-              } catch (err) { console.error("Image generation or upload failed", err) }
+              handleGenerateImage(newEvent, imageHint);
             }
 
             boom();
@@ -215,21 +212,29 @@ export default function NPFScheduleApp() {
       return null;
   };
 
-  const handleGenerateImage = async (event: Event) => {
+  const handleGenerateImage = async (event: Event, imageHint: string = '') => {
     if (!event) return;
     toast({ title: 'Bildgenerering', description: 'AI:n skapar en bild för din händelse...' });
+    
     try {
-      const result = await generateEventImage({ eventTitle: event.title, imageHint: '' });
+      const result = await generateEventImage({ eventTitle: event.title, imageHint });
+      
       if (result.imageUrl && result.imageUrl.startsWith('data:image')) {
+        // Optimistic UI update: show the generated image immediately
+        setSourceEvents(prev => prev.map(e => e.id === event.id ? { ...e, imageUrl: result.imageUrl } : e));
+        
+        // Then, upload and update with permanent URL in the background
         const storageUrl = await uploadImageAndGetURL(result.imageUrl, event.id);
         await updateDoc(doc(db, "events", event.id), { imageUrl: storageUrl });
-        toast({ title: 'Bild genererad!', description: 'Bilden har laddats upp och sparats.' });
+        
+        toast({ title: 'Bild genererad!', description: 'Bilden har sparats i molnet.' });
+        // The onSnapshot listener will eventually update the local state with the permanent URL.
       } else {
-        throw new Error('Image data URI was empty or invalid.');
+        throw new Error('AI:n returnerade ingen giltig bilddata.');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Image generation or upload failed:", error);
-      toast({ variant: 'destructive', title: 'Fel vid bildgenerering', description: 'Kunde inte skapa eller ladda upp bilden.' });
+      toast({ variant: 'destructive', title: 'Fel vid bildgenerering', description: error.message || 'Kunde inte skapa eller ladda upp bilden.' });
     }
   };
   
@@ -331,13 +336,9 @@ export default function NPFScheduleApp() {
         event={editingEvent}
         onSave={onEventUpdate}
         onDelete={deleteEvent}
-        onGenerateImage={handleGenerateImage}
+        onGenerateImage={(e) => handleGenerateImage(e)}
         allPeople={people}
       />
     </div>
   );
 }
-
-    
-
-    
