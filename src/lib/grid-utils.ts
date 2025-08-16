@@ -1,6 +1,5 @@
 
 
-
 import type { Event, Person, Row, RuleSet } from '@/types/event';
 
 // ========================= Resources (kapaciteter) =========================
@@ -231,15 +230,9 @@ export const synthesizeDayFill = (personEvents: Event[], personId: string, day: 
 };
 
 
-// Proportional Replan Preview
+// Proportional Replan Preview - New implementation based on technical spec
 const toMs = (iso: string) => +new Date(iso);
 const ms = (min: number) => min * 60_000;
-
-function nextStartForPerson(all: Event[], personId: string, evIndex: number): number | null {
-  const list = all.filter(e => e.personId === personId).sort((a,b)=>toMs(a.start)-toMs(b.start));
-  const next = list[evIndex+1];
-  return next ? toMs(next.start) : null;
-}
 
 function personTimeline(all: Event[], personId: string) {
   return all.filter(e => e.personId === personId).sort((a,b)=>toMs(a.start)-toMs(b.start));
@@ -262,11 +255,12 @@ type PreviewResult =
 export function previewReplanProportional(seedEventId: string, nowMs: number, all: Event[]): PreviewResult {
   const seed = all.find(e => e.id === seedEventId);
   if (!seed) throw new Error("seedEvent not found");
+
   const tl = personTimeline(all, seed.personId);
   const i = findEventIndex(tl, seed.id);
   if (i === -1) throw new Error("seed event not found in timeline");
 
-  const seedNextStart = nextStartForPerson(all, seed.personId, i);
+  const seedNextStart = tl[i+1] ? toMs(tl[i+1].start) : null;
   const plannedEnd = seedNextStart ?? toMs(seed.end);
   const requiredSaving = Math.max(0, nowMs - plannedEnd);
 
