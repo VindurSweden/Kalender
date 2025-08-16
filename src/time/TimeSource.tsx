@@ -23,27 +23,45 @@ export function TimeProvider(
   const [speed, setSpeedState] = useState(5); // seconds per simulated hour
   const [playing, setPlaying] = useState(true);
   const rafRef = useRef<number>();
+  const lastTickMs = useRef<number | null>(null);
+  const speedRef = useRef(speed);
+  speedRef.current = speed;
 
   useEffect(() => {
     if (mode === "system") {
       const id = setInterval(() => setNowMs(Date.now()), 1000);
       return () => clearInterval(id);
     }
-    if (!playing) return;
-    const simFactor = 3600000 / (speed * 1000); // sim ms per real ms
-    let prev: number;
+    
+    if (!playing) {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      lastTickMs.current = null; // Reset when paused
+      return;
+    }
+
     const step = (ts: number) => {
-      if (prev == null) prev = ts;
-      const delta = ts - prev;
-      prev = ts;
+      if (lastTickMs.current === null) {
+          lastTickMs.current = ts;
+          rafRef.current = requestAnimationFrame(step);
+          return;
+      }
+      
+      const delta = ts - lastTickMs.current;
+      lastTickMs.current = ts;
+      
+      const simFactor = 3600000 / (speedRef.current * 1000); // sim ms per real ms
+      
       setNowMs(n => n + delta * simFactor);
       rafRef.current = requestAnimationFrame(step);
     };
+
     rafRef.current = requestAnimationFrame(step);
+    
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      lastTickMs.current = null;
     };
-  }, [mode, playing, speed]);
+  }, [mode, playing]);
 
   const controls: TimeControls = {
     play: () => setPlaying(true),
