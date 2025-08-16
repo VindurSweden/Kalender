@@ -13,7 +13,7 @@ import { EditEventSheet } from '@/components/calendar/EditEventSheet';
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
-import { uploadImageAndGetURL } from '@/lib/storage'; // Import the new upload function
+import { uploadImageAndGetURL } from '@/lib/storage'; 
 
 import { expandProfileForDate, RULES, PROFILES, classifyDay } from "@/lib/recurrence";
 import type { Event, Person, TolkAIInput, TolkAIOutput, FormatPlanOutput, SingleCalendarOperationType, DayType } from '@/types/event';
@@ -80,11 +80,9 @@ export default function NPFScheduleApp() {
 
     const today = new Date();
     const dayOfWeek = today.getDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) { // 0 = Sunday, 6 = Saturday
-      setTodayType("OffDay");
-    } else {
-      setTodayType("SchoolDay");
-    }
+    // Use classifyDay to correctly determine the day type based on rules
+    setTodayType(classifyDay(today.toISOString().slice(0, 10), RULES));
+
 
     if (typeof window !== 'undefined') {
         document.documentElement.classList.add("dark");
@@ -113,10 +111,10 @@ export default function NPFScheduleApp() {
         eventsFromDb.push({ id: doc.id, ...doc.data() } as Event);
       });
       
-      const dayType = manualDayType || (new Date(date).getDay() % 6 === 0 ? "OffDay" : "SchoolDay");
+      const dayType = manualDayType || classifyDay(date.toISOString().slice(0, 10), RULES);
       const tomorrow = new Date(date);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowDayType = tomorrow.getDay() % 6 === 0 ? "OffDay" : "SchoolDay";
+      const tomorrowDayType = classifyDay(tomorrow.toISOString().slice(0, 10), RULES);
       const templateEvents = expandProfileForDate(date.toISOString().slice(0,10), PROFILES[dayType], tomorrowDayType);
 
       // Simple merge: DB events take precedence over template events with the same key
@@ -222,12 +220,12 @@ export default function NPFScheduleApp() {
     toast({ title: 'Bildgenerering', description: 'AI:n skapar en bild för din händelse...' });
     try {
       const result = await generateEventImage({ eventTitle: event.title, imageHint: '' });
-      if (result.imageUrl) {
+      if (result.imageUrl && result.imageUrl.startsWith('data:image')) {
         const storageUrl = await uploadImageAndGetURL(result.imageUrl, event.id);
         await updateDoc(doc(db, "events", event.id), { imageUrl: storageUrl });
         toast({ title: 'Bild genererad!', description: 'Bilden har laddats upp och sparats.' });
       } else {
-        throw new Error('Image data URI was empty.');
+        throw new Error('Image data URI was empty or invalid.');
       }
     } catch (error) {
       console.error("Image generation or upload failed:", error);

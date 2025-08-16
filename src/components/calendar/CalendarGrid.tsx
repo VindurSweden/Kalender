@@ -43,58 +43,54 @@ export function CalendarGrid({ people, events, onEventUpdate, onEdit, onGenerate
     useEffect(() => {
         const fetchImageUrls = async () => {
             const urls: Record<string, string> = {};
-            for (const event of events) {
-                if (event.imageUrl && event.imageUrl.startsWith('gs://')) {
+            const urlPromises = events
+                .filter(event => event.imageUrl && event.imageUrl.startsWith('gs://'))
+                .map(async (event) => {
                     try {
                         const url = await getDownloadURL(ref(storage, event.imageUrl));
-                        urls[event.id] = url;
+                        return { id: event.id, url };
                     } catch (error) {
-                        console.error("Error fetching image URL from storage:", error);
+                        console.error(`Error fetching image URL for event ${event.id}:`, error);
+                        return null; // Return null on error
                     }
-                } else if (event.imageUrl) {
-                    // It's already an HTTPS URL or data URI
+                });
+
+            const settledUrls = await Promise.all(urlPromises);
+            
+            settledUrls.forEach(result => {
+                if (result) {
+                    urls[result.id] = result.url;
+                }
+            });
+            
+             // Also add direct https or data URIs
+            events.forEach(event => {
+                if (event.imageUrl && !event.imageUrl.startsWith('gs://')) {
                     urls[event.id] = event.imageUrl;
                 }
-            }
+            });
+
             setImageUrls(urls);
         };
         fetchImageUrls();
     }, [events]);
 
-    const imageMap = useMemo(() => {
-        const map = new Map<string, string>();
-        for(const event of events) {
-            const url = imageUrls[event.id];
-            if(url && !map.has(event.title)) {
-                map.set(event.title, url);
-            }
-        }
-        return map;
+    const eventsWithImages = useMemo(() => {
+        return events.map(event => ({
+            ...event,
+            imageUrl: imageUrls[event.id] || event.imageUrl, // Use fetched URL if available
+        }));
     }, [events, imageUrls]);
-
-    const eventsWithReusedImages = useMemo(() => {
-        return events.map(event => {
-            const directUrl = imageUrls[event.id];
-            if (directUrl) {
-                 return { ...event, imageUrl: directUrl };
-            }
-            const reusedUrl = imageMap.get(event.title);
-            if(reusedUrl) {
-                return { ...event, imageUrl: reusedUrl };
-            }
-            return event;
-        });
-    }, [events, imageUrls, imageMap]);
-
+    
     const filledEvents = useMemo(() => {
         let allFilled: Event[] = [];
         for (const p of people) {
-            const personEvents = eventsWithReusedImages.filter(e => e.personId === p.id);
+            const personEvents = eventsWithImages.filter(e => e.personId === p.id);
             const filled = synthesizeDayFill(personEvents, p.id, new Date(nowMs));
             allFilled.push(...filled);
         }
         return allFilled;
-    }, [eventsWithReusedImages, people, nowMs]);
+    }, [eventsWithImages, people, nowMs]);
     
     const visEvents = useMemo(() => applyOverrides(filledEvents, overrides), [filledEvents, overrides]);
     const rows = useMemo(() => buildRows(visEvents, people), [visEvents, people]);
