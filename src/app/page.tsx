@@ -63,7 +63,6 @@ export default function NPFScheduleApp() {
   const [sourceEvents, setSourceEvents] = useState<Event[]>([]);
   const [date, setDate] = useState(() => new Date());
   const [showFor, setShowFor] = useState<string[]>([]);
-  const [dark, setDark] = useState(true);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const { toast } = useToast();
@@ -84,6 +83,10 @@ export default function NPFScheduleApp() {
       setTodayType("OffDay");
     } else {
       setTodayType("SchoolDay");
+    }
+
+    if (typeof window !== 'undefined') {
+        document.documentElement.classList.add("dark");
     }
   }, []);
   
@@ -137,8 +140,6 @@ export default function NPFScheduleApp() {
 
   useEffect(() => { if (isClient) saveLS("vcal.people", people)}, [people, isClient]);
   useEffect(() => { if (isClient) saveLS("vcal.showFor", showFor)}, [showFor, isClient]);
-  
-  useEffect(() => { if (typeof window !== 'undefined') { if (dark) document.documentElement.classList.add("dark"); else document.documentElement.classList.remove("dark"); } }, [dark]);
 
   const orderedShowFor = useMemo(() => {
     const order = new Map(people.map((p, i) => [p.id, i]));
@@ -277,8 +278,6 @@ export default function NPFScheduleApp() {
         date={date} 
         shiftDate={(d) => { setDate(new Date(date.setDate(date.getDate() + d))); setManualDayType(null); }}
         setDate={(newDate) => { setDate(newDate); setManualDayType(null); }}
-        dark={dark} 
-        setDark={setDark} 
         assistantOpen={assistantOpen} 
         setAssistantOpen={setAssistantOpen} 
       />

@@ -1,32 +1,19 @@
-
 "use client";
 
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Calendar as CalendarIcon, Settings, ChevronLeft, ChevronRight } from "lucide-react";
-
-function MoonToggle({ dark, setDark }: { dark: boolean; setDark: (dark: boolean) => void; }) { 
-  return (
-    <label className="flex items-center gap-2 text-sm cursor-pointer">
-      <span className="opacity-70">Mörkt läge</span>
-      <Switch checked={dark} onCheckedChange={setDark} />
-    </label>
-  ); 
-}
 
 interface HeaderProps {
   date: Date;
   shiftDate: (days: number) => void;
   setDate: (date: Date) => void;
-  dark: boolean;
-  setDark: (dark: boolean) => void;
   assistantOpen: boolean;
   setAssistantOpen: (open: boolean) => void;
 }
 
-export function Header({ date, shiftDate, setDate, dark, setDark, assistantOpen, setAssistantOpen }: HeaderProps) {
+export function Header({ date, shiftDate, setDate, assistantOpen, setAssistantOpen }: HeaderProps) {
   const dstr = date.toLocaleDateString("sv-SE", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   return (
     <header className="sticky top-0 z-40 bg-neutral-950/80 backdrop-blur border-b border-neutral-800">
@@ -39,7 +26,6 @@ export function Header({ date, shiftDate, setDate, dark, setDark, assistantOpen,
           <Button size="icon" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={() => shiftDate(1)}><ChevronRight className="w-4 h-4" /></Button>
           <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700 hidden sm:flex" onClick={() => setDate(new Date())}>Idag</Button>
           <div className="flex items-center gap-3 ml-2">
-            <MoonToggle dark={dark} setDark={setDark} />
             <Button size="sm" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700" onClick={() => setAssistantOpen(!assistantOpen)}>Assistent</Button>
             <Dialog>
               <DialogTrigger asChild><Button size="icon" variant="secondary" className="bg-neutral-800 hover:bg-neutral-700"><Settings className="w-4 h-4" /></Button></DialogTrigger>
