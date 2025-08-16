@@ -17,6 +17,8 @@ import { generateEventImage } from '@/ai/flows/generate-event-image';
 import { expandProfileForDate, RULES, PROFILES, classifyDay } from "@/lib/recurrence";
 import type { Event, Person, TolkAIInput, TolkAIOutput, FormatPlanOutput, SingleCalendarOperationType, DayType } from '@/types/event';
 import { isSameDay, parseFlexibleSwedishDateString, parseFlexibleSwedishTimeString } from '@/lib/date-utils';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const INCR = 20;
@@ -67,7 +69,6 @@ export default function NPFScheduleApp() {
   const { toast } = useToast();
   
   const [todayType, setTodayType] = useState<DayType>("SchoolDay");
-  const [tomorrowType, setTomorrowType] = useState<DayType>("SchoolDay");
   
   const [manualDayType, setManualDayType] = useState<DayType | null>(null);
   const currentDayType: DayType = manualDayType || todayType;
@@ -76,38 +77,57 @@ export default function NPFScheduleApp() {
     setIsClient(true);
     setPeople(loadLS("vcal.people", DEFAULT_PEOPLE));
     setShowFor(loadLS("vcal.showFor", DEFAULT_PEOPLE.map(p => p.id)));
+
+    // Set day type based on current date
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+        setTodayType("OffDay");
+    } else {
+        setTodayType("SchoolDay");
+    }
   }, []);
   
-  // Generate events based on date
+  // Real-time listener for events from Firestore
   useEffect(() => {
-    function generate(forDate: Date) {
-      const forISO = forDate.toISOString().slice(0, 10);
-      const effectiveDayType = manualDayType || classifyDay(forISO, RULES);
-      const effectiveTomorrowType = classifyDay(new Date(forDate.getTime() + 86400000).toISOString().slice(0, 10), RULES);
+    if (!db) return;
 
-      setTodayType(effectiveDayType);
-      setTomorrowType(effectiveTomorrowType);
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const q = query(
+      collection(db, "events"),
+      where("start", ">=", startOfDay.toISOString()),
+      where("start", "<=", endOfDay.toISOString())
+    );
+
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const eventsFromDb: Event[] = [];
+      querySnapshot.forEach((doc) => {
+        // Note: Firestore data is just data. We cast it to our Event type.
+        // You might want to add data validation here (e.g., with Zod) in a real app.
+        eventsFromDb.push({ id: doc.id, ...doc.data() } as Event);
+      });
       
-      const profile = PROFILES[effectiveDayType];
-      const events = expandProfileForDate(forISO, profile, effectiveTomorrowType);
-      setSourceEvents(events);
-    }
-    generate(date);
-  
-    const timer = setInterval(() => {
-      const now = new Date();
-      if (now.getHours() === 0 && now.getMinutes() === 0) {
-        if (!isSameDay(now, date)) {
-          setDate(now); 
-          setManualDayType(null);
-        } else {
-          generate(now);
-        }
-      }
-    }, 60000);
-  
-    return () => clearInterval(timer);
-  }, [date, manualDayType]);
+      // Sort events by start time
+      eventsFromDb.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+      
+      setSourceEvents(eventsFromDb);
+    }, (error) => {
+        console.error("Error fetching events from Firestore:", error);
+        toast({
+            title: "Fel vid hämtning av data",
+            description: "Kunde inte ansluta till databasen. Vissa funktioner kanske inte fungerar.",
+            variant: "destructive"
+        });
+    });
+
+    // Cleanup listener on component unmount
+    return () => unsubscribe();
+  }, [date, toast]); // Rerun when date changes
 
 
   useEffect(() => { if (isClient) saveLS("vcal.people", people)}, [people, isClient]);
@@ -358,3 +378,5 @@ export default function NPFScheduleApp() {
     </div>
   );
 }
+
+    
