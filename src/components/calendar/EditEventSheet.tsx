@@ -116,14 +116,21 @@ export function EditEventSheet({ open, onClose, event, onSave, onDelete, onGener
               <Label htmlFor="minDurationMin" className="text-neutral-300">Minsta tid (minuter)</Label>
               <Input id="minDurationMin" name="minDurationMin" type="number" value={formState.minDurationMin ?? 0} onChange={e => setFormState(f => ({ ...f, minDurationMin: Number(e.target.value || 0) }))} className="mt-1 bg-neutral-800 border-neutral-700" />
             </div>
+            <div>
+              <Label htmlFor="bestDurationMin" className="text-neutral-300">Ideal-tid (minuter)</Label>
+              <Input id="bestDurationMin" name="bestDurationMin" type="number" value={formState.bestDurationMin ?? 0} onChange={e => setFormState(f => ({ ...f, bestDurationMin: Number(e.target.value || 0) }))} className="mt-1 bg-neutral-800 border-neutral-700" />
+            </div>
             <div className="flex items-center justify-between">
               <Label htmlFor="fixedStart" className="text-neutral-300">Fast starttid?</Label>
               <Switch id="fixedStart" checked={!!formState.fixedStart} onCheckedChange={(c) => handleCheckedChange('fixedStart', c)} />
             </div>
             <div className="flex items-center justify-between">
               <Label htmlFor="fixedEnd" className="text-neutral-300">Fast sluttid?</Label>
-              <Switch id="fixedEnd" disabled // Not implemented in logic yet
-                 className="opacity-50" />
+              <Switch id="fixedEnd" checked={!!formState.fixedEnd} onCheckedChange={(c) => handleCheckedChange('fixedEnd', c)} />
+            </div>
+             <div className="flex items-center justify-between">
+              <Label htmlFor="allowPreemption" className="text-neutral-300">Kan pausas?</Label>
+              <Switch id="allowPreemption" checked={!!formState.allowPreemption} onCheckedChange={(c) => handleCheckedChange('allowPreemption', c)} />
             </div>
           </div>
 

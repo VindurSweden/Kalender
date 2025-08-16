@@ -67,22 +67,22 @@ const schoolDaySteps: TemplateStep[] = [
     { key: "maria-lunch", personId: "maria", title: "Lunch", at: "12:00", minDurationMin: 15, location: "work" },
     { key: "maria-work-pm", personId: "maria", title: "Jobb (eftermiddag)", at: "13:00", location: "work" },
     { key: "maria-pickup", personId: "maria", title: "Hämtar Leia (fritids)", at: "16:30", fixedStart: true, involved: [{ personId: "leia", role: "required" }], resource: "car", location: "city" },
-    { key: "family-dinner", personId: "maria", title: "Middag", at: "18:00", minDurationMin: 20, involved: [{ personId: "antony", role: "required" }, { personId: "leia", role: "required" }, { personId: "gabriel", role: "required" }], location: "home", cluster: "evening", dependsOnKeys: ["maria-pickup", "leia-pickup", "antony-finish-work", "gabriel-afternoon-play"] },
+    { key: "family-dinner", personId: "maria", title: "Middag", at: "18:00", minDurationMin: 20, bestDurationMin: 30, involved: [{ personId: "antony", role: "required" }, { personId: "leia", role: "required" }, { personId: "gabriel", role: "required" }], location: "home", cluster: "evening", dependsOnKeys: ["maria-pickup", "leia-pickup", "antony-finish-work", "gabriel-afternoon-play"] },
     { key: "maria-evening", personId: "maria", title: "Kvällsrutin", at: "21:00", minDurationMin: 10, location: "home", cluster: "evening" },
 
     { key: "leia-wakeup", personId: "leia", title: "Vaknar långsamt", at: "06:00", minDurationMin: 10, location: "home", cluster: "morning" },
     { key: "leia-get-ready", personId: "leia", title: "Vakna", at: "07:00", minDurationMin: 3, location: "home", cluster: "morning" },
-    { key: "leia-teeth", personId: "leia", title: "Borsta tänder", at: "07:08", minDurationMin: 2, location: "home", cluster: "morning" },
-    { key: "leia-breakfast", personId: "leia", title: "Äta frukost", at: "07:16", minDurationMin: 10, dependsOnKeys: ["antony-prep-breakfast"], involved: [{ personId: "antony", role: "required" }], location: "home", cluster: "morning" },
-    { key: "leia-vitamins", personId: "leia", title: "Ta vitaminer", at: "07:24", minDurationMin: 1, dependsOnKeys: ["leia-breakfast"], location: "home", cluster: "morning" },
+    { key: "leia-teeth", personId: "leia", title: "Borsta tänder", at: "07:08", minDurationMin: 2, bestDurationMin: 3, location: "home", cluster: "morning" },
+    { key: "leia-breakfast", personId: "leia", title: "Äta frukost", at: "07:16", minDurationMin: 10, bestDurationMin: 15, dependsOnKeys: ["antony-prep-breakfast"], involved: [{ personId: "antony", role: "required" }], location: "home", cluster: "morning" },
+    { key: "leia-vitamins", personId: "leia", title: "Ta vitaminer", at: "07:24", minDurationMin: 1, bestDurationMin: 1, dependsOnKeys: ["leia-breakfast"], location: "home", cluster: "morning" },
     { key: "leia-hair", personId: "leia", title: "Borsta hår", at: "07:32", minDurationMin: 2, location: "home", cluster: "morning" },
-    { key: "leia-clothes", personId: "leia", title: "Klä på sig", at: "07:40", minDurationMin: 4, location: "home", cluster: "morning" },
+    { key: "leia-clothes", personId: "leia", title: "Klä på sig", at: "07:40", minDurationMin: 4, bestDurationMin: 6, location: "home", cluster: "morning" },
     { key: "leia-pack", personId: "leia", title: "Packa väska & skor", at: "07:48", minDurationMin: 5, location: "home", cluster: "morning" },
     { key: "leia-school", personId: "leia", title: "Skola", at: "08:00", fixedStart: true, location: "school" },
     { key: "leia-afterschool", personId: "leia", title: "Fritids", at: "13:30", location: "school" },
     { key: "leia-pickup", personId: "leia", title: "Blir hämtad (fritids)", at: "16:30", dependsOnKeys: ["maria-pickup"], involved: [{ personId: "maria", role: "required" }], location: "school", resource: "car" },
     { key: "leia-dinner", personId: "leia", title: "Middag", at: "18:00", minDurationMin: 20, involved: [{ personId: "maria", role: "required" }, { personId: "antony", role: "required" }, { personId: "gabriel", role: "helper" }], location: "home", cluster: "evening", dependsOnKeys: ["family-dinner"] },
-    { key: "leia-homework", personId: "leia", title: "Läxor", at: "19:00", minDurationMin: 15, location: "home" },
+    { key: "leia-homework", personId: "leia", title: "Läxor", at: "19:00", minDurationMin: 15, bestDurationMin: 20, location: "home" },
     { key: "leia-play", personId: "leia", title: "Spel / lugn", at: "20:00", minDurationMin: 5, location: "home" },
     { key: "leia-evening", personId: "leia", title: "Kvällsrutin", at: "21:00", minDurationMin: 10, location: "home", cluster: "evening" },
     
@@ -139,7 +139,10 @@ export function expandProfileForDate(dateISO: string, profile: DayProfile, nextD
       id, personId: s.personId, title: s.title,
       start: new Date(startMs).toISOString(),
       end: new Date(startMs + 60_000).toISOString(), // justeras strax
-      minDurationMin: s.minDurationMin, fixedStart: s.fixedStart,
+      minDurationMin: s.minDurationMin,
+      bestDurationMin: s.bestDurationMin,
+      fixedStart: s.fixedStart,
+      allowPreemption: s.allowPreemption,
       involved: s.involved, resource: s.resource, location: s.location, cluster: s.cluster,
       meta: { templateKey: s.key, dayType: profile.id, source: 'template' },
     };
@@ -153,7 +156,8 @@ export function expandProfileForDate(dateISO: string, profile: DayProfile, nextD
       const curIdx = personEventsIndices[k].i;
       const nextEventStartMs = personEventsIndices[k + 1]?.x.startMs;
       const currentEvent = evs[curIdx];
-      const endMs = nextEventStartMs ?? (+new Date(currentEvent.start) + (currentEvent.minDurationMin ? currentEvent.minDurationMin * 60_000 : 10 * 60_000));
+      const durationMin = currentEvent.bestDurationMin ?? currentEvent.minDurationMin ?? 10;
+      const endMs = nextEventStartMs ?? (+new Date(currentEvent.start) + (durationMin * 60_000));
       currentEvent.end = new Date(endMs).toISOString();
     }
   }
@@ -189,5 +193,3 @@ export function sanityCheck() {
     console.assert(t2 === "FritidsDay", `Fritidsdatum ska ge FritidsDay, fick ${t2}`);
     console.log("Sanity check passed.");
 }
-
-    

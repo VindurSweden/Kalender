@@ -1,5 +1,4 @@
 
-
 import { type TolkAIInput as GenkitTolkAIInput, type TolkAIOutput as GenkitTolkAIOutput } from '@/ai/schemas';
 import { type FormatPlanOutput as GenkitFormatPlanOutput, SingleCalendarOperationSchema as GenkitSingleCalendarOperationSchema } from '@/ai/schemas';
 import { z } from 'zod';
@@ -17,6 +16,7 @@ export type Role = "required" | "helper";
 
 export type DayType = "SchoolDay" | "OffDay" | "FritidsDay";
 
+// TemplateStep now includes bestDurationMin and allowPreemption
 export type TemplateStep = {
   key: string;
   personId: "antony" | "maria" | "leia" | "gabriel";
@@ -25,32 +25,38 @@ export type TemplateStep = {
   offsetMin?: number; // alt: relativt
   atByNextDayType?: Partial<Record<DayType, string>>; // kväll styrs av i morgon
   minDurationMin?: number;
+  bestDurationMin?: number; // The ideal duration, for calculating "pain-free start"
   fixedStart?: boolean;
   dependsOnKeys?: string[];
   involved?: { personId: string; role: Role }[];
   resource?: string;
   location?: string;
   cluster?: "morning" | "day" | "evening";
+  allowPreemption?: boolean; // Can this task be paused and resumed?
 };
 
 export type DayProfile = { id: DayType; label: string; steps: TemplateStep[]; };
 
-// Updated Event type based on the new specification
+// Event type now also includes the new properties, inherited from the template
 export interface Event {
-  id: string;
+  id:string;
   personId: string;
   start: string; // ISO8601, mandatory
   end: string;   // ISO8601, now mandatory
   title: string;
   
-  // Metadata from template
+  // Metadata from template or user edits
   minDurationMin?: number;
+  bestDurationMin?: number; // The ideal duration
   fixedStart?: boolean;
+  fixedEnd?: boolean; // Added for completeness, can be used by solver
   dependsOn?: string[];
   involved?: { personId: string; role: Role }[];
   resource?: string;
   location?: string;
   cluster?: string;
+  allowAlone?: boolean; // Can this be done without any 'required' people?
+  allowPreemption?: boolean; // Can this task be paused?
   
   // UI/Legacy fields
   imageUrl?: string;
