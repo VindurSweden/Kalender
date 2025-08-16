@@ -5,7 +5,7 @@ import type { DayType, Role, TemplateStep, DayProfile, Event, RuleSet } from '@/
 const hhmmToMs = (dateISO: string, hhmm: string) => {
     const [h, m] = hhmm.split(':').map(Number);
     const d = new Date(dateISO);
-    d.setUTCHours(h, m, 0, 0); // Use UTC hours to avoid timezone shifts from local
+    d.setHours(h, m, 0, 0); // Use local hours to match template time
     return d.getTime();
 };
 const atISO = (dateISO: string, hhmm: string) => new Date(hhmmToMs(dateISO, hhmm)).toISOString();
