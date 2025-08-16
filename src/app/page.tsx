@@ -13,6 +13,7 @@ import { EditEventSheet } from '@/components/calendar/EditEventSheet';
 import { interpretUserInstruction } from '@/ai/flows/natural-language-event-creation';
 import { formatPlan } from '@/ai/flows/format-plan-flow';
 import { generateEventImage } from '@/ai/flows/generate-event-image';
+import { uploadImageAndGetURL } from '@/lib/storage'; // Import the new upload function
 
 import { expandProfileForDate, RULES, PROFILES, classifyDay } from "@/lib/recurrence";
 import type { Event, Person, TolkAIInput, TolkAIOutput, FormatPlanOutput, SingleCalendarOperationType, DayType } from '@/types/event';
@@ -177,26 +178,33 @@ export default function NPFScheduleApp() {
             const title = eventDetails.title || 'AI Händelse';
             const start = newStart.toISOString();
             
-            let imageUrl: string | undefined = undefined;
-            if (title) {
-              try {
-                const imageResult = await generateEventImage({ eventTitle: title, imageHint });
-                imageUrl = imageResult.imageUrl;
-              } catch (err) { console.error("Image generation failed", err) }
-            }
-
-            const newEvent: Event = {
-              id: uid(),
+            const newEventData: Omit<Event, 'id'> = {
               title,
               personId,
               start,
               end: new Date(newStart.getTime() + INCR * 60 * 1000).toISOString(),
-              imageUrl,
               challenge: eventDetails.description,
               meta: { source: 'assistant' }
             };
+
+            const eventId = uid();
+            const newEvent: Event = { id: eventId, ...newEventData };
             
-            await setDoc(doc(db, "events", newEvent.id), newEvent);
+            // Create event first without image
+            await setDoc(doc(db, "events", eventId), newEventData);
+
+            // Then generate and upload image, then update the event
+            if (title) {
+              try {
+                const imageResult = await generateEventImage({ eventTitle: title, imageHint });
+                if (imageResult.imageUrl) {
+                    const storageUrl = await uploadImageAndGetURL(imageResult.imageUrl, eventId);
+                    await updateDoc(doc(db, "events", eventId), { imageUrl: storageUrl });
+                    newEvent.imageUrl = storageUrl; // Update local object for return
+                }
+              } catch (err) { console.error("Image generation or upload failed", err) }
+            }
+
             boom();
             return newEvent;
 
@@ -215,14 +223,15 @@ export default function NPFScheduleApp() {
     try {
       const result = await generateEventImage({ eventTitle: event.title, imageHint: '' });
       if (result.imageUrl) {
-        await updateDoc(doc(db, "events", event.id), { imageUrl: result.imageUrl });
-        toast({ title: 'Bild genererad!', description: 'Bilden har lagts till på din händelse.' });
+        const storageUrl = await uploadImageAndGetURL(result.imageUrl, event.id);
+        await updateDoc(doc(db, "events", event.id), { imageUrl: storageUrl });
+        toast({ title: 'Bild genererad!', description: 'Bilden har laddats upp och sparats.' });
       } else {
-        throw new Error('Image URL was empty.');
+        throw new Error('Image data URI was empty.');
       }
     } catch (error) {
-      console.error("Image generation failed:", error);
-      toast({ variant: 'destructive', title: 'Fel vid bildgenerering', description: 'Kunde inte skapa bilden.' });
+      console.error("Image generation or upload failed:", error);
+      toast({ variant: 'destructive', title: 'Fel vid bildgenerering', description: 'Kunde inte skapa eller ladda upp bilden.' });
     }
   };
   

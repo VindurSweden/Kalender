@@ -33,7 +33,7 @@ const generateEventImageFlow = ai.defineFlow(
       return {imageUrl: ''};
     }
 
-    let promptText = `Generate an image for a calendar event titled: "${input.eventTitle}"`;
+    let promptText = `Generate a simple, clear, icon-like image that works as a visual support (pictogram style) for a calendar event titled: "${input.eventTitle}"`;
     if (input.imageHint && input.imageHint.trim() !== '') {
       promptText += `\nImage context/hint: "${input.imageHint}"`;
     }

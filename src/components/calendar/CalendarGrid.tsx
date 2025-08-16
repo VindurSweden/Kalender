@@ -7,6 +7,8 @@ import type { Event, Person, Row, Override } from "@/types/event";
 import { buildRows, applyOverrides, synthesizeDayFill, previewReplanProportional } from "@/lib/grid-utils";
 import { GridCell } from './GridCell';
 import { Edit } from "lucide-react";
+import { getDownloadURL, ref } from "firebase/storage";
+import { storage } from "@/lib/firebase";
 
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 
@@ -29,6 +31,7 @@ export function CalendarGrid({ people, events, onEventUpdate, onEdit, onGenerate
     const [completedUpTo, setCompletedUpTo] = useState<Map<string, number>>(new Map());
     const [showMeta, setShowMeta] = useState(false);
     const [flash, setFlash] = useState<null | { kind: "klar" | "late"; at: number }>(null);
+    const [imageUrls, setImageUrls] = useState<Record<string, string>>({});
 
     useEffect(() => {
         const timerId = setInterval(() => {
@@ -37,25 +40,51 @@ export function CalendarGrid({ people, events, onEventUpdate, onEdit, onGenerate
         return () => clearInterval(timerId);
     }, []);
 
+    useEffect(() => {
+        const fetchImageUrls = async () => {
+            const urls: Record<string, string> = {};
+            for (const event of events) {
+                if (event.imageUrl && event.imageUrl.startsWith('gs://')) {
+                    try {
+                        const url = await getDownloadURL(ref(storage, event.imageUrl));
+                        urls[event.id] = url;
+                    } catch (error) {
+                        console.error("Error fetching image URL from storage:", error);
+                    }
+                } else if (event.imageUrl) {
+                    // It's already an HTTPS URL or data URI
+                    urls[event.id] = event.imageUrl;
+                }
+            }
+            setImageUrls(urls);
+        };
+        fetchImageUrls();
+    }, [events]);
+
     const imageMap = useMemo(() => {
         const map = new Map<string, string>();
         for(const event of events) {
-            if(event.imageUrl && !map.has(event.title)) {
-                map.set(event.title, event.imageUrl);
+            const url = imageUrls[event.id];
+            if(url && !map.has(event.title)) {
+                map.set(event.title, url);
             }
         }
         return map;
-    }, [events]);
+    }, [events, imageUrls]);
 
     const eventsWithReusedImages = useMemo(() => {
         return events.map(event => {
-            if (event.imageUrl) return event;
-            if (imageMap.has(event.title)) {
-                return { ...event, imageUrl: imageMap.get(event.title) };
+            const directUrl = imageUrls[event.id];
+            if (directUrl) {
+                 return { ...event, imageUrl: directUrl };
+            }
+            const reusedUrl = imageMap.get(event.title);
+            if(reusedUrl) {
+                return { ...event, imageUrl: reusedUrl };
             }
             return event;
         });
-    }, [events, imageMap]);
+    }, [events, imageUrls, imageMap]);
 
     const filledEvents = useMemo(() => {
         let allFilled: Event[] = [];
