@@ -75,7 +75,7 @@ export default function NPFScheduleApp() {
   useEffect(() => {
     setIsClient(true);
     setPeople(loadLS("vcal.people", DEFAULT_PEOPLE));
-    setShowFor(loadLS("vcal.showFor", DEFAULT_PEOPLE.slice(0, 2).map(p => p.id)));
+    setShowFor(loadLS("vcal.showFor", DEFAULT_PEOPLE.map(p => p.id)));
   }, []);
   
   // Generate events based on date
@@ -85,10 +85,8 @@ export default function NPFScheduleApp() {
       const effectiveDayType = manualDayType || classifyDay(forISO, RULES);
       const effectiveTomorrowType = classifyDay(new Date(forDate.getTime() + 86400000).toISOString().slice(0, 10), RULES);
 
-      if (!manualDayType) {
-        setTodayType(effectiveDayType);
-        setTomorrowType(effectiveTomorrowType);
-      }
+      setTodayType(effectiveDayType);
+      setTomorrowType(effectiveTomorrowType);
       
       const profile = PROFILES[effectiveDayType];
       const events = expandProfileForDate(forISO, profile, effectiveTomorrowType);
@@ -320,7 +318,7 @@ export default function NPFScheduleApp() {
                     Dagstyp: {PROFILES[currentDayType]?.label ?? currentDayType}
                 </span>
                 <span className="px-2 py-1 rounded-md bg-neutral-900 border border-neutral-800">
-                    Events: {sourceEvents.length}
+                    Händelser: {sourceEvents.length}
                 </span>
             </div>
             {orderedShowFor.length > 0 ? (
@@ -360,8 +358,3 @@ export default function NPFScheduleApp() {
     </div>
   );
 }
-
-
-    
-
-    

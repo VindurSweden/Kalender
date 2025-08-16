@@ -49,7 +49,7 @@ export function classifyDay(dateISO: string, rules: RuleSet): DayType {
 // GRUNDMALL FÖR SKOLDAGAR (baserad på detaljerad JSON)
 // =================================================================
 const schoolDaySteps: TemplateStep[] = [
-    // --- Söndag kväll ---
+    // --- Söndag kväll (förberedelser) ---
     { key: "evening-prep-clothes", personId: "maria", title: "Lägga fram kläder", at: "19:00", minDurationMin: 10, cluster: 'evening', location: 'home' },
     { key: "evening-snack", personId: "antony", title: "Kvällsfika", at: "19:15", minDurationMin: 10, involved: [{personId: 'leia', role: 'required'}, {personId: 'gabriel', role: 'required'}], cluster: 'evening', location: 'home', resource: 'kitchen' },
     { key: "evening-melatonin", personId: "maria", title: "Melatonin", at: "19:30", minDurationMin: 2, dependsOnKeys: ['evening-snack'], involved: [{personId: 'leia', role: 'required'}, {personId: 'gabriel', role: 'required'}], cluster: 'evening', location: 'home' },
@@ -180,7 +180,7 @@ export function expandProfileForDate(dateISO: string, profile: DayProfile, nextD
   const tmp = profile.steps.map(s => {
     const hhmm = resolveAt(s, dateISO, nextDayType);
     const startMs = hhmmToMs(dateISO, hhmm);
-    // Use personId from the step, which should be 'antony' or 'maria'
+    // Use personId from the step, which should be 'antony' or 'maria' etc.
     const personId = s.personId;
     return { s, startMs, hhmm, personId };
   }).sort((a, b) => a.startMs - b.startMs || a.s.key.localeCompare(b.s.key));

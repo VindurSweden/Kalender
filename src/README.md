@@ -29,7 +29,7 @@ För att förstå projektet är det bäst att börja med följande filer och map
 -   `src/app/page.tsx`: Huvudsidan och applikationens primära startpunkt. Här hanteras det övergripande tillståndet (state) för händelser, personer och användarinteraktioner.
 
 -   `src/lib/recurrence.ts`: **HJÄRTAT I APPEN.** Denna fil innehåller all logik för den återkommande schemaläggningen.
-    -   Definitioner för mallar (`TemplateStep`).
+    -   Definitioner för mallar (`TemplateStep`). **VARNING: Dessa mallar utgör grunden för hela applikationens funktion. Ta ALDRIG bort eller ändra händelser i dessa mallar utan en uttrycklig och tydlig instruktion. Att radera händelser här kan förstöra hela kalendern. Fråga alltid först om du är osäker.**
     -   Regler (`RULES`) för att avgöra dagstyp.
     -   Logiken för att expandera en mall till en dags kompletta händelselista (`Event[]`).
 
